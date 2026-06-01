@@ -4,7 +4,7 @@ Last updated: 2026-06-01
 
 ## Current Focus
 
-Vercel static deployment setup is implemented and locally verified. Live production deployment is waiting on Vercel authentication for this machine/account.
+Vercel project is created, linked, connected to GitHub, and deployed to production.
 
 ## Completed
 
@@ -28,6 +28,10 @@ Vercel static deployment setup is implemented and locally verified. Live product
 - Added `vercel.json` for Vercel production builds from `dist/`.
 - Added hash-based section links such as `/#orders` without splitting the SPA into separate pages.
 - Verified the static build excludes handover, planning, prompt, PPTX, backend, and runtime data files.
+- Authenticated Vercel CLI as `sanuske2-2147`.
+- Created and linked Vercel project `fashion-store-os` under team `sanuske2-2147s-projects`.
+- Connected the Vercel project to `https://github.com/ADxZimmy/fashion-store-os`.
+- Deployed production URL `https://fashion-store-os.vercel.app`.
 
 ## In Progress
 
@@ -35,14 +39,12 @@ Vercel static deployment setup is implemented and locally verified. Live product
 
 ## Blocked
 
-- Item: Live Vercel production deployment.
-  Reason: Vercel CLI has no saved credentials on this machine, no `VERCEL_TOKEN` is present, and the Vercel connector returned a CLI-only deployment instruction instead of creating the deployment.
 - Item: Production backend/database decision.
   Reason: Current backend JSON persistence is local-only. Vercel static deployment uses browser storage fallback until a durable cloud database/auth stack is chosen.
 
 ## Next Action
 
-Authenticate Vercel for the desired account/team, then run `vercel deploy --prod` from the project root or connect the GitHub repo in Vercel with production branch `main`.
+Verify the production app in-browser at `https://fashion-store-os.vercel.app`, then decide whether the next slice is durable database/auth or CRM channel intake.
 
 ## Verification Snapshot
 
@@ -65,4 +67,8 @@ Authenticate Vercel for the desired account/team, then run `vercel deploy --prod
 - Command/check: Local static server at `http://localhost:4181/#orders`
   Result: Passed; manager signup and business setup completed from `dist/`, then opened the Garment Orders view with the `#orders` URL and no browser console errors.
 - Command/check: `vercel deploy --yes --prod`
-  Result: Blocked by missing Vercel credentials.
+  Result: Passed after Vercel CLI authentication; production deployment is READY at `https://fashion-store-os.vercel.app`.
+- Command/check: `vercel inspect https://fashion-store-os.vercel.app`
+  Result: Passed; deployment `dpl_5Gcn14bTDQ8MLRFjFnaqjjXcLLmP` is READY.
+- Command/check: Public URL status
+  Result: Passed; `/` returned `200` and `/handover.md` returned `404`.

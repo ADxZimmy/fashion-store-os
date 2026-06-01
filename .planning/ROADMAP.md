@@ -10,7 +10,7 @@
 
 - Phase: Authenticated Vercel production deployment.
   Outcome: Sign into the target Vercel account/team, deploy `main`, inspect the live URL, and record it in handover.
-  Status: Blocked by missing Vercel credentials on this machine.
+  Status: Complete; production URL is `https://fashion-store-os.vercel.app`.
 - Phase: CRM channel intake.
   Outcome: WhatsApp/Instagram-style inbound messages can become CRM inbox inquiries with source, contact, message, routing status, and follow-up state.
   Status: Next.

@@ -52,7 +52,7 @@ Static mode keeps using browser storage because the backend API is unavailable.
 
 ## Vercel Deployment
 
-Repo-side Vercel setup is complete:
+Vercel setup and production deployment are complete:
 
 ```powershell
 npm.cmd run build
@@ -61,11 +61,15 @@ vercel deploy --prod
 
 Important current status:
 
+- Production URL: `https://fashion-store-os.vercel.app`
+- Vercel project: `sanuske2-2147s-projects/fashion-store-os`
+- Vercel project ID: `prj_3oNJjdlNXi5yTKkqenDEzY2jVELi`
+- Latest production deployment: `dpl_5Gcn14bTDQ8MLRFjFnaqjjXcLLmP`
 - `vercel.json` builds the app into `dist/`.
 - `dist/` contains only `index.html`, `src/`, and required JPG assets.
 - Handover files, planning files, prompt/PPTX docs, backend source, and runtime data are not copied into `dist/`.
 - The deployed app will use browser storage fallback until a durable cloud database/auth layer replaces JSON-file persistence.
-- Live Vercel deployment is blocked on this machine because Vercel CLI is not authenticated and no `VERCEL_TOKEN` is present.
+- The Vercel project is linked locally through `.vercel/project.json` and connected to `https://github.com/ADxZimmy/fashion-store-os`.
 
 Recommended production branch for Vercel Git integration: `main`.
 
@@ -169,8 +173,10 @@ Important limitation: this is prototype auth only. Passwords and staff records a
 - Added `dist/` and `.vercel/` to `.gitignore`.
 - Added hash-based section links such as `/#orders`.
 - Kept the app as a single-page operational workspace instead of splitting modules into separate HTML pages.
-- Attempted production deploy through Vercel CLI and connector.
-- Vercel deploy is currently blocked by missing local Vercel credentials.
+- Authenticated the Vercel CLI as `sanuske2-2147`.
+- Created and linked Vercel project `sanuske2-2147s-projects/fashion-store-os`.
+- Connected the Vercel project to `https://github.com/ADxZimmy/fashion-store-os`.
+- Deployed production at `https://fashion-store-os.vercel.app`.
 
 ## Current LocalStorage Keys
 
@@ -215,7 +221,11 @@ Results:
   - `dist/server.js` absent.
   - prompt/PPTX docs absent.
 - Local static server check passed at `http://localhost:4181/#orders`; manager signup and business setup completed from `dist/`, then opened the Garment Orders view with the `#orders` URL and no browser console errors.
-- `vercel deploy --yes --prod` was attempted but blocked because the CLI is not authenticated.
+- `vercel deploy --yes --prod` passed after Vercel CLI authentication.
+- `vercel inspect https://fashion-store-os.vercel.app` confirmed deployment `dpl_5Gcn14bTDQ8MLRFjFnaqjjXcLLmP` is READY.
+- Public URL status checks passed:
+  - `/` returned `200`.
+  - `/handover.md` returned `404`.
 - Chrome manual check confirmed:
   - Clean first launch shows manager signup.
   - Manager signup leads to business setup.
@@ -247,47 +257,41 @@ Key design constraints from the owner:
 
 Suggested next work slices:
 
-1. Complete Vercel production deployment
-   - Authenticate the desired Vercel account/team with `vercel login`, or provide a Vercel token.
-   - Run `vercel deploy --prod` from `F:\Fashion Store OS`.
-   - Inspect the live URL and record it in this handover.
-   - If using Vercel Git integration, set the production branch to `main`.
-
-2. Production database and auth decision
+1. Production database and auth decision
    - Choose the production backend/database stack before treating cloud storage as shared/durable.
    - Replace JSON-file persistence and plaintext prototype passwords.
    - Define user/session model and staff permissions server-side.
 
-3. CRM channel intake
+2. CRM channel intake
    - Add a backend endpoint for inbound WhatsApp/Instagram-style messages.
    - Map source, sender, handle/phone, message, desired garment, deadline, and follow-up status into CRM Inbox inquiries.
    - Add UI for reviewing and converting inbound channel messages.
 
-4. Responsive QA pass
+3. Responsive QA pass
    - Check mobile, tablet, laptop, and desktop widths.
    - Verify sidebar hover/collapse behavior at each width.
    - Confirm no text overlap or broken cards.
 
-5. Auth and role hardening
+4. Auth and role hardening
    - Decide whether this remains local-only or moves to a backend.
    - Replace plaintext localStorage passwords before any real use.
    - Add stronger role names and permissions if more staff levels are needed.
 
-6. Data workflows
+5. Data workflows
    - Add import/export for studio data.
    - Add backup/restore flow.
    - Add richer order history and activity timeline.
 
-7. Form validation and empty states
+6. Form validation and empty states
    - Tighten validation for orders, measurements, inventory, and staff creation.
    - Add helpful empty states for a fresh workspace with no seed data.
 
-8. Accessibility and keyboard pass
+7. Accessibility and keyboard pass
    - Verify keyboard navigation.
    - Verify modal focus flow.
    - Check labels, contrast, focus states, and Escape behavior.
 
-9. Test strategy
+8. Test strategy
    - Add lightweight automated checks if the project remains static.
    - At minimum, keep using `node --check src\app.js` and native-dialog scans after JS changes.
 
@@ -325,7 +329,6 @@ Commit:
 - Should staff access be limited to 2 permanently, or is that only for the current prototype?
 - Should Mo'ora Afrika branding assets be replaced with final production files later?
 - Should the onboarding flow include workspace setup before the dashboard opens?
-- Which Vercel account/team should own the production deployment?
 - Should the hosted prototype remain browser-storage-only until a durable database is added, or should the next slice prioritize cloud persistence immediately?
 
 ## Known Risks
@@ -333,7 +336,6 @@ Commit:
 - Prototype authentication is not secure for production.
 - JSON-file persistence is a backend foundation only, not the final multi-user production database.
 - Vercel static deployment uses browser storage fallback, not shared server storage.
-- Live Vercel deployment cannot be completed from this machine until Vercel credentials are available.
 - localStorage can be cleared by the browser or overwritten by reset.
 - There is no migration system for future localStorage schema changes.
 - No automated browser regression suite exists yet.

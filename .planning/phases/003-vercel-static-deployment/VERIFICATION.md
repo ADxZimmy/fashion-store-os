@@ -18,8 +18,17 @@
   Result: Passed.
   Notes: Returned `404`, confirming handover is not in static output.
 - Command: `vercel deploy --yes --prod`
-  Result: Blocked.
-  Notes: Vercel CLI reported no existing credentials and no `VERCEL_TOKEN` is available.
+  Result: Passed.
+  Notes: Completed after Vercel CLI device login. Production alias: `https://fashion-store-os.vercel.app`.
+- Command: `vercel inspect https://fashion-store-os.vercel.app`
+  Result: Passed.
+  Notes: Deployment `dpl_5Gcn14bTDQ8MLRFjFnaqjjXcLLmP` is READY.
+- Command: `Invoke-WebRequest https://fashion-store-os.vercel.app`
+  Result: Passed.
+  Notes: Returned `200`.
+- Command: `Invoke-WebRequest https://fashion-store-os.vercel.app/handover.md`
+  Result: Passed.
+  Notes: Returned `404`, confirming handover is not public.
 
 ## Browser Checks
 
@@ -31,5 +40,3 @@
 
 - Risk: Vercel static deployment uses browser storage fallback, not shared server storage.
   Owner: Production backend/database phase.
-- Risk: Live deployment cannot be completed until the desired Vercel account/team is authenticated locally or a token is provided.
-  Owner: Deployment owner.
