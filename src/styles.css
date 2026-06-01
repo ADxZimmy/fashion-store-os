@@ -615,6 +615,59 @@ input[type="color"] {
   cursor: not-allowed;
 }
 
+.modal-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.62);
+  padding: 24px;
+}
+
+.modal-card {
+  width: min(480px, 100%);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--panel) 96%, white), color-mix(in srgb, var(--panel-strong) 82%, black)),
+    var(--panel);
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.56);
+  padding: 20px;
+}
+
+.modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.modal-close {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel-strong) 82%, black);
+  color: var(--muted);
+  font-size: 1.2rem;
+}
+
+.modal-close:hover,
+.modal-close:focus-visible {
+  color: var(--primary);
+  border-color: color-mix(in srgb, var(--accent) 44%, transparent);
+}
+
+.modal-note {
+  margin: 12px 0 16px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
 .session-chip {
   display: inline-flex;
   align-items: center;

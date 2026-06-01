@@ -94,6 +94,7 @@ let currentView = localStorage.getItem(VIEW_KEY) || "dashboard";
 let authMode = auth.users.length ? "signin" : "signup";
 let selectedClientId = state.clients[0]?.id || "";
 let draftOrderStyleId = state.styles[0]?.id || "";
+let modalState = null;
 let toastTimer;
 
 render();
@@ -601,10 +602,12 @@ function render() {
         ${renderTopbar()}
         ${renderView()}
       </main>
+      ${renderModal()}
     </div>
   `;
 
   wireEvents();
+  focusModalControl();
 }
 
 function renderOnboarding() {
@@ -706,6 +709,99 @@ function renderSignUpForm() {
       </div>
     </form>
   `;
+}
+
+function renderModal() {
+  if (!modalState) return "";
+  if (modalState.type === "restock") {
+    const item = getInventoryItem(modalState.id);
+    if (!item) return "";
+    return `
+      <section class="modal-layer" role="presentation">
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+          <div class="modal-header">
+            <div>
+              <p class="eyebrow">Material reserve</p>
+              <h2 id="modalTitle">Restock ${escapeHtml(item.name)}</h2>
+            </div>
+            <button class="modal-close" type="button" data-action="close-modal" aria-label="Close restock dialog">&times;</button>
+          </div>
+          <form id="restockForm" data-id="${escapeHtml(item.id)}">
+            <label class="field full">
+              <span>Quantity to add</span>
+              <input name="amount" type="number" min="0.01" step="0.01" value="1" required autofocus data-modal-autofocus>
+            </label>
+            <p class="modal-note">Current stock: ${escapeHtml(item.quantity)} ${escapeHtml(item.unit)} · Reserved: ${escapeHtml(item.reserved || 0)} ${escapeHtml(item.unit)}</p>
+            <div class="button-row">
+              <button class="btn secondary" type="button" data-action="close-modal">Cancel</button>
+              <button class="btn" type="submit">Update inventory</button>
+            </div>
+          </form>
+        </div>
+      </section>
+    `;
+  }
+
+  if (modalState.type === "delete-staff") {
+    const staff = auth.users.find((user) => user.id === modalState.id && user.role === "staff");
+    if (!staff) return "";
+    return renderConfirmModal({
+      title: "Remove staff access",
+      eyebrow: "Team access",
+      message: `Remove ${staff.name}'s access to this Studio OS workspace?`,
+      confirmAction: "confirm-delete-staff",
+      id: staff.id,
+      confirmLabel: "Remove staff",
+      tone: "danger",
+    });
+  }
+
+  if (modalState.type === "reset-data") {
+    return renderConfirmModal({
+      title: "Reset local data",
+      eyebrow: "Local browser storage",
+      message: "This clears local Studio OS records, sign-in records, and staff accounts in this browser.",
+      confirmAction: "confirm-reset-data",
+      confirmLabel: "Reset data",
+      tone: "danger",
+    });
+  }
+
+  return "";
+}
+
+function renderConfirmModal({ title, eyebrow, message, confirmAction, id = "", confirmLabel, tone = "danger" }) {
+  return `
+    <section class="modal-layer" role="presentation">
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle" aria-describedby="modalMessage">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">${escapeHtml(eyebrow)}</p>
+            <h2 id="modalTitle">${escapeHtml(title)}</h2>
+          </div>
+          <button class="modal-close" type="button" data-action="close-modal" aria-label="Close confirmation dialog">&times;</button>
+        </div>
+        <p id="modalMessage" class="modal-note">${escapeHtml(message)}</p>
+        <div class="button-row">
+          <button class="btn secondary" type="button" data-action="close-modal" data-modal-autofocus>Cancel</button>
+          <button class="btn ${tone}" type="button" data-action="${escapeHtml(confirmAction)}" ${id ? `data-id="${escapeHtml(id)}"` : ""}>${escapeHtml(confirmLabel)}</button>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function closeModal(shouldRender = true) {
+  modalState = null;
+  if (shouldRender) render();
+}
+
+function focusModalControl() {
+  if (!modalState) return;
+  window.setTimeout(() => {
+    const control = app.querySelector("[data-modal-autofocus]") || app.querySelector(".modal-card button, .modal-card input");
+    control?.focus({ preventScroll: true });
+  });
 }
 
 function renderSetup() {
@@ -1704,6 +1800,9 @@ function wireEvents() {
     if (action === "restock-item") restockItem(id);
     if (action === "apply-moora-brand") applyMooraBrand();
     if (action === "apply-neutral-brand") applyNeutralBrand();
+    if (action === "close-modal") closeModal();
+    if (action === "confirm-delete-staff") confirmDeleteStaff(id);
+    if (action === "confirm-reset-data") confirmResetLocalData();
     if (action === "sign-out") signOut();
     if (action === "delete-staff") deleteStaff(id);
     if (action === "reset-demo") resetLocalData();
@@ -1731,6 +1830,12 @@ function wireEvents() {
     }
   };
 
+  app.onkeydown = (event) => {
+    if (event.key === "Escape" && modalState) {
+      closeModal();
+    }
+  };
+
   app.onsubmit = (event) => {
     event.preventDefault();
     const form = event.target;
@@ -1746,6 +1851,7 @@ function wireEvents() {
     if (form.id === "inventoryForm") handleInventorySubmit(form);
     if (form.id === "recipeForm") handleRecipeSubmit(form);
     if (form.id === "orderForm") handleOrderSubmit(form);
+    if (form.id === "restockForm") handleRestockSubmit(form);
   };
 }
 
@@ -1950,8 +2056,19 @@ function deleteStaff(id) {
   }
   const staff = auth.users.find((user) => user.id === id && user.role === "staff");
   if (!staff) return;
-  if (!window.confirm(`Remove staff access for ${staff.name}?`)) return;
+  modalState = { type: "delete-staff", id };
+  render();
+}
+
+function confirmDeleteStaff(id) {
+  if (currentUser()?.role !== "manager") {
+    showToast("Only the manager can remove staff accounts.");
+    return;
+  }
+  const staff = auth.users.find((user) => user.id === id && user.role === "staff");
+  if (!staff) return;
   auth.users = auth.users.filter((user) => user.id !== id);
+  closeModal(false);
   saveAuth();
   showToast("Staff account removed.");
   render();
@@ -2331,18 +2448,28 @@ function cancelOrder(id) {
 function restockItem(id) {
   const item = getInventoryItem(id);
   if (!item) return;
-  const amount = Number(window.prompt(`Restock quantity for ${item.name}`, "1"));
+  modalState = { type: "restock", id };
+  render();
+}
+
+function handleRestockSubmit(form) {
+  const item = getInventoryItem(form.dataset.id);
+  if (!item) return;
+  const amount = Number(new FormData(form).get("amount"));
   if (!Number.isFinite(amount) || amount <= 0) return;
   item.quantity = round2(Number(item.quantity || 0) + amount);
+  closeModal(false);
   saveState();
   showToast("Inventory updated.");
   render();
 }
 
 function resetLocalData() {
-  if (!window.confirm("Reset local Fashion Studio OS data, sign-in records, and staff accounts in this browser?")) {
-    return;
-  }
+  modalState = { type: "reset-data" };
+  render();
+}
+
+function confirmResetLocalData() {
   localStorage.removeItem(STORAGE_KEY);
   localStorage.removeItem(VIEW_KEY);
   localStorage.removeItem(AUTH_KEY);
@@ -2352,6 +2479,7 @@ function resetLocalData() {
   currentView = "dashboard";
   selectedClientId = state.clients[0]?.id || "";
   draftOrderStyleId = state.styles[0]?.id || "";
+  closeModal(false);
   showToast("Local data reset.");
   render();
 }
