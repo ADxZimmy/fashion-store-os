@@ -16,6 +16,10 @@
   Acceptance: Users can update display name, logo, primary/accent/sidebar/success colors, background mode, and contact details.
 - Requirement: Backend-backed persistence foundation.
   Acceptance: When served through the app backend, state and auth records load from and save to server-managed JSON files, while direct/static usage falls back to localStorage.
+- Requirement: Vercel-hosted static preview.
+  Acceptance: The app can be built to a deployable static folder that excludes private planning/handover/backend/runtime files and runs on Vercel using browser storage fallback.
+- Requirement: Shareable section links.
+  Acceptance: Section navigation can be opened directly with hash links such as `/#orders` while retaining the current single-page app structure.
 
 ## Non-Functional
 
@@ -30,6 +34,7 @@
 
 - Item: Real WhatsApp/Instagram integrations.
 - Item: Production multi-user authentication and cloud database.
+- Item: Durable Vercel server-side persistence.
 - Item: Advanced pattern-making mathematics.
 
 ## Open Questions
@@ -38,3 +43,5 @@
   Status: Open.
 - Question: Which production backend should replace the current JSON-file persistence layer?
   Status: Open; current slice intentionally keeps persistence dependency-free.
+- Question: Which Vercel account/team should own the production deployment?
+  Status: Open; local Vercel CLI is not authenticated.

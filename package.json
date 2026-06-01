@@ -2,8 +2,9 @@
   "name": "fashion-store-os",
   "version": "0.1.0",
   "private": true,
-  "description": "Backend-backed Fashion Studio OS prototype",
+  "description": "Fashion Studio OS prototype with local backend and static Vercel build",
   "scripts": {
+    "build": "node scripts/build-static.js",
     "start": "node server.js",
     "dev": "node server.js",
     "check": "node --check src/app.js && node --check server.js"

@@ -94,7 +94,7 @@ const navItems = [
 
 let state = loadState();
 let auth = loadAuth();
-let currentView = localStorage.getItem(VIEW_KEY) || "dashboard";
+let currentView = initialView();
 let authMode = auth.users.length ? "signin" : "signup";
 let selectedClientId = state.clients[0]?.id || "";
 let draftOrderStyleId = state.styles[0]?.id || "";
@@ -658,7 +658,7 @@ function render() {
 
   const nav = accessibleNavItems();
   if (!nav.some(([view]) => view === currentView)) {
-    currentView = nav[0]?.[0] || "dashboard";
+    setCurrentView(nav[0]?.[0] || "dashboard");
   }
 
   app.innerHTML = `
@@ -1862,8 +1862,7 @@ function wireEvents() {
 
     const navButton = event.target.closest("[data-nav]");
     if (navButton) {
-      currentView = navButton.dataset.nav;
-      localStorage.setItem(VIEW_KEY, currentView);
+      setCurrentView(navButton.dataset.nav);
       render();
       return;
     }
@@ -1974,8 +1973,7 @@ function handleSignUp(form) {
   auth.users.push(manager);
   auth.sessionUserId = manager.id;
   saveAuth();
-  currentView = "dashboard";
-  localStorage.setItem(VIEW_KEY, currentView);
+  setCurrentView(preferredAccessibleView("dashboard"));
   showToast("Manager access created.");
   render();
 }
@@ -1992,8 +1990,7 @@ function handleSignIn(form) {
   auth.sessionUserId = user.id;
   saveAuth();
   const nav = accessibleNavItems();
-  currentView = nav[0]?.[0] || "dashboard";
-  localStorage.setItem(VIEW_KEY, currentView);
+  setCurrentView(preferredAccessibleView(nav[0]?.[0] || "dashboard"));
   showToast(`Welcome, ${user.name}.`);
   render();
 }
@@ -2045,7 +2042,9 @@ async function handleProfileSubmit(form, isFirstLaunch) {
     },
   };
 
-  currentView = isFirstLaunch ? "dashboard" : currentView;
+  if (isFirstLaunch) {
+    setCurrentView(preferredAccessibleView("dashboard"));
+  }
   saveState();
   showToast(isFirstLaunch ? "Business profile created." : "Branding updated.");
   render();
@@ -2361,7 +2360,7 @@ function convertInquiry(id) {
   order.estimatedMaterials = estimateOrder(order).lineItems;
   state.orders.unshift(order);
   inquiry.status = "Converted to Order";
-  currentView = "orders";
+  setCurrentView("orders");
   saveState();
   showToast("Inquiry converted to an order draft.");
   render();
@@ -2369,8 +2368,7 @@ function convertInquiry(id) {
 
 function openMeasurements(id) {
   selectedClientId = id;
-  currentView = "measurements";
-  localStorage.setItem(VIEW_KEY, currentView);
+  setCurrentView("measurements");
   render();
 }
 
@@ -2583,7 +2581,7 @@ async function confirmResetLocalData() {
   state = createSeedState();
   auth = normalizeAuth();
   authMode = "signup";
-  currentView = "dashboard";
+  setCurrentView("dashboard");
   selectedClientId = state.clients[0]?.id || "";
   draftOrderStyleId = state.styles[0]?.id || "";
   showToast(wasBackendReady && backendReady ? "Workspace data reset." : "Browser data reset.");
@@ -3050,6 +3048,52 @@ function accessibleNavItems() {
   const nav = navItems.filter(([view]) => allowed.has(view));
   return nav.length ? nav : navItems.filter(([view]) => view === "dashboard");
 }
+
+function preferredAccessibleView(fallback) {
+  const access = currentAccess();
+  const hashView = viewFromHash();
+  if (hashView && access.includes(hashView)) return hashView;
+  if (isKnownView(currentView) && access.includes(currentView)) return currentView;
+  return fallback;
+}
+
+function initialView() {
+  const hashView = viewFromHash();
+  if (hashView) return hashView;
+
+  const savedView = localStorage.getItem(VIEW_KEY);
+  return isKnownView(savedView) ? savedView : "dashboard";
+}
+
+function viewFromHash() {
+  const hash = window.location.hash.replace(/^#\/?/, "");
+  const view = decodeURIComponent(hash).trim();
+  return isKnownView(view) ? view : "";
+}
+
+function isKnownView(view) {
+  return navItems.some(([key]) => key === view);
+}
+
+function setCurrentView(view, options = {}) {
+  currentView = isKnownView(view) ? view : "dashboard";
+  localStorage.setItem(VIEW_KEY, currentView);
+
+  if (options.syncHash === false) return;
+
+  const nextHash = `#${encodeURIComponent(currentView)}`;
+  if (window.location.hash !== nextHash) {
+    history.replaceState(null, "", nextHash);
+  }
+}
+
+window.addEventListener("hashchange", () => {
+  const hashView = viewFromHash();
+  if (!hashView || hashView === currentView) return;
+
+  setCurrentView(hashView, { syncHash: false });
+  render();
+});
 
 function staffUsers() {
   return auth.users.filter((user) => user.role === "staff");
