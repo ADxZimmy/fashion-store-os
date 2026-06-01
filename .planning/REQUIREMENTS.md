@@ -14,21 +14,27 @@
   Acceptance: Confirmed orders reserve estimated materials; cutting deducts actual fabric and releases unused reserve; completion deducts finishing items and records estimate-vs-actual learning.
 - Requirement: Appearance/branding settings.
   Acceptance: Users can update display name, logo, primary/accent/sidebar/success colors, background mode, and contact details.
+- Requirement: Backend-backed persistence foundation.
+  Acceptance: When served through the app backend, state and auth records load from and save to server-managed JSON files, while direct/static usage falls back to localStorage.
 
 ## Non-Functional
 
 - Requirement: Responsive, modern, calm operations UI.
   Acceptance: The app works on desktop and narrow screens without overlapping content.
-- Requirement: Persistent local state.
-  Acceptance: Refreshing the browser retains profile, records, reservations, and theme settings.
+- Requirement: Persistent workspace state.
+  Acceptance: Refreshing the browser retains profile, records, reservations, auth/session records, and theme settings through backend storage when available or browser storage as fallback.
+- Requirement: Clear async feedback.
+  Acceptance: The app shows a loading state while checking backend storage and exposes whether records are using server storage or browser fallback.
 
 ## Out Of Scope
 
 - Item: Real WhatsApp/Instagram integrations.
-- Item: Multi-user authentication and cloud database.
+- Item: Production multi-user authentication and cloud database.
 - Item: Advanced pattern-making mathematics.
 
 ## Open Questions
 
 - Question: Should a later phase migrate this static MVP into the missing existing app framework if that source tree is provided?
   Status: Open.
+- Question: Which production backend should replace the current JSON-file persistence layer?
+  Status: Open; current slice intentionally keeps persistence dependency-free.

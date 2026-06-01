@@ -11,22 +11,28 @@ This repo is the active workspace. `C:\Users\PC\Documents\Nitech\Personal\Pastry
 
 ## Stack
 
-- Static HTML/CSS/JavaScript.
+- Static HTML/CSS/JavaScript frontend.
+- Dependency-free Node backend in `server.js`.
 - Entry point: `index.html`.
 - App logic: `src/app.js`.
 - Styling: `src/styles.css`.
+- Backend runtime data: ignored JSON files under `data/`.
 - Reference assets and prompt files: `docs/`.
-- Data persistence is currently browser `localStorage`.
-- There is no build pipeline, package manager, server framework, or backend yet.
+- Data persistence uses backend JSON files when served through `node server.js`; browser `localStorage` remains the fallback.
+- There is no production database or cloud auth yet.
 
 ## How To Run
 
-Option 1: open `index.html` directly in a browser.
-
-Option 2: serve the folder locally:
+Recommended productized local run:
 
 ```powershell
-python -m http.server 4179
+npm.cmd start
+```
+
+Or:
+
+```powershell
+node server.js
 ```
 
 Then open:
@@ -35,13 +41,22 @@ Then open:
 http://localhost:4179
 ```
 
+Fallback static mode: open `index.html` directly in a browser, or serve the folder with:
+
+```powershell
+python -m http.server 4179
+```
+
+Static mode keeps using browser storage because the backend API is unavailable.
+
 ## Current Git State
 
-Current branch: `master`
+Current branch: `codex/backend-foundation`
 
 Recent commits:
 
 ```text
+f3e27d1 Add project handover
 1ad4d92 Replace native dialogs with app modals
 6c6a1aa Initial Fashion Store OS snapshot
 ```
@@ -105,6 +120,25 @@ Important limitation: this is prototype auth only. Passwords and staff records a
 - App modal includes dialog semantics, close action, Escape close handling, and focused input for restocking.
 - Verified that no `window.prompt`, `window.confirm`, `alert`, `confirm`, or `prompt` calls remain in `index.html`, `src/app.js`, or `src/styles.css`.
 
+### Backend Persistence Foundation
+
+- Added `server.js` as the first backend layer.
+- Added `package.json` with `start`, `dev`, and `check` scripts.
+- Added API endpoints:
+  - `GET /api/health`
+  - `GET /api/bootstrap`
+  - `GET /api/state`
+  - `PUT /api/state`
+  - `GET /api/auth`
+  - `PUT /api/auth`
+  - `DELETE /api/data`
+- Runtime state/auth JSON files are stored under `data/` and ignored by git.
+- Frontend now checks backend storage on boot.
+- Frontend saves state/auth to backend when available and to localStorage as fallback.
+- Reset workspace data clears backend records when available and browser records locally.
+- First launch is now truly brand-agnostic: if no profile exists, manager signup leads into business setup before the dashboard opens.
+- Added loading and storage-status UI using the UI/UX Pro Max guidance.
+
 ## Current LocalStorage Keys
 
 The app currently uses these browser storage keys:
@@ -117,24 +151,35 @@ fashion-studio-os-auth-v1
 
 Resetting local data clears app state, selected view, auth records, and staff accounts in the current browser.
 
+Backend mode stores equivalent runtime records in:
+
+```text
+data/state.json
+data/auth.json
+```
+
+Those files are intentionally ignored by git.
+
 ## Verification Already Run
 
 Latest checks:
 
 ```powershell
-node --check src\app.js
+npm.cmd run check
 rg -n "window\.prompt|window\.confirm|alert\(|confirm\(|prompt\(" src\app.js src\styles.css index.html
 ```
 
 Results:
 
 - JavaScript parse check passed.
+- `server.js` parse check passed.
 - Native dialog scan returned no matches.
 - Chrome manual check confirmed:
-  - Restock opens as an app dialog.
-  - Restock submit updates inventory, closes the modal, and shows the app toast.
-  - Reset data opens as an app dialog.
-  - Reset cancel closes the modal.
+  - Clean first launch shows manager signup.
+  - Manager signup leads to business setup.
+  - Business setup opens the dashboard with Server Storage status.
+  - Backend `/api/bootstrap` receives state/auth records.
+  - Reset workspace data clears backend and browser records back to first launch.
 
 ## UI/UX Expectations
 
@@ -160,31 +205,41 @@ Key design constraints from the owner:
 
 Suggested next work slices:
 
-1. Responsive QA pass
+1. CRM channel intake
+   - Add a backend endpoint for inbound WhatsApp/Instagram-style messages.
+   - Map source, sender, handle/phone, message, desired garment, deadline, and follow-up status into CRM Inbox inquiries.
+   - Add UI for reviewing and converting inbound channel messages.
+
+2. Production database and auth decision
+   - Choose the production backend/database stack.
+   - Replace JSON-file persistence and plaintext prototype passwords.
+   - Define user/session model and staff permissions server-side.
+
+3. Responsive QA pass
    - Check mobile, tablet, laptop, and desktop widths.
    - Verify sidebar hover/collapse behavior at each width.
    - Confirm no text overlap or broken cards.
 
-2. Auth and role hardening
+4. Auth and role hardening
    - Decide whether this remains local-only or moves to a backend.
    - Replace plaintext localStorage passwords before any real use.
    - Add stronger role names and permissions if more staff levels are needed.
 
-3. Data workflows
+5. Data workflows
    - Add import/export for studio data.
    - Add backup/restore flow.
    - Add richer order history and activity timeline.
 
-4. Form validation and empty states
+6. Form validation and empty states
    - Tighten validation for orders, measurements, inventory, and staff creation.
    - Add helpful empty states for a fresh workspace with no seed data.
 
-5. Accessibility and keyboard pass
+7. Accessibility and keyboard pass
    - Verify keyboard navigation.
    - Verify modal focus flow.
    - Check labels, contrast, focus states, and Escape behavior.
 
-6. Test strategy
+8. Test strategy
    - Add lightweight automated checks if the project remains static.
    - At minimum, keep using `node --check src\app.js` and native-dialog scans after JS changes.
 
@@ -226,6 +281,7 @@ Commit:
 ## Known Risks
 
 - Prototype authentication is not secure for production.
+- JSON-file persistence is a backend foundation only, not the final multi-user production database.
 - localStorage can be cleared by the browser or overwritten by reset.
 - There is no migration system for future localStorage schema changes.
 - No automated browser regression suite exists yet.

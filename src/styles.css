@@ -86,6 +86,57 @@ textarea:focus-visible {
   outline-offset: 2px;
 }
 
+.boot-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.boot-card {
+  width: min(560px, 100%);
+  display: grid;
+  gap: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  box-shadow: var(--shadow);
+  padding: 28px;
+}
+
+.boot-progress {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--line) 62%, transparent);
+}
+
+.boot-progress span {
+  display: block;
+  width: 38%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  animation: boot-load 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes boot-load {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(165%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .boot-progress span {
+    animation: none;
+    width: 100%;
+  }
+}
+
 .setup-page {
   min-height: 100vh;
   display: grid;
@@ -680,6 +731,30 @@ input[type="color"] {
   font-size: 0.78rem;
   font-weight: 850;
   text-transform: capitalize;
+}
+
+.data-chip {
+  gap: 8px;
+}
+
+.data-chip::before {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--muted);
+  content: "";
+}
+
+.data-chip.server::before {
+  background: var(--success);
+}
+
+.data-chip.local::before {
+  background: var(--warning);
+}
+
+.data-chip.loading::before {
+  background: var(--accent);
 }
 
 .content {

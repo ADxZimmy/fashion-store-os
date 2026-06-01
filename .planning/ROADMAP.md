@@ -2,14 +2,17 @@
 
 ## Now
 
-- Phase: Static Fashion Studio OS MVP.
-  Outcome: A usable local app with onboarding, dashboard, core modules, brand settings, recipes, and inventory workflows.
+- Phase: Backend persistence foundation.
+  Outcome: The static prototype runs behind a local backend API with server-backed state/auth persistence and local fallback.
   Status: Complete.
 
 ## Next
 
-- Phase: Channel automation layer.
-  Outcome: Message templates and routed inquiry flows for WhatsApp/Instagram style workflows.
+- Phase: CRM channel intake.
+  Outcome: WhatsApp/Instagram-style inbound messages can become CRM inbox inquiries with source, contact, message, routing status, and follow-up state.
+  Status: Next.
+- Phase: Production database and auth decision.
+  Outcome: Choose and wire the production data/auth stack, replacing JSON files and local prototype passwords.
   Status: Planned.
 
 ## Later

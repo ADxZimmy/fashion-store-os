@@ -10,16 +10,16 @@ Fashion designers, tailoring studios, garment makers, and small fashion teams th
 
 ## System Shape
 
-- Runtime: Local browser app.
-- Framework: Static HTML, CSS, and JavaScript for this first pass because no existing app source tree is present.
-- Data: Browser localStorage, matching the requested persistent first-launch profile and studio records.
-- Deployment: Open `index.html` directly or serve the folder with any static server.
+- Runtime: Node-backed local web app with static HTML, CSS, and JavaScript frontend.
+- Framework: Dependency-free Node `http` server for this backend foundation slice.
+- Data: JSON files under `data/` when served through `node server.js`; browser localStorage remains the fallback for direct file/static-server use.
+- Deployment: Run `node server.js` or `npm start`, then open `http://localhost:4179`.
 
 ## Constraints
 
 - The prompt references an existing Pastry County Kitchen OS, but this workspace only contains docs/assets.
 - Keep the product generic; Mo'orafrika direction informs the workflow, but the app must not hardcode that brand.
-- Avoid package installation unless a later phase needs it.
+- Avoid package installation unless a later phase needs it; current backend uses only Node built-ins.
 
 ## Working Agreements
 

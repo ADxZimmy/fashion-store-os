@@ -1,6 +1,10 @@
 ﻿const STORAGE_KEY = "fashion-studio-os-state-v1";
 const VIEW_KEY = "fashion-studio-os-view-v1";
 const AUTH_KEY = "fashion-studio-os-auth-v1";
+const API_BOOTSTRAP_PATH = "/api/bootstrap";
+const API_STATE_PATH = "/api/state";
+const API_AUTH_PATH = "/api/auth";
+const API_DATA_PATH = "/api/data";
 
 const app = document.getElementById("app");
 const toast = document.getElementById("toast");
@@ -96,8 +100,68 @@ let selectedClientId = state.clients[0]?.id || "";
 let draftOrderStyleId = state.styles[0]?.id || "";
 let modalState = null;
 let toastTimer;
+let backendReady = false;
+let storageMode = "loading";
+let storageMessage = "Checking server storage";
+let syncFailureAnnounced = false;
 
-render();
+renderLoading();
+initializeApp();
+
+async function initializeApp() {
+  const snapshot = await loadBackendSnapshot();
+
+  if (snapshot) {
+    const localStateExists = Boolean(localStorage.getItem(STORAGE_KEY));
+    const localAuthExists = Boolean(localStorage.getItem(AUTH_KEY));
+
+    state = normalizeState(snapshot.state || loadState());
+    auth = normalizeAuth(snapshot.auth || loadAuth());
+    persistLocalState();
+    persistLocalAuth();
+
+    if (!snapshot.stateExists && localStateExists) {
+      void saveBackendData(API_STATE_PATH, state);
+    }
+    if (!snapshot.authExists && localAuthExists) {
+      void saveBackendData(API_AUTH_PATH, auth);
+    }
+  }
+
+  authMode = auth.users.length ? "signin" : "signup";
+  selectedClientId = state.clients[0]?.id || "";
+  draftOrderStyleId = state.styles[0]?.id || "";
+  render();
+}
+
+async function loadBackendSnapshot() {
+  if (window.location.protocol === "file:") {
+    storageMode = "local";
+    storageMessage = "Browser storage";
+    return null;
+  }
+
+  try {
+    const response = await fetch(API_BOOTSTRAP_PATH, {
+      headers: { Accept: "application/json" },
+    });
+    if (!response.ok) {
+      throw new Error(`Backend responded with ${response.status}`);
+    }
+    const snapshot = await response.json();
+    backendReady = true;
+    storageMode = "server";
+    storageMessage = "Server storage";
+    syncFailureAnnounced = false;
+    return snapshot;
+  } catch (error) {
+    console.warn("Fashion Store OS backend unavailable. Using local browser storage.", error);
+    backendReady = false;
+    storageMode = "local";
+    storageMessage = "Browser storage fallback";
+    return null;
+  }
+}
 
 function loadState() {
   try {
@@ -141,12 +205,13 @@ function normalizeAuth(nextAuth = {}) {
   return { users, sessionUserId };
 }
 
-function normalizeState(nextState) {
+function normalizeState(nextState = {}) {
   const seed = createSeedState();
+  const hasProfile = Object.prototype.hasOwnProperty.call(nextState, "profile");
   return {
     ...seed,
     ...nextState,
-    profile: normalizeProfile(nextState.profile, seed.profile),
+    profile: hasProfile && nextState.profile ? normalizeProfile(nextState.profile, createDefaultProfile()) : null,
     clients: Array.isArray(nextState.clients) ? nextState.clients : seed.clients,
     inquiries: Array.isArray(nextState.inquiries) ? nextState.inquiries : seed.inquiries,
     styles: Array.isArray(nextState.styles) ? nextState.styles : seed.styles,
@@ -158,12 +223,12 @@ function normalizeState(nextState) {
 
 function createDefaultProfile() {
   return {
-    businessName: "Mo'ora Afrika",
-    displayName: "MO'ORA AFRIKA",
-    businessType: "Contemporary African Fashion / Tailoring Studio",
-    brandPersonality: "Bold, artistic, sophisticated, street-conscious, culture-driven, premium, confident",
-    tagline: "Beyond Fabric.",
-    logo: "docs/IMG-20260528-WA0028.jpg",
+    businessName: "",
+    displayName: "",
+    businessType: "Tailoring studio",
+    brandPersonality: "Precise, professional, service-led, production-aware, and client-conscious",
+    tagline: "",
+    logo: "",
     logoView: "square",
     phone: "",
     email: "",
@@ -187,7 +252,7 @@ function normalizeProfile(profile, fallback = createDefaultProfile()) {
 
 function createSeedState() {
   return {
-    profile: createDefaultProfile(),
+    profile: null,
     clients: [
       {
         id: "client-amina",
@@ -561,6 +626,23 @@ function createSeedState() {
   };
 }
 
+function renderLoading() {
+  applyTheme();
+  app.innerHTML = `
+    <main class="boot-page" aria-live="polite">
+      <section class="boot-card">
+        <div class="brand-mark">FS</div>
+        <div>
+          <p class="eyebrow">Fashion Studio OS</p>
+          <h1>Preparing your studio workspace.</h1>
+          <p class="lead">Checking server storage and loading the latest studio records.</p>
+        </div>
+        <div class="boot-progress" aria-hidden="true"><span></span></div>
+      </section>
+    </main>
+  `;
+}
+
 function render() {
   applyTheme();
 
@@ -624,11 +706,11 @@ function renderOnboarding() {
         <div class="onboarding-brand">
           ${renderBrandMark()}
           <div>
-            <p class="eyebrow">MO'ORA AFRIKA</p>
+            <p class="eyebrow">Fashion Studio OS</p>
             <h1>Studio access before studio control.</h1>
           </div>
         </div>
-        <p class="lead">Sign in, create manager access, then move into the operating dashboard for orders, clients, stock, production, and team permissions.</p>
+        <p class="lead">Sign in, create manager access, set up the business profile, then move into the operating dashboard for orders, clients, stock, production, and team permissions.</p>
         <div class="onboarding-flow" aria-label="Access flow">
           <div>
             <strong>1</strong>
@@ -757,10 +839,11 @@ function renderModal() {
   }
 
   if (modalState.type === "reset-data") {
+    const storeLabel = backendReady ? "server workspace and browser backup" : "browser storage";
     return renderConfirmModal({
-      title: "Reset local data",
-      eyebrow: "Local browser storage",
-      message: "This clears local Studio OS records, sign-in records, and staff accounts in this browser.",
+      title: "Reset workspace data",
+      eyebrow: backendReady ? "Server storage" : "Local browser storage",
+      message: `This clears Studio OS records, sign-in records, and staff accounts from ${storeLabel}.`,
       confirmAction: "confirm-reset-data",
       confirmLabel: "Reset data",
       tone: "danger",
@@ -824,7 +907,7 @@ function renderSetup() {
         <div class="panel-header">
           <div>
             <h2>Business setup</h2>
-            <p>This is saved in your browser.</p>
+            <p>This is saved to the backend when available, with browser storage as a fallback.</p>
           </div>
         </div>
         ${renderProfileFields(defaultTheme)}
@@ -870,6 +953,7 @@ function renderTopbar() {
         <p>${escapeHtml(viewSubtitle(currentView))}</p>
       </div>
       <div class="actions">
+        <span class="session-chip data-chip ${escapeHtml(storageMode)}">${escapeHtml(storageMessage)}</span>
         <span class="session-chip">${escapeHtml(user?.name || "Studio user")} · ${escapeHtml(user?.role || "staff")}</span>
         ${canAccess("settings") ? `<button class="btn secondary" type="button" data-nav="settings">Brand settings</button>` : ""}
         ${canAccess("orders") ? `<button class="btn" type="button" data-nav="orders">New garment order</button>` : ""}
@@ -1512,7 +1596,7 @@ function renderSettings() {
             <p>Update the business identity and CSS theme tokens used across the app.</p>
           </div>
           <div class="button-row">
-            <button class="btn small secondary" type="button" data-action="apply-moora-brand">Apply Mo'ora defaults</button>
+            <button class="btn small secondary" type="button" data-action="apply-premium-brand">Apply premium atelier preset</button>
             <button class="btn small secondary" type="button" data-action="apply-neutral-brand">Use neutral theme</button>
           </div>
         </div>
@@ -1529,12 +1613,13 @@ function renderSettings() {
       <section class="panel">
         <div class="panel-header">
           <div>
-            <h2>Local data</h2>
-            <p>Records are stored in this browser. Resetting returns the app to first launch with sample studio data.</p>
+            <h2>Workspace data</h2>
+            <p>Records sync to the backend when the app is served through node server.js; browser storage remains the fallback.</p>
           </div>
+          <span class="status">${escapeHtml(storageMessage)}</span>
         </div>
         <div class="button-row">
-          <button class="btn danger" type="button" data-action="reset-demo">Reset local data</button>
+          <button class="btn danger" type="button" data-action="reset-demo">Reset workspace data</button>
         </div>
       </section>
     </section>
@@ -1641,16 +1726,16 @@ function renderAccessChecks(selected = [], name = "access") {
 }
 
 function renderProfileFields(theme, profile = {}) {
-  const businessTypes = ["Contemporary African Fashion / Tailoring Studio", "Tailoring studio", "Fashion designer", "Garment maker", "Fashion brand", "Alterations studio", "Production house"];
+  const businessTypes = ["Tailoring studio", "Fashion designer", "Garment maker", "Fashion brand", "Alterations studio", "Production house", "Contemporary fashion studio"];
   return `
     <div class="form-grid">
       <label class="field">
         <span>Business name</span>
-        <input name="businessName" required value="${escapeHtml(profile.businessName || "")}" placeholder="Mo'ora Afrika">
+        <input name="businessName" required value="${escapeHtml(profile.businessName || "")}" placeholder="Needle House Studio">
       </label>
       <label class="field">
         <span>Business display name</span>
-        <input name="displayName" value="${escapeHtml(profile.displayName || profile.businessName || "")}" placeholder="MO'ORA AFRIKA">
+        <input name="displayName" value="${escapeHtml(profile.displayName || profile.businessName || "")}" placeholder="Needle House">
       </label>
       <label class="field">
         <span>Business type</span>
@@ -1798,7 +1883,7 @@ function wireEvents() {
     if (action === "complete-order") completeOrder(id);
     if (action === "cancel-order") cancelOrder(id);
     if (action === "restock-item") restockItem(id);
-    if (action === "apply-moora-brand") applyMooraBrand();
+    if (action === "apply-premium-brand") applyPremiumBrand();
     if (action === "apply-neutral-brand") applyNeutralBrand();
     if (action === "close-modal") closeModal();
     if (action === "confirm-delete-staff") confirmDeleteStaff(id);
@@ -1966,20 +2051,27 @@ async function handleProfileSubmit(form, isFirstLaunch) {
   render();
 }
 
-function applyMooraBrand() {
+function applyPremiumBrand() {
   const existing = state.profile || {};
   state.profile = normalizeProfile({
     ...existing,
-    ...createDefaultProfile(),
+    businessName: existing.businessName || "Atelier Studio",
+    displayName: existing.displayName || existing.businessName || "Atelier Studio",
+    businessType: existing.businessType || "Tailoring studio",
+    brandPersonality: "Precise, premium, client-conscious, and production-aware",
+    tagline: existing.tagline || "Measured. Made. Managed.",
+    logo: existing.logo || "",
+    logoView: existing.logoView || "square",
     phone: existing.phone || "",
     email: existing.email || "",
     address: existing.address || "",
     currency: existing.currency || "NGN",
     measurementUnit: existing.measurementUnit || "inches",
     fabricUnit: existing.fabricUnit || "yards",
+    theme: { ...defaultTheme },
   });
   saveState();
-  showToast("Mo'ora Afrika brand defaults applied.");
+  showToast("Premium atelier preset applied.");
   render();
 }
 
@@ -2469,7 +2561,22 @@ function resetLocalData() {
   render();
 }
 
-function confirmResetLocalData() {
+async function confirmResetLocalData() {
+  closeModal(false);
+  const wasBackendReady = backendReady;
+  if (backendReady) {
+    try {
+      const response = await fetch(API_DATA_PATH, { method: "DELETE", headers: { Accept: "application/json" } });
+      if (!response.ok) {
+        throw new Error(`Reset failed with ${response.status}`);
+      }
+    } catch (error) {
+      console.warn("Could not reset backend data. Clearing browser storage only.", error);
+      backendReady = false;
+      storageMode = "local";
+      storageMessage = "Browser storage fallback";
+    }
+  }
   localStorage.removeItem(STORAGE_KEY);
   localStorage.removeItem(VIEW_KEY);
   localStorage.removeItem(AUTH_KEY);
@@ -2479,8 +2586,7 @@ function confirmResetLocalData() {
   currentView = "dashboard";
   selectedClientId = state.clients[0]?.id || "";
   draftOrderStyleId = state.styles[0]?.id || "";
-  closeModal(false);
-  showToast("Local data reset.");
+  showToast(wasBackendReady && backendReady ? "Workspace data reset." : "Browser data reset.");
   render();
 }
 
@@ -2857,7 +2963,7 @@ function displayName() {
 
 function viewTitle(view) {
   const titles = {
-    dashboard: "Fashion House Control Room",
+    dashboard: "Studio Control Room",
     inquiries: "CRM Inbox",
     clients: "Client Profiles",
     measurements: "Measurements",
@@ -2867,7 +2973,7 @@ function viewTitle(view) {
     production: "Production Flow",
     settings: "Brand & Settings",
   };
-  return titles[view] || "Fashion House Control Room";
+  return titles[view] || "Studio Control Room";
 }
 
 function viewSubtitle(view) {
@@ -2954,11 +3060,51 @@ function viewLabel(view) {
 }
 
 function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  persistLocalState();
+  void saveBackendData(API_STATE_PATH, state);
 }
 
 function saveAuth() {
+  persistLocalAuth();
+  void saveBackendData(API_AUTH_PATH, auth);
+}
+
+function persistLocalState() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function persistLocalAuth() {
   localStorage.setItem(AUTH_KEY, JSON.stringify(auth));
+}
+
+async function saveBackendData(path, value) {
+  if (!backendReady) return;
+  try {
+    const response = await fetch(path, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify(value),
+    });
+    if (!response.ok) {
+      throw new Error(`Sync failed with ${response.status}`);
+    }
+    storageMode = "server";
+    storageMessage = "Server storage";
+    syncFailureAnnounced = false;
+  } catch (error) {
+    console.warn("Could not sync Studio OS data to backend. Continuing with browser storage.", error);
+    backendReady = false;
+    storageMode = "local";
+    storageMessage = "Browser storage fallback";
+    if (!syncFailureAnnounced) {
+      syncFailureAnnounced = true;
+      showToast("Server sync failed. Browser storage is still active.");
+      render();
+    }
+  }
 }
 
 function applyTheme() {
