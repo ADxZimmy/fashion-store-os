@@ -1,0 +1,164 @@
+You are working inside the Tailor/Fashion Business OS application. I want you to apply a Mo’ora Afrika branded UI direction to the app while keeping the underlying app reusable and not permanently hardcoding the brand into the core logic.
+
+Use the existing theming/appearance system if it exists. If not, create or improve a theme token system using CSS variables/design tokens so this brand treatment can be changed later from settings.
+
+Brand context:
+Mo’ora Afrika is a contemporary African fashion brand blending cultural depth, modern streetwear aesthetics, intentional storytelling, African identity, craftsmanship, and elevated luxury. The brand should feel bold, artistic, sophisticated, street-conscious, culture-driven, premium, confident, minimal, cinematic, and editorial.
+
+Brand positioning:
+Premium contemporary African fashion brand merging culture, storytelling, craftsmanship, and elevated streetwear aesthetics.
+
+UI mood:
+The application should feel like the internal operating system of a modern African luxury fashion house. It should not feel playful, childish, overly colorful, or generic SaaS. It should feel refined, dark, clean, cinematic, tactile, and intentional.
+
+Visual direction:
+
+* Minimal but striking
+* Editorial-inspired
+* Premium fashion studio energy
+* Matte finishes
+* Deep contrast
+* Spacious layout
+* Strong typography
+* Clean cards
+* Subtle borders
+* Large confident headings
+* Cinematic dashboard sections
+* Product/garment imagery should feel gallery-like if imagery exists
+* Avoid loud gradients and unnecessary decorative clutter
+
+Brand colors:
+Use this tokenized palette unless exact brand hex codes already exist in the project:
+
+Primary:
+
+* Black: #050505
+* Charcoal: #1A1A1A
+* Off White: #F5F1E8
+* Sand: #D8C3A5
+* Earth Brown: #6F4A2F
+
+Accents:
+
+* Burnt Orange: #C45A2A
+* Deep Olive: #3F4A2D
+* Metallic Silver: #B8B8B8
+
+Suggested theme tokens:
+
+* --background: #050505
+* --surface: #111111
+* --surface-elevated: #1A1A1A
+* --text-primary: #F5F1E8
+* --text-muted: #B8B8B8
+* --border: rgba(245, 241, 232, 0.12)
+* --primary: #F5F1E8
+* --accent: #C45A2A
+* --secondary-accent: #3F4A2D
+* --warm-surface: #6F4A2F
+* --sand: #D8C3A5
+* --success: #3F4A2D
+* --warning: #C45A2A
+
+Typography:
+Use a modern sans-serif style for most of the interface.
+Use an elegant serif style sparingly for editorial moments, hero headings, section intros, or brand statements if the project already has access to a serif font.
+Do not overuse the serif. The app should remain practical and readable.
+
+Logo/brand usage (logos attached):
+Use the business display name as “MO’ORA AFRIKA” or “Mo’ora Afrika” depending on where it fits best.
+The brand logo direction is bold, black-and-white, geometric, minimal, and typographic. If an image logo asset exists in the repo, use it. If not, use a clean typographic wordmark treatment without inventing a complex logo.
+The logo should look good on black and off-white backgrounds.
+
+App sections to visually adapt:
+
+* Dashboard
+* Orders
+* Clients
+* Measurements
+* Style Recipes
+* Inventory
+* Production
+* Settings
+* Login/onboarding if present
+
+Dashboard direction:
+Create a premium fashion-house control room feel.
+Use cards such as:
+
+* Active Orders
+* Fittings Due
+* Pieces in Production
+* Materials Reserved
+* Low Stock
+* Revenue/Orders Summary if supported
+* Production Pipeline
+* Recent Client Activity
+
+Copy tone:
+Use confident, intentional, modern wording.
+Avoid generic labels where a more refined phrase fits.
+Examples:
+
+* “Production Flow” instead of only “Workflow”
+* “Client Pieces” or “Garment Orders” instead of “Items”
+* “Material Reserve” instead of “Stock Hold”
+* “Style Recipes” or “Garment Blueprints” for BOM logic
+* “Fittings” for client fitting events
+* “Ready for Collection” instead of only “Completed”
+
+Do not make the app poetic to the point of being unclear. Function comes first, brand atmosphere second.
+
+Component styling:
+
+* Dark theme by default
+* Rounded cards, but not overly bubbly
+* Thin subtle borders
+* Muted sand/off-white text
+* Burnt orange only for important accents, active states, highlights, and CTAs
+* Deep olive for success/confirmed states
+* Metallic silver for muted labels and secondary metadata
+* Use generous whitespace
+* Use strong hierarchy
+* Tables should be clean and editorial, not dense and spreadsheet-like
+* Forms should feel premium and calm
+* Buttons should feel sharp, confident, and minimal
+
+Interaction states:
+
+* Active navigation item should use burnt orange or sand highlight
+* Critical low-stock alerts can use burnt orange
+* Completed/confirmed states can use deep olive
+* Neutral/in-progress states can use silver/charcoal
+* Hover states should be subtle, not flashy
+
+Important technical requirement:
+Do not hardcode Mo’ora Afrika directly into all components if the app supports business profile/theme settings. Instead:
+
+* Set Mo’ora Afrika as the current seeded/default business profile.
+* Store Mo’ora Afrika brand colors in the theme settings/default theme.
+* Keep all styling tokenized so another fashion brand can later replace the colors and business name.
+
+Seed/default business profile:
+Business name: Mo’ora Afrika
+Industry: Contemporary African Fashion / Tailoring Studio
+Brand personality: Bold, artistic, sophisticated, street-conscious, culture-driven, premium, confident
+Tagline options to use sparingly:
+
+* Rooted in Culture.
+* Identity in Motion.
+* Wear the Story.
+* Culture Refined.
+* Beyond Fabric.
+
+Use “Beyond Fabric.” only where a short tagline is needed, such as an onboarding hero or login screen.
+
+Quality bar:
+The result should feel like software for a luxury African fashion house, not a generic admin dashboard with black paint on it.
+
+After implementation:
+
+* Summarize the files changed.
+* Explain where the theme tokens live.
+* Explain how to switch the app back to generic/brand-neutral mode.
+* Mention any assets that are missing or need to be added manually, such as the final logo file.

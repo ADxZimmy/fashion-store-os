@@ -1,0 +1,338 @@
+You are working inside an existing application currently built as Pastry County Kitchen OS. I want you to transform/adapt the spine of this app into a brand-agnostic Tailor/Fashion Business OS.
+
+Do not rebuild from scratch unless absolutely necessary. First inspect the existing codebase, routes, components, state management, storage/database structure, business logic, and UI patterns. Then create a careful implementation plan using GSD and apply changes incrementally.
+
+The goal is to reuse the existing app skeleton: dashboard, customer/order flow, inquiry management, inventory management, settings, records, analytics, and business operations logic, but adapt the domain from kitchen/food production to tailoring/fashion production.
+
+Core product idea:
+This should become a generic Tailor OS / Fashion Studio OS that any fashion designer, tailoring brand, garment maker, or fashion studio can use. It should not be hardcoded to Mo’ora Afrika or any specific brand. On first launch, the user should set up their business profile.
+
+First-launch onboarding requirements:
+
+* Show a business setup screen when no business profile exists.
+* Capture business name, business type, logo upload if supported, phone, email, address, currency, preferred measurement unit, preferred fabric unit, and basic brand colors.
+* After setup, the app should use the business name throughout the UI instead of any hardcoded brand name.
+* Store this business profile persistently using the project’s existing storage/database approach.
+
+Brand/appearance settings:
+Add a simple Appearance/Branding settings section.
+Allow the user to customize:
+
+* Primary color
+* Accent color
+* Header/sidebar color
+* Highlight/success color
+* Background mode if supported
+* Logo/business mark if supported
+* Business display name
+
+Use CSS variables/design tokens so the UI can change dynamically without rewriting every component. Remove hardcoded Pastry County brand colors/names and replace them with generic theme variables.
+
+Domain conversion:
+Replace kitchen terms with tailoring/fashion terms throughout the app where appropriate.
+
+Examples:
+
+* Recipes should become Style Recipes or Garment Recipes.
+* Ingredients should become Materials.
+* Menu/items/products should become Garment Styles, Pieces, or Services.
+* Kitchen/prep flow should become Production Workflow.
+* Food inventory should become Fabric & Materials Inventory.
+* Event/catering orders should become Client Orders, Custom Orders, or Collection/Batch Orders.
+* Production notes should become Tailoring Notes, Fitting Notes, Cutting Notes, or Finishing Notes.
+
+Main modules to implement/adapt:
+
+1. Dashboard
+   Create a fashion-business dashboard showing:
+
+* Active client orders
+* New inquiries
+* Orders due soon
+* Fittings due soon
+* Production workload
+* Low stock materials
+* Reserved fabric/materials
+* Revenue/order summary if existing finance logic exists
+* Production status overview
+
+2. Client and inquiry management
+   Adapt the existing inquiry/order logic to support:
+
+* New client inquiries
+* Client contact details
+* Desired garment/style
+* Event/occasion
+* Deadline/delivery date
+* Budget if provided
+* Reference images if the current app supports attachments
+* Notes from consultation
+* Inquiry status: New, Contacted, Quoted, Confirmed, Declined, Converted to Order
+
+3. Client profiles
+   Each client should have:
+
+* Name
+* Phone
+* Email
+* Address
+* Measurement profile
+* Order history
+* Fitting notes
+* Style preferences
+* Important dates/events if useful
+
+4. Measurement system
+   Implement a flexible client measurement profile.
+   Support common measurements such as:
+
+* Shoulder
+* Chest/Bust
+* Waist
+* Hip
+* Neck
+* Sleeve length
+* Round sleeve/bicep
+* Wrist
+* Top length
+* Shirt length
+* Dress length
+* Trouser length
+* Inseam
+* Thigh
+* Knee
+* Ankle
+* Agbada length if needed
+* Cap/head measurement if needed
+* Custom measurement fields
+
+Do not make measurements rigid. Different fashion businesses need different fields. Add support for custom measurement fields per client or per garment type if possible.
+
+5. Garment/style catalog
+   Create or adapt a catalog for garment styles/services.
+   Examples:
+
+* Kaftan
+* Agbada
+* Shirt
+* Trouser
+* Two-piece set
+* Dress
+* Skirt
+* Jacket
+* Native wear
+* Casual wear
+* Custom style
+
+Each garment style should support:
+
+* Name
+* Category
+* Base price
+* Estimated production time
+* Required measurement fields
+* Style recipe/Bill of Materials
+* Optional design modifiers
+* Notes
+
+6. Style Recipe / Bill of Materials system
+   This is very important. Implement the tailoring equivalent of a recipe system.
+
+A Style Recipe should define the estimated materials required for a garment. It should support fixed materials, measurement-based materials, and design modifiers.
+
+Material calculation concept:
+Style Recipe + Client Measurements + Fabric Width + Design Details + Wastage Allowance = Estimated Material Requirement
+
+A Style Recipe should include:
+
+* Base fabric requirement
+* Fabric unit: yards/meters
+* Supported fabric widths: for example 45 inches, 54 inches, 60 inches
+* Fixed items: buttons, zippers, labels, packaging bags, hooks, snaps, etc.
+* Variable items: main fabric, lining, interfacing/stay, elastic, trims, lace, thread, embroidery thread
+* Wastage allowance percentage
+* Size adjustment rules
+* Design modifiers
+
+Examples of design modifiers:
+
+* Long sleeves: add extra fabric
+* Short sleeves: reduce fabric
+* Lining: add lining fabric
+* Flared cut: add extra fabric
+* Pleats/gathers: add extra fabric
+* Embroidery: add embroidery material/time/cost
+* Beading/stones: add embellishment quantity
+* Collar/cuff/placket: add interfacing/stay
+* Pockets: add fabric/interfacing
+* Extra length: add fabric
+* Heavy/full silhouette: add fabric
+
+The system does not need perfect advanced pattern-making mathematics at first. It should support practical estimate rules that a tailor can edit.
+
+7. Inventory management
+   Adapt inventory to tailoring materials.
+
+Inventory item types:
+
+* Fabric
+* Lining
+* Thread
+* Buttons
+* Zippers
+* Interfacing/stay
+* Elastic
+* Trims/lace
+* Embroidery materials
+* Beads/stones
+* Labels/tags
+* Packaging
+* Other materials
+
+Fabric inventory fields should include:
+
+* Fabric name
+* Fabric type
+* Color/pattern
+* Width
+* Unit: yards/meters
+* Quantity in stock
+* Reserved quantity
+* Available quantity
+* Minimum stock alert
+* Supplier
+* Cost per unit
+* Notes
+
+Non-fabric inventory fields should include:
+
+* Item name
+* Category
+* Unit type: pieces, packs, spools, cones, meters, yards, rolls, etc.
+* Quantity in stock
+* Reserved quantity
+* Available quantity
+* Minimum stock alert
+* Supplier
+* Cost per unit
+* Notes
+
+8. Inventory reservation and deduction workflow
+   Implement inventory in stages:
+
+* When an order is confirmed, reserve estimated materials.
+* When cutting begins or fabric is cut, deduct actual fabric used.
+* If actual usage is less than estimated, release the unused reserved quantity.
+* If actual usage is more than estimated, warn the user and deduct the additional amount.
+* On production completion, deduct finishing items such as buttons, labels, zippers, packaging, etc.
+* Track available stock, reserved stock, and used/consumed stock separately.
+
+9. Order management
+   Each order should include:
+
+* Client
+* Garment/style
+* Measurements used
+* Selected fabric/materials
+* Style recipe used
+* Design modifiers selected
+* Estimated material requirement
+* Reserved materials
+* Actual material usage
+* Price/quote
+* Deposit/payment status if existing finance logic supports it
+* Deadline
+* Assigned tailor/staff if supported
+* Production status
+* Notes
+
+Order statuses:
+
+* Inquiry
+* Quoted
+* Confirmed
+* Awaiting Measurements
+* Materials Reserved
+* Cutting
+* Sewing
+* Fitting
+* Adjustments
+* Finishing
+* Ready for Pickup/Delivery
+* Completed
+* Cancelled
+
+10. Production workflow
+    Create a tailoring production pipeline:
+
+* Consultation
+* Measurement Taken
+* Design Confirmed
+* Materials Reserved
+* Cutting
+* Sewing
+* First Fitting
+* Adjustments
+* Finishing
+* Quality Check
+* Ready
+* Delivered/Collected
+
+If the current Kitchen OS already has a production/prep pipeline, adapt it instead of creating a separate disconnected workflow.
+
+11. Low-stock alerts
+    Low stock should work for fabric and non-fabric materials.
+    Show alerts when:
+
+* Available quantity is below minimum stock level
+* Reserved quantity makes stock dangerously low
+* An incoming order cannot be fulfilled with available inventory
+* A style recipe requires materials that are missing from inventory
+
+12. Estimate learning system
+    Add a simple way to compare estimated material usage versus actual usage.
+    For each completed order, store:
+
+* Estimated fabric/material requirement
+* Actual fabric/material usage
+* Difference
+* Notes
+
+This should help the business refine style recipes over time.
+
+13. UI requirements
+    Keep the app clean, modern, responsive, and brand-agnostic.
+    Use generic naming by default, such as:
+
+* Tailor OS
+* Fashion Studio OS
+* Business Dashboard
+* Orders
+* Clients
+* Measurements
+* Style Recipes
+* Inventory
+* Production
+* Settings
+
+Avoid hardcoding Mo’ora Afrika, Pastry County, or any other brand into the generic app.
+
+14. Data migration / safety
+    Before making changes, identify all hardcoded Pastry County names, colors, routes, sample data, and terminology.
+    Replace them carefully with generic fashion-business terminology.
+    Do not break existing app structure unnecessarily.
+    Preserve reusable components where possible.
+    Add sensible seed/sample data for a tailoring business only if the project currently uses sample data.
+
+15. Deliverables
+    After implementation:
+
+* Summarize the files changed.
+* Explain the new data models or schema changes.
+* Explain how inventory reservation/deduction works.
+* Explain how the first-launch business setup works.
+* Explain how to customize branding from settings.
+* List any assumptions made.
+* List any remaining TODOs or recommended next improvements.
+
+Start by inspecting the codebase and producing a concise implementation plan before editing files.
