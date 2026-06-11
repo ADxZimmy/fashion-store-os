@@ -1,10 +1,10 @@
 # State
 
-Last updated: 2026-06-01
+Last updated: 2026-06-11
 
 ## Current Focus
 
-Phase 2 backend persistence foundation is implemented and verified.
+Production persistence is implemented, activated on Vercel, and verified against Supabase.
 
 ## Completed
 
@@ -23,6 +23,18 @@ Phase 2 backend persistence foundation is implemented and verified.
 - Wired frontend bootstrap/save/reset flows to backend storage with localStorage fallback.
 - Restored true brand-agnostic first launch by requiring business setup when no profile exists.
 - Added visible loading and storage-status UI.
+- Added a Vercel static deployment config with `vercel.json`, `.vercelignore`, and `scripts/build.js`.
+- Created and linked the Vercel project `nnazimuzoos-projects/fashion-store-os`.
+- Deployed the current local working tree to Vercel production at `https://fashion-store-os-navy.vercel.app`.
+- Added Vercel serverless API routes for production persistence.
+- Added a Supabase document-table migration for persisted `state` and `auth` records.
+- Added production persistence setup docs and env example.
+- Replaced the narrow JS check command with `scripts/check.js` to validate all JavaScript files.
+- Created dedicated Supabase project `Fashion Store OS` (`duimatbeahwfeghcviju`) in `us-east-1`.
+- Applied Supabase migrations for document persistence and default-workspace API access.
+- Set Vercel production env vars for Supabase persistence.
+- Deployed production build `dpl_FpW8fmK6rs2MqXxSqazPEXncU53e` with serverless API functions.
+- Verified live Supabase-backed API persistence at `https://fashion-store-os-navy.vercel.app`.
 
 ## In Progress
 
@@ -30,12 +42,12 @@ Phase 2 backend persistence foundation is implemented and verified.
 
 ## Blocked
 
-- Item: Production backend/database decision.
-  Reason: Current slice starts with dependency-free JSON persistence so product flows can move before choosing cloud infrastructure.
+- Item: Git-author/team access for direct repo-based Vercel deployments.
+  Reason: Vercel blocks deployments attributed to Git author `info@nitechsoftware.com.ng` because that author is not a member of `nnazimuzoos-projects`; clean non-Git staging deploy works as a temporary workaround.
 
 ## Next Action
 
-Start the CRM channel intake phase for WhatsApp/Instagram-style inbound messages becoming CRM inbox inquiries.
+Resolve Git-author access for direct repo-based Vercel deployments, then start the CRM channel intake phase.
 
 ## Verification Snapshot
 
@@ -59,3 +71,29 @@ Start the CRM channel intake phase for WhatsApp/Instagram-style inbound messages
   Result: Passed; no `prompt`, `confirm`, or `alert` calls in runtime app files.
 - Command/check: Runtime hardcoded brand scan
   Result: Passed; no Mo'ora/Pastry hardcoding in runtime app files.
+- Command/check: `npm.cmd run check`
+  Result: Passed after Vercel build script was added.
+- Command/check: `npm.cmd run build`
+  Result: Passed; generated 6 public files in `dist/`.
+- Command/check: `vercel deploy --yes --logs`
+  Result: Passed; deployed production target `dpl_H2EEfbKVqesoef2iRaKKLMgTWnd6`.
+- Command/check: `vercel inspect https://fashion-store-os-navy.vercel.app`
+  Result: Passed; deployment status was Ready.
+- Command/check: Live HTTP probes
+  Result: Passed for `/`, `/src/app.js`, and `/src/styles.css`; `/api/bootstrap` returned 404 as expected for the current static Vercel deployment.
+- Command/check: `npm.cmd run check`
+  Result: Passed after production API routes were added; 11 JavaScript files checked.
+- Command/check: Production API unconfigured smoke test
+  Result: Passed; `/api/health` reports storage unconfigured and `/api/bootstrap` returns a clear 503 until Supabase env vars are set.
+- Command/check: Supabase project creation
+  Result: Passed; `Fashion Store OS` project `duimatbeahwfeghcviju` is active and healthy in `us-east-1`.
+- Command/check: Supabase migrations
+  Result: Passed; migrations `create_fashion_store_os_documents` and `allow_default_workspace_document_api_access` are recorded.
+- Command/check: Supabase local store smoke test
+  Result: Passed; state/auth documents could be saved, read, and cleared through the REST helper.
+- Command/check: Vercel clean staging production deploy
+  Result: Passed; deployment `dpl_FpW8fmK6rs2MqXxSqazPEXncU53e` is Ready and aliased to `https://fashion-store-os-navy.vercel.app`.
+- Command/check: Live production API persistence
+  Result: Passed; `/api/health` reports Supabase, `/api/bootstrap` works, and live API write/read/delete completed successfully.
+- Command/check: Vercel runtime error scan
+  Result: Passed; no production error/fatal logs found for the last hour.

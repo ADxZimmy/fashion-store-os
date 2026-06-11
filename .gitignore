@@ -1,4 +1,7 @@
 node_modules/
+dist/
+.vercel/
+supabase/.temp/
 data/*.json
 data/*.tmp
 .DS_Store

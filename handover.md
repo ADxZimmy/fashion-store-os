@@ -1,6 +1,6 @@
 # Fashion Store OS Handover
 
-Last updated: 2026-06-01
+Last updated: 2026-06-11
 Current repo: `C:\Users\PC\Documents\Nitech\Personal\Fashion Store OS`
 
 ## Project Summary
@@ -18,8 +18,8 @@ This repo is the active workspace. `C:\Users\PC\Documents\Nitech\Personal\Pastry
 - Styling: `src/styles.css`.
 - Backend runtime data: ignored JSON files under `data/`.
 - Reference assets and prompt files: `docs/`.
-- Data persistence uses backend JSON files when served through `node server.js`; browser `localStorage` remains the fallback.
-- There is no production database or cloud auth yet.
+- Data persistence uses backend JSON files when served through `node server.js`, Supabase document storage on Vercel, and browser `localStorage` as fallback when no backend API is available.
+- There is no production-grade auth yet; the current access system remains a prototype.
 
 ## How To Run
 
@@ -49,6 +49,39 @@ python -m http.server 4179
 
 Static mode keeps using browser storage because the backend API is unavailable.
 
+## Live Deployment
+
+Current Vercel production URL:
+
+```text
+https://fashion-store-os-navy.vercel.app
+```
+
+Deployment target:
+
+```text
+nnazimuzoos-projects/fashion-store-os
+```
+
+Vercel deployment ID:
+
+```text
+dpl_FpW8fmK6rs2MqXxSqazPEXncU53e
+```
+
+Supabase production project:
+
+```text
+Fashion Store OS
+Project ref: duimatbeahwfeghcviju
+URL: https://duimatbeahwfeghcviju.supabase.co
+Region: us-east-1
+```
+
+Important: the current live deployment was created locally from a clean temporary staging copy, not from GitHub. Direct deploys from the repo were blocked by Vercel team-collaboration protection because the latest Git commit author (`info@nitechsoftware.com.ng`) is not a member of the Vercel team. Commit and push the config changes, then resolve Git/Vercel author access before relying on GitHub-triggered deployments.
+
+The Vercel deployment publishes the static frontend from `dist/` and serverless API routes from `api/`. Live production persistence is backed by Supabase through Vercel env vars. See `docs/production-persistence.md`.
+
 ## Current Git State
 
 Current branch: `codex/backend-foundation`
@@ -56,9 +89,27 @@ Current branch: `codex/backend-foundation`
 Recent commits:
 
 ```text
+93e407d Add backend persistence foundation
 f3e27d1 Add project handover
 1ad4d92 Replace native dialogs with app modals
 6c6a1aa Initial Fashion Store OS snapshot
+```
+
+Deployment and persistence setup files added in this slice:
+
+```text
+.gitignore
+.vercelignore
+.env.example
+package-lock.json
+package.json
+api/
+docs/production-persistence.md
+scripts/build.js
+scripts/check.js
+supabase/migrations/20260611160501_create_fashion_store_os_documents.sql
+supabase/migrations/20260611163000_allow_default_workspace_document_api_access.sql
+vercel.json
 ```
 
 Before each new work slice, run:
@@ -139,6 +190,30 @@ Important limitation: this is prototype auth only. Passwords and staff records a
 - First launch is now truly brand-agnostic: if no profile exists, manager signup leads into business setup before the dashboard opens.
 - Added loading and storage-status UI using the UI/UX Pro Max guidance.
 
+### Vercel Live Testing Deployment
+
+- Added `scripts/build.js` to create a clean `dist/` deployment bundle.
+- Added `vercel.json` with `node scripts/build.js` and `dist` as the output directory.
+- Added `.vercelignore` so planning docs, handover docs, runtime data, and large source prompt/deck files are not published.
+- Added `dist/` and `.vercel/` to `.gitignore`.
+- Deployed the app to Vercel production.
+- Verified the live HTML, JavaScript, and CSS assets return 200 responses.
+- Verified Vercel reports the deployment as Ready.
+- Earlier static-only deployment used browser storage fallback; current production deployment now includes serverless API functions.
+
+### Production Persistence Layer
+
+- Added Vercel serverless API routes under `api/`.
+- Added Supabase-backed state/auth document persistence helper.
+- Added `/api/health`, `/api/bootstrap`, `/api/state`, `/api/auth`, and `/api/data` production route equivalents.
+- Created dedicated Supabase project `Fashion Store OS` (`duimatbeahwfeghcviju`) in `us-east-1`.
+- Added Supabase migrations for `public.fashion_store_os_documents` and default-workspace API access.
+- Added `.env.example` and `docs/production-persistence.md`.
+- Updated `npm.cmd run check` to validate every JavaScript file, including API routes.
+- Set Vercel production env vars: `SUPABASE_URL`, `SUPABASE_REST_API_KEY`, and `FASHION_STORE_WORKSPACE_ID`.
+- Deployed production serverless functions from a clean non-Git staging copy to avoid Vercel's unverified Git-author block.
+- Verified live Supabase health, bootstrap, write, read, reset, and clean table state.
+
 ## Current LocalStorage Keys
 
 The app currently uses these browser storage keys:
@@ -166,6 +241,11 @@ Latest checks:
 
 ```powershell
 npm.cmd run check
+npm.cmd run build
+node scripts/check.js
+vercel deploy --yes --logs
+vercel deploy <temp-staging-path> --prod --yes --no-wait --project fashion-store-os --scope nnazimuzoos-projects
+vercel inspect https://fashion-store-os-navy.vercel.app
 rg -n "window\.prompt|window\.confirm|alert\(|confirm\(|prompt\(" src\app.js src\styles.css index.html
 ```
 
@@ -180,6 +260,23 @@ Results:
   - Business setup opens the dashboard with Server Storage status.
   - Backend `/api/bootstrap` receives state/auth records.
   - Reset workspace data clears backend and browser records back to first launch.
+- Vercel production deployment confirmed:
+  - URL: `https://fashion-store-os-navy.vercel.app`
+  - Status: Ready
+  - HTML `/`, JS `/src/app.js`, and CSS `/src/styles.css` return 200.
+  - Serverless functions present: `api/auth`, `api/bootstrap`, `api/data`, `api/health`, and `api/state`.
+- Production persistence code checks confirmed:
+  - `npm.cmd run check` validates 11 JavaScript files.
+  - `npm.cmd run build` generates the static deployment bundle.
+  - Handler smoke test without Supabase env returns clear unconfigured storage responses.
+- Supabase production persistence confirmed:
+  - Dedicated project `duimatbeahwfeghcviju` created and healthy.
+  - Migrations recorded: `create_fashion_store_os_documents`, `allow_default_workspace_document_api_access`.
+  - RLS enabled and policy scoped to `workspace_id = 'default'` and `document_key in ('state', 'auth')`.
+  - Local store smoke test passed against Supabase: empty, save, read, clear.
+  - Live `/api/health` returns `{ ok: true, storage: "supabase", workspace: "default" }`.
+  - Live API write/read/delete test passed through `https://fashion-store-os-navy.vercel.app`.
+  - Runtime error scan found no production error/fatal logs in the last hour.
 
 ## UI/UX Expectations
 
@@ -210,36 +307,42 @@ Suggested next work slices:
    - Map source, sender, handle/phone, message, desired garment, deadline, and follow-up status into CRM Inbox inquiries.
    - Add UI for reviewing and converting inbound channel messages.
 
-2. Production database and auth decision
+2. GitHub-triggered Vercel deployments
+   - Commit the current Vercel config files.
+   - Push to GitHub and connect/verify the Vercel Git integration.
+   - Resolve Vercel team access for the Git commit author or change commit authorship to a Vercel team member before relying on Git-based deployments.
+   - Decide whether `main` should deploy to production and feature branches should create preview deployments.
+
+3. Production auth decision
    - Choose the production backend/database stack.
-   - Replace JSON-file persistence and plaintext prototype passwords.
+   - Replace plaintext prototype passwords.
    - Define user/session model and staff permissions server-side.
 
-3. Responsive QA pass
+4. Responsive QA pass
    - Check mobile, tablet, laptop, and desktop widths.
    - Verify sidebar hover/collapse behavior at each width.
    - Confirm no text overlap or broken cards.
 
-4. Auth and role hardening
+5. Auth and role hardening
    - Decide whether this remains local-only or moves to a backend.
    - Replace plaintext localStorage passwords before any real use.
    - Add stronger role names and permissions if more staff levels are needed.
 
-5. Data workflows
+6. Data workflows
    - Add import/export for studio data.
    - Add backup/restore flow.
    - Add richer order history and activity timeline.
 
-6. Form validation and empty states
+7. Form validation and empty states
    - Tighten validation for orders, measurements, inventory, and staff creation.
    - Add helpful empty states for a fresh workspace with no seed data.
 
-7. Accessibility and keyboard pass
+8. Accessibility and keyboard pass
    - Verify keyboard navigation.
    - Verify modal focus flow.
    - Check labels, contrast, focus states, and Escape behavior.
 
-8. Test strategy
+9. Test strategy
    - Add lightweight automated checks if the project remains static.
    - At minimum, keep using `node --check src\app.js` and native-dialog scans after JS changes.
 
@@ -277,15 +380,19 @@ Commit:
 - Should staff access be limited to 2 permanently, or is that only for the current prototype?
 - Should Mo'ora Afrika branding assets be replaced with final production files later?
 - Should the onboarding flow include workspace setup before the dashboard opens?
+- Should Vercel deployments be driven by GitHub integration rather than local CLI deploys?
 
 ## Known Risks
 
 - Prototype authentication is not secure for production.
-- JSON-file persistence is a backend foundation only, not the final multi-user production database.
+- JSON-file persistence is local-only; Vercel production uses Supabase document persistence.
 - localStorage can be cleared by the browser or overwritten by reset.
 - There is no migration system for future localStorage schema changes.
 - No automated browser regression suite exists yet.
 - Static HTML/CSS/JS is simple and fast, but larger features may need modularization.
+- Local Vercel deployment included uncommitted config files, so GitHub-triggered deployments will not match it until those files are committed and pushed.
+- Vercel deployment from the Git repo is currently blocked by unverified Git author/team access; clean non-Git staging deploy works as a temporary workaround.
+- Prototype auth is still not production-secure even after durable persistence; a real auth/session model is a separate hardening phase.
 
 ## GSD Hybrid Skill Transfer
 

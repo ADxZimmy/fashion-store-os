@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.vercel/
+data/
+.planning/
+design-system/
+handover.md
+docs/*.pptx
+docs/*.txt
+*.tmp
