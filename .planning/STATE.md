@@ -33,7 +33,7 @@ Production persistence is implemented, activated on Vercel, and verified against
 - Created dedicated Supabase project `Fashion Store OS` (`duimatbeahwfeghcviju`) in `us-east-1`.
 - Applied Supabase migrations for document persistence and default-workspace API access.
 - Set Vercel production env vars for Supabase persistence.
-- Deployed production build `dpl_FpW8fmK6rs2MqXxSqazPEXncU53e` with serverless API functions.
+- Deployed production build `dpl_CJmKYfZibLyp74kzKt5CAjP9LF9Q` with serverless API functions from local commit `f7413d0`.
 - Verified live Supabase-backed API persistence at `https://fashion-store-os-navy.vercel.app`.
 
 ## In Progress
@@ -92,7 +92,7 @@ Resolve Git-author access for direct repo-based Vercel deployments, then start t
 - Command/check: Supabase local store smoke test
   Result: Passed; state/auth documents could be saved, read, and cleared through the REST helper.
 - Command/check: Vercel clean staging production deploy
-  Result: Passed; deployment `dpl_FpW8fmK6rs2MqXxSqazPEXncU53e` is Ready and aliased to `https://fashion-store-os-navy.vercel.app`.
+  Result: Passed; deployment `dpl_CJmKYfZibLyp74kzKt5CAjP9LF9Q` is Ready and aliased to `https://fashion-store-os-navy.vercel.app`.
 - Command/check: Live production API persistence
   Result: Passed; `/api/health` reports Supabase, `/api/bootstrap` works, and live API write/read/delete completed successfully.
 - Command/check: Vercel runtime error scan
