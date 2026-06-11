@@ -6,7 +6,7 @@ Fashion Store OS now has Vercel serverless API routes for production persistence
 
 - Vercel project: `nnazimuzoos-projects/fashion-store-os`
 - Live URL: `https://fashion-store-os-navy.vercel.app`
-- Current deployment: `dpl_CJmKYfZibLyp74kzKt5CAjP9LF9Q`
+- Current deployment can be inspected with `vercel inspect https://fashion-store-os-navy.vercel.app`
 - Supabase project: `Fashion Store OS`
 - Supabase ref: `duimatbeahwfeghcviju`
 - Supabase URL: `https://duimatbeahwfeghcviju.supabase.co`
@@ -84,7 +84,7 @@ Latest verification:
 
 Direct deployment from the Git repo is currently blocked by Vercel team-collaboration protection because the latest Git commit author, `info@nitechsoftware.com.ng`, is not a member of the Vercel team.
 
-The successful production deployment was created from a clean temporary staging copy without `.git` metadata, generated from local commit `f7413d0`:
+The successful production deployment was created from a clean temporary staging copy without `.git` metadata, generated from the local Git commit:
 
 ```powershell
 vercel deploy <temp-staging-path> --prod --yes --no-wait --project fashion-store-os --scope nnazimuzoos-projects

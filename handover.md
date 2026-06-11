@@ -63,10 +63,10 @@ Deployment target:
 nnazimuzoos-projects/fashion-store-os
 ```
 
-Vercel deployment ID:
+Check the current Vercel deployment ID:
 
-```text
-dpl_CJmKYfZibLyp74kzKt5CAjP9LF9Q
+```powershell
+vercel inspect https://fashion-store-os-navy.vercel.app
 ```
 
 Supabase production project:
@@ -78,7 +78,7 @@ URL: https://duimatbeahwfeghcviju.supabase.co
 Region: us-east-1
 ```
 
-Important: the current live deployment was created locally from a clean temporary staging copy made from local Git commit `f7413d0`, not from GitHub. Direct deploys from the repo were blocked by Vercel team-collaboration protection because the latest Git commit author (`info@nitechsoftware.com.ng`) is not a member of the Vercel team. The config changes have been pushed to GitHub; resolve Git/Vercel author access before relying on GitHub-triggered deployments.
+Important: the current live deployment is created locally from a clean temporary staging copy made from the local Git commit, not from GitHub. Direct deploys from the repo are blocked by Vercel team-collaboration protection because the Git commit author (`info@nitechsoftware.com.ng`) is not a member of the Vercel team. The config changes have been pushed to GitHub; resolve Git/Vercel author access before relying on GitHub-triggered deployments.
 
 The Vercel deployment publishes the static frontend from `dist/` and serverless API routes from `api/`. Live production persistence is backed by Supabase through Vercel env vars. See `docs/production-persistence.md`.
 
@@ -212,7 +212,7 @@ Important limitation: this is prototype auth only. Passwords and staff records a
 - Added `.env.example` and `docs/production-persistence.md`.
 - Updated `npm.cmd run check` to validate every JavaScript file, including API routes.
 - Set Vercel production env vars: `SUPABASE_URL`, `SUPABASE_REST_API_KEY`, and `FASHION_STORE_WORKSPACE_ID`.
-- Deployed production serverless functions from a clean non-Git staging copy made from local commit `f7413d0` to avoid Vercel's unverified Git-author block.
+- Deployed production serverless functions from a clean non-Git staging copy made from the local Git commit to avoid Vercel's unverified Git-author block.
 - Verified live Supabase health, bootstrap, write, read, reset, and clean table state.
 
 ## Current LocalStorage Keys
@@ -276,7 +276,7 @@ Results:
   - RLS enabled and policy scoped to `workspace_id = 'default'` and `document_key in ('state', 'auth')`.
   - Local store smoke test passed against Supabase: empty, save, read, clear.
   - Live `/api/health` returns `{ ok: true, storage: "supabase", workspace: "default" }`.
-  - Live API write/read/delete test passed through `https://fashion-store-os-navy.vercel.app` after deployment `dpl_CJmKYfZibLyp74kzKt5CAjP9LF9Q`.
+  - Live API write/read/delete test passed through `https://fashion-store-os-navy.vercel.app`.
   - Runtime error scan found no production error/fatal logs in the last hour.
 
 ## UI/UX Expectations
