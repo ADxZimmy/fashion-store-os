@@ -99,6 +99,7 @@ let authMode = auth.users.length ? "signin" : "signup";
 let selectedClientId = state.clients[0]?.id || "";
 let draftOrderStyleId = state.styles[0]?.id || "";
 let modalState = null;
+let mobileNavOpen = false;
 let toastTimer;
 let backendReady = false;
 let storageMode = "loading";
@@ -660,27 +661,51 @@ function render() {
   if (!nav.some(([view]) => view === currentView)) {
     currentView = nav[0]?.[0] || "dashboard";
   }
+  const navItemsMarkup = nav.map(([view, icon, label]) => `
+    <button class="${view === currentView ? "active" : ""}" type="button" data-nav="${view}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}">
+      <span class="nav-icon">${iconSvg(icon)}</span>
+      <span class="nav-label">${label}</span>
+    </button>
+  `).join("");
 
   app.innerHTML = `
-    <div class="shell">
-      <aside class="sidebar">
-        <div class="brand-block">
+    <div class="shell ${mobileNavOpen ? "nav-open" : ""}">
+      <a class="skip-link" href="#mainContent">Skip to workspace</a>
+      <header class="mobile-appbar">
+        <div class="mobile-brand">
           ${renderBrandMark()}
-          <div>
-            <div class="brand-name">${escapeHtml(displayName())}</div>
-            <div class="brand-meta">${escapeHtml(state.profile.businessType || "Fashion studio")}</div>
+          <div class="mobile-brand-copy">
+            <div class="mobile-brand-name">${escapeHtml(displayName())}</div>
+            <div class="mobile-brand-meta">${escapeHtml(state.profile.businessType || "Fashion studio")}</div>
           </div>
         </div>
+        <button class="mobile-menu-button" type="button" data-action="toggle-mobile-nav" aria-controls="primaryNavigation" aria-expanded="${mobileNavOpen}" aria-label="${mobileNavOpen ? "Close navigation menu" : "Open navigation menu"}">
+          <span class="menu-icon" aria-hidden="true"><span></span><span></span><span></span></span>
+          <span>Menu</span>
+        </button>
+      </header>
+      <button class="nav-backdrop" type="button" data-action="close-mobile-nav" aria-label="Close navigation menu"></button>
+      <aside class="sidebar" id="primaryNavigation">
+        <div class="brand-block">
+          <div class="drawer-brand">
+            ${renderBrandMark()}
+            <div>
+              <div class="brand-name">${escapeHtml(displayName())}</div>
+              <div class="brand-meta">${escapeHtml(state.profile.businessType || "Fashion studio")}</div>
+            </div>
+          </div>
+          <button class="drawer-close" type="button" data-action="close-mobile-nav" aria-label="Close navigation menu">
+            <span class="close-icon" aria-hidden="true"></span>
+          </button>
+        </div>
         <nav class="nav" aria-label="Primary navigation">
-          ${nav.map(([view, icon, label]) => `
-            <button class="${view === currentView ? "active" : ""}" type="button" data-nav="${view}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}">
-              <span class="nav-icon">${iconSvg(icon)}</span>
-              <span class="nav-label">${label}</span>
-            </button>
-          `).join("")}
+          ${navItemsMarkup}
         </nav>
+        <div class="drawer-actions">
+          <button class="btn secondary" type="button" data-action="sign-out">Sign out</button>
+        </div>
       </aside>
-      <main class="main">
+      <main id="mainContent" class="main" tabindex="-1">
         ${renderTopbar()}
         ${renderView()}
       </main>
@@ -689,6 +714,7 @@ function render() {
   `;
 
   wireEvents();
+  focusMobileNavControl();
   focusModalControl();
 }
 
@@ -884,6 +910,13 @@ function focusModalControl() {
   window.setTimeout(() => {
     const control = app.querySelector("[data-modal-autofocus]") || app.querySelector(".modal-card button, .modal-card input");
     control?.focus({ preventScroll: true });
+  });
+}
+
+function focusMobileNavControl() {
+  if (!mobileNavOpen) return;
+  window.setTimeout(() => {
+    app.querySelector(".drawer-close")?.focus({ preventScroll: true });
   });
 }
 
@@ -1863,6 +1896,7 @@ function wireEvents() {
     const navButton = event.target.closest("[data-nav]");
     if (navButton) {
       currentView = navButton.dataset.nav;
+      mobileNavOpen = false;
       localStorage.setItem(VIEW_KEY, currentView);
       render();
       return;
@@ -1874,6 +1908,16 @@ function wireEvents() {
     }
 
     const { action, id, label } = actionButton.dataset;
+    if (action === "toggle-mobile-nav") {
+      mobileNavOpen = !mobileNavOpen;
+      render();
+      return;
+    }
+    if (action === "close-mobile-nav") {
+      mobileNavOpen = false;
+      render();
+      return;
+    }
     if (action === "convert-inquiry") convertInquiry(id);
     if (action === "open-measurements") openMeasurements(id);
     if (action === "delete-measurement") deleteMeasurement(label);
@@ -1916,6 +1960,11 @@ function wireEvents() {
   };
 
   app.onkeydown = (event) => {
+    if (event.key === "Escape" && mobileNavOpen) {
+      mobileNavOpen = false;
+      render();
+      return;
+    }
     if (event.key === "Escape" && modalState) {
       closeModal();
     }
@@ -1999,6 +2048,7 @@ function handleSignIn(form) {
 }
 
 function signOut() {
+  mobileNavOpen = false;
   auth.sessionUserId = "";
   saveAuth();
   authMode = auth.users.length ? "signin" : "signup";
@@ -2583,6 +2633,7 @@ async function confirmResetLocalData() {
   state = createSeedState();
   auth = normalizeAuth();
   authMode = "signup";
+  mobileNavOpen = false;
   currentView = "dashboard";
   selectedClientId = state.clients[0]?.id || "";
   draftOrderStyleId = state.styles[0]?.id || "";
