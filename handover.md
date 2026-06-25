@@ -229,7 +229,7 @@ Important limitation: this is prototype auth only. Passwords and staff records a
 - Updated Vercel production env vars for `SUPABASE_URL`, `SUPABASE_REST_API_KEY`, and `FASHION_STORE_WORKSPACE_ID`.
 - Updated API health to perform a real Supabase read probe and report `supabase-unreachable` when the upstream storage layer is down.
 - Updated API error handling so bootstrap/state/auth return safe storage errors instead of a generic 500 for Supabase failures.
-- Deployed recovered production build `dpl_BxeQfmyde3kgqJ9KC7XCsWKUDuSC` from commit `bbb4581`.
+- Deployed the recovered production build from commit `bbb4581`.
 - Verified live `/api/health`, `/api/bootstrap`, API write/read/reset, empty post-test Supabase table, and clean Vercel runtime logs.
 
 ## Current LocalStorage Keys
@@ -301,7 +301,7 @@ Results:
   - Supabase security and performance advisors reported no lints.
   - Handler smoke tests confirmed unconfigured storage returns 503, unreachable Supabase returns 502, and `/api/health` returns HTTP 200 with `ok: false` diagnostics.
   - `npm.cmd run check` and `npm.cmd run build` passed after the recovery edits.
-  - Vercel production deployment `dpl_BxeQfmyde3kgqJ9KC7XCsWKUDuSC` is Ready and aliased to the live URL.
+  - Vercel production deployment is Ready and aliased to the live URL.
   - Live smoke test wrote probe state/auth records, read them through bootstrap, reset them, and confirmed the Supabase table returned to 0 documents.
 
 ## UI/UX Expectations

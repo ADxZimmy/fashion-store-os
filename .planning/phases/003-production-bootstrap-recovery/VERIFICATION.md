@@ -36,7 +36,7 @@
 ## Live Checks
 
 - Command/check: Vercel production deploy.
-  Result: Passed on 2026-06-25; deployment `dpl_BxeQfmyde3kgqJ9KC7XCsWKUDuSC` is Ready and aliased to `https://fashion-store-os-navy.vercel.app`.
+  Result: Passed on 2026-06-25; production deployment is Ready and aliased to `https://fashion-store-os-navy.vercel.app`.
 - Command/check: Live `/api/health`.
   Result: Passed on 2026-06-25; returned `ok: true`, `storage: "supabase"`, `supabaseHost: "duimatbeahwfeghcviju.supabase.co"`, and `workspace: "default"`.
 - Command/check: Live `/api/bootstrap`.
@@ -46,4 +46,4 @@
 - Command/check: Supabase cleanup verification.
   Result: Passed on 2026-06-25; `public.fashion_store_os_documents` document count returned to 0 after smoke-test cleanup.
 - Command/check: Vercel runtime error scan.
-  Result: Passed on 2026-06-25; no production error/fatal serverless logs found for deployment `dpl_BxeQfmyde3kgqJ9KC7XCsWKUDuSC` after testing.
+  Result: Passed on 2026-06-25; no production error/fatal serverless logs found after testing.

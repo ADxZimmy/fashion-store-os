@@ -4,7 +4,7 @@ Last updated: 2026-06-25
 
 ## Current Focus
 
-Production bootstrap recovery is complete. The live Vercel app is on deployment `dpl_BxeQfmyde3kgqJ9KC7XCsWKUDuSC`, Supabase is `ACTIVE_HEALTHY`, and production API persistence has passed write/read/reset verification.
+Production bootstrap recovery is complete. The live Vercel alias is healthy, Supabase is `ACTIVE_HEALTHY`, and production API persistence has passed write/read/reset verification.
 
 ## Completed
 
@@ -38,7 +38,7 @@ Production bootstrap recovery is complete. The live Vercel app is on deployment 
 - Shipped and live-audited the mobile navigation drawer at `https://fashion-store-os-navy.vercel.app`.
 - Amended the deployment commit author to a Vercel team member and pushed `codex/backend-foundation` to GitHub.
 - Restored Supabase project `duimatbeahwfeghcviju` from `INACTIVE`, reapplied migrations, updated Vercel env vars, and deployed production bootstrap diagnostics.
-- Verified live production `/api/health`, `/api/bootstrap`, API write/read/reset, empty post-test Supabase table, and clean Vercel runtime logs on deployment `dpl_BxeQfmyde3kgqJ9KC7XCsWKUDuSC`.
+- Verified live production `/api/health`, `/api/bootstrap`, API write/read/reset, empty post-test Supabase table, and clean Vercel runtime logs after the recovery deployment.
 
 ## In Progress
 
@@ -121,8 +121,8 @@ Start the CRM channel intake phase.
 - Command/check: `npm.cmd run build`
   Result: Passed on 2026-06-25; 6 public files built into `dist/`.
 - Command/check: Vercel production deploy
-  Result: Passed on 2026-06-25; deployment `dpl_BxeQfmyde3kgqJ9KC7XCsWKUDuSC` is Ready and aliased to `https://fashion-store-os-navy.vercel.app`.
+  Result: Passed on 2026-06-25; production deployment is Ready and aliased to `https://fashion-store-os-navy.vercel.app`.
 - Command/check: Live production API persistence
   Result: Passed on 2026-06-25; `/api/health` returned `ok: true`, `/api/bootstrap` worked, live API write/read/reset succeeded, and Supabase document count returned to 0 after cleanup.
 - Command/check: Vercel runtime error scan
-  Result: Passed on 2026-06-25; no production error/fatal serverless logs found for deployment `dpl_BxeQfmyde3kgqJ9KC7XCsWKUDuSC` after smoke testing.
+  Result: Passed on 2026-06-25; no production error/fatal serverless logs found after smoke testing.

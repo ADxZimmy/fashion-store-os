@@ -82,7 +82,7 @@ Latest verification:
 - Both migrations have been reapplied to the restored project.
 - Supabase security and performance advisors reported no lints after recovery.
 - Vercel production deployment is Ready.
-- Current verified deployment: `dpl_BxeQfmyde3kgqJ9KC7XCsWKUDuSC`.
+- Current verified production alias: `https://fashion-store-os-navy.vercel.app`.
 - Live `/api/health` returns `ok: true`, `storage: "supabase"`, `supabaseHost: "duimatbeahwfeghcviju.supabase.co"`, and `workspace: "default"`.
 - Live API write/read/delete test passed through the production URL on 2026-06-25.
 - Supabase document table was clean after smoke-test cleanup.
