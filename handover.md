@@ -86,14 +86,14 @@ The Vercel deployment publishes the static frontend from `dist/` and serverless 
 
 Current branch: `codex/backend-foundation`
 
-Recent commits:
+Recent shipped code commits:
 
 ```text
+bbb4581 Recover production bootstrap persistence
+fea3615 Add mobile navigation drawer
+8faf59d Avoid stale deployment identifiers in docs
+b10c2d3 Update deployment handover details
 f7413d0 Add production persistence deployment
-93e407d Add backend persistence foundation
-f3e27d1 Add project handover
-1ad4d92 Replace native dialogs with app modals
-6c6a1aa Initial Fashion Store OS snapshot
 ```
 
 Deployment and persistence setup files added in this slice:
@@ -229,6 +229,8 @@ Important limitation: this is prototype auth only. Passwords and staff records a
 - Updated Vercel production env vars for `SUPABASE_URL`, `SUPABASE_REST_API_KEY`, and `FASHION_STORE_WORKSPACE_ID`.
 - Updated API health to perform a real Supabase read probe and report `supabase-unreachable` when the upstream storage layer is down.
 - Updated API error handling so bootstrap/state/auth return safe storage errors instead of a generic 500 for Supabase failures.
+- Deployed recovered production build `dpl_BxeQfmyde3kgqJ9KC7XCsWKUDuSC` from commit `bbb4581`.
+- Verified live `/api/health`, `/api/bootstrap`, API write/read/reset, empty post-test Supabase table, and clean Vercel runtime logs.
 
 ## Current LocalStorage Keys
 
@@ -290,7 +292,7 @@ Results:
   - Migrations recorded: `create_fashion_store_os_documents`, `allow_default_workspace_document_api_access`.
   - RLS enabled and policy scoped to `workspace_id = 'default'` and `document_key in ('state', 'auth')`.
   - Local store smoke test passed against Supabase: empty, save, read, clear.
-  - Live `/api/health` returns `{ ok: true, storage: "supabase", workspace: "default" }`.
+  - Live `/api/health` returns `{ ok: true, storage: "supabase", supabaseHost: "duimatbeahwfeghcviju.supabase.co", workspace: "default" }`.
   - Live API write/read/delete test passed through `https://fashion-store-os-navy.vercel.app`.
   - Runtime error scan found no production error/fatal logs in the last hour.
 - Production bootstrap recovery checks confirmed:
@@ -299,6 +301,8 @@ Results:
   - Supabase security and performance advisors reported no lints.
   - Handler smoke tests confirmed unconfigured storage returns 503, unreachable Supabase returns 502, and `/api/health` returns HTTP 200 with `ok: false` diagnostics.
   - `npm.cmd run check` and `npm.cmd run build` passed after the recovery edits.
+  - Vercel production deployment `dpl_BxeQfmyde3kgqJ9KC7XCsWKUDuSC` is Ready and aliased to the live URL.
+  - Live smoke test wrote probe state/auth records, read them through bootstrap, reset them, and confirmed the Supabase table returned to 0 documents.
 
 ## UI/UX Expectations
 

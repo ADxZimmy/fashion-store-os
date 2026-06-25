@@ -4,7 +4,7 @@ Last updated: 2026-06-25
 
 ## Current Focus
 
-Production bootstrap recovery: the Supabase project has been restored and the API diagnostics patch is ready for Vercel deployment/live verification.
+Production bootstrap recovery is complete. The live Vercel app is on deployment `dpl_BxeQfmyde3kgqJ9KC7XCsWKUDuSC`, Supabase is `ACTIVE_HEALTHY`, and production API persistence has passed write/read/reset verification.
 
 ## Completed
 
@@ -37,12 +37,12 @@ Production bootstrap recovery: the Supabase project has been restored and the AP
 - Verified live Supabase-backed API persistence at `https://fashion-store-os-navy.vercel.app`.
 - Shipped and live-audited the mobile navigation drawer at `https://fashion-store-os-navy.vercel.app`.
 - Amended the deployment commit author to a Vercel team member and pushed `codex/backend-foundation` to GitHub.
+- Restored Supabase project `duimatbeahwfeghcviju` from `INACTIVE`, reapplied migrations, updated Vercel env vars, and deployed production bootstrap diagnostics.
+- Verified live production `/api/health`, `/api/bootstrap`, API write/read/reset, empty post-test Supabase table, and clean Vercel runtime logs on deployment `dpl_BxeQfmyde3kgqJ9KC7XCsWKUDuSC`.
 
 ## In Progress
 
-- Item: Production bootstrap recovery.
-  Owner: Codex.
-  Notes: Supabase project `duimatbeahwfeghcviju` was restored from `INACTIVE`, migrations were reapplied, Vercel production env vars were updated, and API health now probes storage reachability.
+- Item: None.
 
 ## Blocked
 
@@ -50,7 +50,7 @@ Production bootstrap recovery: the Supabase project has been restored and the AP
 
 ## Next Action
 
-Commit, push, deploy the storage-diagnostics patch, then verify live `/api/health`, `/api/bootstrap`, and write/read/delete persistence.
+Start the CRM channel intake phase.
 
 ## Verification Snapshot
 
@@ -120,3 +120,9 @@ Commit, push, deploy the storage-diagnostics patch, then verify live `/api/healt
   Result: Passed on 2026-06-25; 11 JavaScript files checked.
 - Command/check: `npm.cmd run build`
   Result: Passed on 2026-06-25; 6 public files built into `dist/`.
+- Command/check: Vercel production deploy
+  Result: Passed on 2026-06-25; deployment `dpl_BxeQfmyde3kgqJ9KC7XCsWKUDuSC` is Ready and aliased to `https://fashion-store-os-navy.vercel.app`.
+- Command/check: Live production API persistence
+  Result: Passed on 2026-06-25; `/api/health` returned `ok: true`, `/api/bootstrap` worked, live API write/read/reset succeeded, and Supabase document count returned to 0 after cleanup.
+- Command/check: Vercel runtime error scan
+  Result: Passed on 2026-06-25; no production error/fatal serverless logs found for deployment `dpl_BxeQfmyde3kgqJ9KC7XCsWKUDuSC` after smoke testing.

@@ -35,9 +35,15 @@
 
 ## Live Checks
 
-- Command/check: Pending.
-  Result: Deploy updated API diagnostics to Vercel.
-- Command/check: Pending.
-  Result: Re-test `/api/health` and `/api/bootstrap` on `https://fashion-store-os-navy.vercel.app`.
-- Command/check: Pending.
-  Result: Re-test production write/read/delete persistence after Supabase endpoint/config is restored.
+- Command/check: Vercel production deploy.
+  Result: Passed on 2026-06-25; deployment `dpl_BxeQfmyde3kgqJ9KC7XCsWKUDuSC` is Ready and aliased to `https://fashion-store-os-navy.vercel.app`.
+- Command/check: Live `/api/health`.
+  Result: Passed on 2026-06-25; returned `ok: true`, `storage: "supabase"`, `supabaseHost: "duimatbeahwfeghcviju.supabase.co"`, and `workspace: "default"`.
+- Command/check: Live `/api/bootstrap`.
+  Result: Passed on 2026-06-25; bootstrap returned successfully before and after the write/read/reset smoke test.
+- Command/check: Live production write/read/reset.
+  Result: Passed on 2026-06-25; state/auth probe records were written, read back through bootstrap, deleted through `/api/data`, and confirmed absent afterward.
+- Command/check: Supabase cleanup verification.
+  Result: Passed on 2026-06-25; `public.fashion_store_os_documents` document count returned to 0 after smoke-test cleanup.
+- Command/check: Vercel runtime error scan.
+  Result: Passed on 2026-06-25; no production error/fatal serverless logs found for deployment `dpl_BxeQfmyde3kgqJ9KC7XCsWKUDuSC` after testing.
