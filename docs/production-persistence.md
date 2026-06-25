@@ -95,11 +95,10 @@ Latest verification:
 - Supabase security and performance advisors reported no lints after recovery.
 - Vercel production deployment is Ready.
 - Current verified production alias: `https://fashion-store-os-navy.vercel.app`.
-- Current verified deployment: `dpl_893bRFqBbz2xUSXtyi2AZVNWgBjz`.
 - Live `/api/health` returns `ok: true`, `storage: "supabase"`, `supabaseHost: "duimatbeahwfeghcviju.supabase.co"`, and `workspace: "default"`.
 - Live API write/read/delete test passed through the production URL on 2026-06-25.
 - Live `/api/inbound` post/read/bootstrap/cleanup test passed on 2026-06-25 after confirming the workspace was empty.
-- Live session signup, protected state write, webhook append, authenticated bootstrap read, and reset cleanup passed on 2026-06-25 after deployment `dpl_893bRFqBbz2xUSXtyi2AZVNWgBjz`.
+- Live session signup, protected state write, webhook append, authenticated bootstrap read, and reset cleanup passed on 2026-06-25 after the next-three-phase production deployment.
 - Live Reports browser smoke reached the Reports workspace and confirmed no desktop horizontal overflow on 2026-06-25.
 - Supabase document table was clean after smoke-test cleanup.
 - Vercel production runtime error/fatal log scan found no entries after smoke testing.

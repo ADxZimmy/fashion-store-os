@@ -46,7 +46,7 @@ The next three phases are implemented, pushed, deployed to Vercel production, an
 - Added `/api/channel-webhook` for direct and Meta-style webhook payloads with optional verify-token and HMAC signature checks.
 - Verified the next three phases locally with API smoke tests, Playwright mobile/desktop checks, `npm.cmd run check`, and `npm.cmd run build`.
 - Committed and pushed `e8cb943` to `origin/codex/backend-foundation`.
-- Deployed production deployment `dpl_893bRFqBbz2xUSXtyi2AZVNWgBjz`, aliased to `https://fashion-store-os-navy.vercel.app`.
+- Deployed a Ready production build, aliased to `https://fashion-store-os-navy.vercel.app`.
 - Verified live `/api/health`, session signup/state lock/webhook/reset flow, clean post-test bootstrap, live Reports browser smoke, and clean Vercel error logs.
 
 ## In Progress
@@ -160,7 +160,7 @@ Configure real provider webhook verify/signing secrets in Vercel when WhatsApp/I
 - Command/check: Local Playwright Reports smoke
   Result: Passed on 2026-06-25 at 390px and 1280px; Reports rendered, drawer closed after mobile navigation, no horizontal overflow, and browser console had 0 errors.
 - Command/check: Vercel production deploy
-  Result: Passed on 2026-06-25; deployment `dpl_893bRFqBbz2xUSXtyi2AZVNWgBjz` is Ready and aliased to `https://fashion-store-os-navy.vercel.app`.
+  Result: Passed on 2026-06-25; production deployment is Ready and aliased to `https://fashion-store-os-navy.vercel.app`.
 - Command/check: Live production auth/webhook/reset smoke
   Result: Passed on 2026-06-25; live session signup, protected state write, unauthenticated bootstrap lock, channel webhook append, authenticated bootstrap read, and cleanup all succeeded.
 - Command/check: Live production Reports smoke
