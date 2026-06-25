@@ -1031,6 +1031,42 @@ input[type="color"] {
   margin-top: 10px;
 }
 
+.crm-metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.channel-message {
+  display: grid;
+  gap: 12px;
+}
+
+.channel-message.is-archived {
+  opacity: 0.76;
+}
+
+.channel-message-body {
+  border-left: 3px solid color-mix(in srgb, var(--accent) 48%, transparent);
+  background: color-mix(in srgb, var(--panel-strong) 64%, transparent);
+  padding: 11px 12px;
+}
+
+.channel-message-body p,
+.channel-message-note {
+  line-height: 1.55;
+}
+
+.channel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+  justify-content: space-between;
+}
+
+.channel-follow-up {
+  flex: 1 1 220px;
+}
+
 .material-table {
   display: grid;
   gap: 8px;
@@ -1547,6 +1583,16 @@ input[type="color"] {
   .pipeline,
   .checkbox-grid {
     grid-template-columns: 1fr;
+  }
+
+  .channel-actions {
+    display: grid;
+    align-items: stretch;
+  }
+
+  .channel-actions .button-row,
+  .channel-actions .btn {
+    width: 100%;
   }
 
   .material-row {

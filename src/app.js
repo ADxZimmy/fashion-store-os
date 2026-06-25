@@ -65,6 +65,9 @@ const commonMeasurements = [
 ];
 
 const inquiryStatuses = ["New", "Contacted", "Quoted", "Confirmed", "Declined", "Converted to Order"];
+const channelSources = ["WhatsApp", "Instagram", "Website", "Referral", "Walk-in"];
+const channelFollowUpStatuses = ["Needs reply", "Awaiting details", "Quote sent", "Follow-up scheduled", "Closed"];
+const channelRoutingStatuses = ["New", "Routed to Inquiry", "Archived"];
 const productionSteps = [
   "Consultation",
   "Measurement Taken",
@@ -209,17 +212,52 @@ function normalizeAuth(nextAuth = {}) {
 function normalizeState(nextState = {}) {
   const seed = createSeedState();
   const hasProfile = Object.prototype.hasOwnProperty.call(nextState, "profile");
+  const hasChannelMessages = Object.prototype.hasOwnProperty.call(nextState, "channelMessages");
   return {
     ...seed,
     ...nextState,
     profile: hasProfile && nextState.profile ? normalizeProfile(nextState.profile, createDefaultProfile()) : null,
     clients: Array.isArray(nextState.clients) ? nextState.clients : seed.clients,
     inquiries: Array.isArray(nextState.inquiries) ? nextState.inquiries : seed.inquiries,
+    channelMessages: Array.isArray(nextState.channelMessages)
+      ? normalizeChannelMessages(nextState.channelMessages)
+      : hasChannelMessages || hasProfile ? [] : seed.channelMessages,
     styles: Array.isArray(nextState.styles) ? nextState.styles : seed.styles,
     inventory: Array.isArray(nextState.inventory) ? nextState.inventory : seed.inventory,
     orders: Array.isArray(nextState.orders) ? nextState.orders : seed.orders,
     usageRecords: Array.isArray(nextState.usageRecords) ? nextState.usageRecords : seed.usageRecords,
   };
+}
+
+function normalizeChannelMessages(messages = []) {
+  return messages.map(normalizeChannelMessage).filter((message) => message.senderName || message.contact || message.message || message.desiredStyle);
+}
+
+function normalizeChannelMessage(message = {}) {
+  const channel = normalizeChoice(message.channel, channelSources, "WhatsApp");
+  const routingStatus = normalizeChoice(message.routingStatus, channelRoutingStatuses, "New");
+  const followUpStatus = normalizeChoice(message.followUpStatus, channelFollowUpStatuses, "Needs reply");
+  return {
+    id: clean(message.id) || uid("msg"),
+    channel,
+    senderName: clean(message.senderName || message.clientName || message.name),
+    contact: clean(message.contact || message.phone || message.handle || message.email),
+    message: clean(message.message || message.body || ""),
+    desiredStyle: clean(message.desiredStyle || message.garment || message.style),
+    occasion: clean(message.occasion),
+    deadline: clean(message.deadline),
+    budget: numberValue(message.budget),
+    followUpStatus,
+    routingStatus,
+    notes: clean(message.notes),
+    inquiryId: clean(message.inquiryId),
+    receivedAt: clean(message.receivedAt) || isoDate(0),
+  };
+}
+
+function normalizeChoice(value, options, fallback) {
+  const cleaned = clean(value);
+  return options.find((option) => option.toLowerCase() === cleaned.toLowerCase()) || fallback;
 }
 
 function createDefaultProfile() {
@@ -318,6 +356,40 @@ function createSeedState() {
         notes: "Needs quote for 12 adult kaftans and 6 children's outfits.",
         status: "Contacted",
         createdAt: isoDate(-2),
+      },
+    ],
+    channelMessages: [
+      {
+        id: "msg-1001",
+        channel: "Instagram",
+        senderName: "Chioma Okafor",
+        contact: "@chioma_looks",
+        message: "Hi, can you make a fitted corset dress for an asoebi? I have lace already and need a clean finish.",
+        desiredStyle: "Corset asoebi dress",
+        occasion: "Asoebi wedding",
+        deadline: isoDate(12),
+        budget: 140000,
+        followUpStatus: "Needs reply",
+        routingStatus: "New",
+        notes: "Ask for reference photos and fabric width before quoting.",
+        inquiryId: "",
+        receivedAt: isoDate(0),
+      },
+      {
+        id: "msg-1002",
+        channel: "WhatsApp",
+        senderName: "Bello Family",
+        contact: "+234 803 778 2210",
+        message: "Please send a quote for 12 adult kaftans and 6 children's outfits for our family event.",
+        desiredStyle: "Bulk kaftan order",
+        occasion: "Family event",
+        deadline: isoDate(20),
+        budget: 620000,
+        followUpStatus: "Quote sent",
+        routingStatus: "Routed to Inquiry",
+        notes: "Already captured as inquiry in the pipeline.",
+        inquiryId: "inq-1002",
+        receivedAt: isoDate(-2),
       },
     ],
     styles: [
@@ -999,6 +1071,7 @@ function renderTopbar() {
 function renderDashboard() {
   const active = state.orders.filter((order) => !["Completed", "Cancelled"].includes(order.status));
   const newInquiries = state.inquiries.filter((inquiry) => inquiry.status === "New");
+  const newChannelMessages = (state.channelMessages || []).filter((message) => message.routingStatus === "New");
   const dueSoon = ordersDueWithin(14);
   const fittingsSoon = state.orders.filter((order) => order.fittingDate && daysUntil(order.fittingDate) >= 0 && daysUntil(order.fittingDate) <= 10 && order.status !== "Completed");
   const productionWork = state.orders.filter((order) => ["Cutting", "Sewing", "First Fitting", "Adjustments", "Finishing", "Quality Check"].includes(order.productionStep));
@@ -1010,7 +1083,7 @@ function renderDashboard() {
     <section class="content dashboard-content">
       <div class="metric-grid">
         ${metricCard("Active Garment Orders", active.length, `${dueSoon.length} due in the next 14 days`, "orders", "up")}
-        ${metricCard("New Inquiries", newInquiries.length, "Route high-intent messages into tracked order drafts", "inquiries")}
+        ${metricCard("New Leads", newInquiries.length + newChannelMessages.length, `${newChannelMessages.length} raw channel messages waiting`, "inquiries")}
         ${metricCard("Fittings Due", fittingsSoon.length, "Keep approvals and alterations visible", "measurements", "hot")}
         ${metricCard("Pieces in Production", productionWork.length, "Cutting, sewing, fitting, finishing, and QC", "production")}
         ${metricCard("Low Stock Alerts", lowStock.length, lowStock.length ? "Needs attention" : "All clear", "warning", "alert")}
@@ -1099,13 +1172,93 @@ function renderDashboard() {
 }
 
 function renderInquiries() {
+  const channelMessages = normalizeChannelMessages(state.channelMessages || []);
+  const newChannelMessages = channelMessages.filter((message) => message.routingStatus === "New");
+  const activeFollowUps = channelMessages.filter((message) => message.routingStatus !== "Archived" && message.followUpStatus !== "Closed");
+  const routedMessages = channelMessages.filter((message) => message.routingStatus === "Routed to Inquiry");
+  const newInquiries = state.inquiries.filter((inquiry) => inquiry.status === "New");
+
   return `
     <section class="content">
+      <section class="metric-grid crm-metrics">
+        ${metricCard("Channel Messages", channelMessages.length, `${newChannelMessages.length} waiting for review`, "inquiries")}
+        ${metricCard("Follow-ups", activeFollowUps.length, "Replies, details, and quote nudges still open", "dashboard", activeFollowUps.length ? "hot" : "")}
+        ${metricCard("Routed Leads", routedMessages.length, "Messages already converted into inquiry records", "orders", "up")}
+        ${metricCard("New Inquiries", newInquiries.length, "Qualified requests ready for quoting", "clients")}
+      </section>
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Channel message intake</h2>
+            <p>Paste WhatsApp, Instagram, web, referral, or walk-in demand before it disappears inside a chat thread.</p>
+          </div>
+        </div>
+        <form id="channelMessageForm" class="form-grid">
+          <label class="field">
+            <span>Channel</span>
+            <select name="channel">
+              ${channelSources.map((source) => `<option>${escapeHtml(source)}</option>`).join("")}
+            </select>
+          </label>
+          <label class="field">
+            <span>Sender name</span>
+            <input name="senderName" required placeholder="Adaeze N.">
+          </label>
+          <label class="field">
+            <span>Contact</span>
+            <input name="contact" placeholder="Phone, handle, or email">
+          </label>
+          <label class="field">
+            <span>Desired garment/style</span>
+            <input name="desiredStyle" placeholder="Corset dress, kaftan, bulk order">
+          </label>
+          <label class="field">
+            <span>Occasion</span>
+            <input name="occasion" placeholder="Wedding, birthday, corporate shoot">
+          </label>
+          <label class="field">
+            <span>Deadline</span>
+            <input name="deadline" type="date">
+          </label>
+          <label class="field">
+            <span>Budget</span>
+            <input name="budget" type="number" min="0" step="1000">
+          </label>
+          <label class="field">
+            <span>Follow-up state</span>
+            <select name="followUpStatus">
+              ${channelFollowUpStatuses.map((status) => `<option>${escapeHtml(status)}</option>`).join("")}
+            </select>
+          </label>
+          <label class="field full">
+            <span>Raw message</span>
+            <textarea name="message" required placeholder="Paste the chat message, DM, web note, or walk-in request"></textarea>
+          </label>
+          <label class="field full">
+            <span>Internal notes</span>
+            <textarea name="notes" placeholder="Reference image status, fabric notes, sizing questions, next response"></textarea>
+          </label>
+          <div class="field full">
+            <button class="btn" type="submit">Save channel message</button>
+          </div>
+        </form>
+      </section>
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Channel intake queue</h2>
+            <p>Review raw messages, update follow-up state, then route qualified demand into the inquiry pipeline.</p>
+          </div>
+        </div>
+        <div class="list channel-message-list">
+          ${channelMessages.map(renderChannelMessageCard).join("") || emptyState("No channel messages yet.")}
+        </div>
+      </section>
       <section class="panel">
         <div class="panel-header">
           <div>
             <h2>New client inquiry</h2>
-            <p>Capture the conversation context before it disappears inside a chat thread.</p>
+            <p>Add a qualified inquiry directly when the conversation is already clear enough to quote.</p>
           </div>
         </div>
         <form id="inquiryForm" class="form-grid">
@@ -1116,11 +1269,7 @@ function renderInquiries() {
           <label class="field">
             <span>Channel</span>
             <select name="channel">
-              <option>WhatsApp</option>
-              <option>Instagram</option>
-              <option>Walk-in</option>
-              <option>Referral</option>
-              <option>Website</option>
+              ${channelSources.map((source) => `<option>${escapeHtml(source)}</option>`).join("")}
             </select>
           </label>
           <label class="field">
@@ -1186,6 +1335,45 @@ function renderInquiries() {
         </div>
       </section>
     </section>
+  `;
+}
+
+function renderChannelMessageCard(message) {
+  const canRoute = message.routingStatus !== "Routed to Inquiry";
+  const isArchived = message.routingStatus === "Archived";
+  return `
+    <article class="record channel-message ${isArchived ? "is-archived" : ""}">
+      <div class="record-header">
+        <div class="title-line">
+          <strong>${escapeHtml(message.senderName || message.contact || "Unknown sender")}</strong>
+          <span class="muted small-text">${escapeHtml(message.channel)}${message.contact ? ` - ${escapeHtml(message.contact)}` : ""}</span>
+        </div>
+        <span class="status ${statusTone(message.routingStatus)}">${escapeHtml(message.routingStatus)}</span>
+      </div>
+      <div class="channel-message-body">
+        <p>${escapeHtml(message.message || "No raw message captured.")}</p>
+      </div>
+      <div class="tag-list">
+        ${message.desiredStyle ? `<span class="pill">${escapeHtml(message.desiredStyle)}</span>` : ""}
+        ${message.occasion ? `<span class="pill">${escapeHtml(message.occasion)}</span>` : ""}
+        ${message.deadline ? `<span class="pill">Due ${formatDate(message.deadline)}</span>` : ""}
+        ${message.budget ? `<span class="pill">Budget ${money(message.budget)}</span>` : ""}
+        <span class="pill">Received ${formatDate(String(message.receivedAt || "").slice(0, 10))}</span>
+      </div>
+      ${message.notes ? `<p class="muted small-text channel-message-note">${escapeHtml(message.notes)}</p>` : ""}
+      <div class="channel-actions">
+        <label class="field channel-follow-up">
+          <span>Follow-up</span>
+          <select data-channel-followup="${escapeHtml(message.id)}" aria-label="Follow-up status for ${escapeHtml(message.senderName || message.contact || "message")}">
+            ${channelFollowUpStatuses.map((status) => `<option ${status === message.followUpStatus ? "selected" : ""}>${escapeHtml(status)}</option>`).join("")}
+          </select>
+        </label>
+        <div class="button-row">
+          ${canRoute ? `<button class="btn small" type="button" data-action="route-channel-message" data-id="${escapeHtml(message.id)}">Route to inquiry</button>` : `<button class="btn small secondary" type="button" data-nav="inquiries">In pipeline</button>`}
+          ${isArchived ? `<button class="btn small secondary" type="button" data-action="reopen-channel-message" data-id="${escapeHtml(message.id)}">Reopen</button>` : `<button class="btn small secondary" type="button" data-action="archive-channel-message" data-id="${escapeHtml(message.id)}">Archive</button>`}
+        </div>
+      </div>
+    </article>
   `;
 }
 
@@ -1918,6 +2106,9 @@ function wireEvents() {
       render();
       return;
     }
+    if (action === "route-channel-message") routeChannelMessage(id);
+    if (action === "archive-channel-message") updateChannelRouting(id, "Archived");
+    if (action === "reopen-channel-message") updateChannelRouting(id, "New");
     if (action === "convert-inquiry") convertInquiry(id);
     if (action === "open-measurements") openMeasurements(id);
     if (action === "delete-measurement") deleteMeasurement(label);
@@ -1957,6 +2148,15 @@ function wireEvents() {
         render();
       }
     }
+    if (target.matches("[data-channel-followup]")) {
+      const message = state.channelMessages.find((item) => item.id === target.dataset.channelFollowup);
+      if (message) {
+        message.followUpStatus = normalizeChoice(target.value, channelFollowUpStatuses, "Needs reply");
+        saveState();
+        showToast("Follow-up state updated.");
+        render();
+      }
+    }
   };
 
   app.onkeydown = (event) => {
@@ -1979,6 +2179,7 @@ function wireEvents() {
     if (form.id === "settingsForm") handleProfileSubmit(form, false);
     if (form.id === "staffForm") handleStaffSubmit(form);
     if (form.dataset.staffAccess) handleStaffAccessSubmit(form);
+    if (form.id === "channelMessageForm") handleChannelMessageSubmit(form);
     if (form.id === "inquiryForm") handleInquirySubmit(form);
     if (form.id === "clientForm") handleClientSubmit(form);
     if (form.id === "measurementForm") handleMeasurementSubmit(form);
@@ -2236,6 +2437,35 @@ function handleInquirySubmit(form) {
   render();
 }
 
+function handleChannelMessageSubmit(form) {
+  const data = new FormData(form);
+  const message = normalizeChannelMessage({
+    id: uid("msg"),
+    channel: data.get("channel"),
+    senderName: data.get("senderName"),
+    contact: data.get("contact"),
+    message: data.get("message"),
+    desiredStyle: data.get("desiredStyle"),
+    occasion: data.get("occasion"),
+    deadline: data.get("deadline"),
+    budget: data.get("budget"),
+    followUpStatus: data.get("followUpStatus"),
+    routingStatus: "New",
+    notes: data.get("notes"),
+    receivedAt: isoDate(0),
+  });
+
+  if (!message.senderName || !message.message) {
+    showToast("Add a sender name and raw message before saving.");
+    return;
+  }
+
+  state.channelMessages.unshift(message);
+  saveState();
+  showToast("Channel message saved.");
+  render();
+}
+
 function handleClientSubmit(form) {
   const data = new FormData(form);
   const client = {
@@ -2415,6 +2645,61 @@ function convertInquiry(id) {
   saveState();
   showToast("Inquiry converted to an order draft.");
   render();
+}
+
+function routeChannelMessage(id) {
+  const message = state.channelMessages.find((item) => item.id === id);
+  if (!message) return;
+
+  const inquiry = {
+    id: uid("inq"),
+    clientName: message.senderName || message.contact || "Channel lead",
+    channel: message.channel,
+    contact: message.contact,
+    desiredStyle: message.desiredStyle || "Custom garment",
+    occasion: message.occasion,
+    deadline: message.deadline,
+    budget: message.budget,
+    notes: channelMessageInquiryNotes(message),
+    status: "New",
+    sourceMessageId: message.id,
+    followUpStatus: message.followUpStatus,
+    createdAt: isoDate(0),
+  };
+
+  state.inquiries.unshift(inquiry);
+  message.routingStatus = "Routed to Inquiry";
+  message.inquiryId = inquiry.id;
+  if (message.followUpStatus === "Needs reply") {
+    message.followUpStatus = "Follow-up scheduled";
+  }
+
+  saveState();
+  showToast("Channel message routed into the inquiry pipeline.");
+  render();
+}
+
+function updateChannelRouting(id, routingStatus) {
+  const message = state.channelMessages.find((item) => item.id === id);
+  if (!message) return;
+  message.routingStatus = normalizeChoice(routingStatus, channelRoutingStatuses, "New");
+  if (message.routingStatus === "Archived" && message.followUpStatus !== "Closed") {
+    message.followUpStatus = "Closed";
+  }
+  if (message.routingStatus === "New" && message.followUpStatus === "Closed") {
+    message.followUpStatus = "Needs reply";
+  }
+  saveState();
+  showToast(message.routingStatus === "Archived" ? "Channel message archived." : "Channel message reopened.");
+  render();
+}
+
+function channelMessageInquiryNotes(message) {
+  return [
+    message.message ? `Channel message: ${message.message}` : "",
+    message.notes ? `Internal notes: ${message.notes}` : "",
+    message.followUpStatus ? `Follow-up: ${message.followUpStatus}` : "",
+  ].filter(Boolean).join("\n");
 }
 
 function openMeasurements(id) {
@@ -3044,8 +3329,9 @@ function viewSubtitle(view) {
 
 function statusTone(status) {
   if (["Completed", "Confirmed", "Converted to Order", "Ready for Pickup/Delivery", "Ready for Collection", "Ready"].includes(status)) return "success";
+  if (["Routed to Inquiry"].includes(status)) return "success";
   if (["New", "Quoted", "Materials Reserved", "Cutting", "Sewing", "Fitting", "Adjustments", "Finishing", "Quality Check"].includes(status)) return "warning";
-  if (["Declined", "Cancelled"].includes(status)) return "danger";
+  if (["Declined", "Cancelled", "Archived"].includes(status)) return "danger";
   return "";
 }
 

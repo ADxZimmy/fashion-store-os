@@ -1,6 +1,7 @@
 const http = require("http");
 const path = require("path");
 const fs = require("fs/promises");
+const { appendInboundMessage, normalizeChannelMessages } = require("./api/_inbound");
 
 const ROOT_DIR = __dirname;
 const DATA_DIR = path.join(ROOT_DIR, "data");
@@ -52,6 +53,12 @@ async function routeRequest(request, response) {
 }
 
 async function routeApi(request, response, url) {
+  if (request.method === "OPTIONS" && url.pathname === "/api/inbound") {
+    response.writeHead(204, { Allow: "GET, POST, OPTIONS" });
+    response.end();
+    return;
+  }
+
   if (request.method === "GET" && url.pathname === "/api/health") {
     sendJson(response, 200, { ok: true, storage: "json-file", timestamp: new Date().toISOString() });
     return;
@@ -68,6 +75,23 @@ async function routeApi(request, response, url) {
       auth: authResult.value,
       authExists: authResult.exists,
     });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/inbound") {
+    const result = await readJsonWithExists(STATE_FILE);
+    sendJson(response, 200, {
+      messages: normalizeChannelMessages(result.value?.channelMessages),
+      exists: result.exists,
+    });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/inbound") {
+    const result = await readJsonWithExists(STATE_FILE);
+    const next = appendInboundMessage(result.value || {}, await readJsonBody(request));
+    await writeJsonAtomic(STATE_FILE, next.state);
+    sendJson(response, 201, { ok: true, message: next.message });
     return;
   }
 

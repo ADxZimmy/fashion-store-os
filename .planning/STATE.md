@@ -4,7 +4,7 @@ Last updated: 2026-06-25
 
 ## Current Focus
 
-Production bootstrap recovery is complete. The live Vercel alias is healthy, Supabase is `ACTIVE_HEALTHY`, and production API persistence has passed write/read/reset verification.
+CRM channel intake is in progress: add a raw channel message queue, routing/follow-up workflow, and same-origin inbound API for WhatsApp/Instagram-style messages.
 
 ## Completed
 
@@ -42,7 +42,9 @@ Production bootstrap recovery is complete. The live Vercel alias is healthy, Sup
 
 ## In Progress
 
-- Item: None.
+- Item: CRM channel intake.
+  Owner: Codex.
+  Notes: Phase artifacts live under `.planning/phases/004-crm-channel-intake/`.
 
 ## Blocked
 
@@ -50,7 +52,7 @@ Production bootstrap recovery is complete. The live Vercel alias is healthy, Sup
 
 ## Next Action
 
-Start the CRM channel intake phase.
+Implement `channelMessages`, `/api/inbound`, and CRM Inbox routing controls, then verify locally and live.
 
 ## Verification Snapshot
 
