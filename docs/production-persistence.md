@@ -22,6 +22,8 @@ Fashion Store OS now has Vercel serverless API routes for production persistence
   - `GET /api/auth`
   - `PUT /api/auth`
   - `DELETE /api/data`
+  - `GET /api/inbound`
+  - `POST /api/inbound`
 - Local development can still run `npm.cmd start` and use `server.js` with JSON files under `data/`.
 - Vercel production uses files under `api/` and stores documents in Supabase.
 
@@ -72,6 +74,7 @@ Expected:
 
 - `/api/health` returns `ok: true`, `storage: "supabase"`, the redacted `supabaseHost`, and `workspace: "default"`.
 - `/api/bootstrap` returns state/auth payloads or `stateExists: false`, `authExists: false`.
+- `/api/inbound` accepts a JSON channel message, appends it to `state.channelMessages`, and returns the normalized message.
 - Creating a manager/profile in the live app persists after refresh and across browsers.
 
 If storage is unreachable, `/api/health` still returns HTTP 200 with `ok: false` and `storage: "supabase-unreachable"` so monitors and humans can distinguish an app outage from an upstream Supabase issue.
@@ -85,6 +88,7 @@ Latest verification:
 - Current verified production alias: `https://fashion-store-os-navy.vercel.app`.
 - Live `/api/health` returns `ok: true`, `storage: "supabase"`, `supabaseHost: "duimatbeahwfeghcviju.supabase.co"`, and `workspace: "default"`.
 - Live API write/read/delete test passed through the production URL on 2026-06-25.
+- Live `/api/inbound` post/read/bootstrap/cleanup test passed on 2026-06-25 after confirming the workspace was empty.
 - Supabase document table was clean after smoke-test cleanup.
 - Vercel production runtime error/fatal log scan found no entries after smoke testing.
 

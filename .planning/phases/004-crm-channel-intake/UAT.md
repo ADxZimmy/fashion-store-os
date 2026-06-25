@@ -6,8 +6,8 @@ In CRM Inbox, paste or submit a WhatsApp/Instagram-style message from a potentia
 
 ## Result
 
-Pending.
+Passed on 2026-06-25.
 
 ## Notes
 
-Passing UAT means the raw channel message remains traceable, the generated inquiry has the expected client/source/request/deadline context, and the queue clearly shows whether the message is new, routed, or archived.
+The local browser smoke confirmed a raw channel message can be saved, follow-up state can be changed, the message can be routed into the inquiry pipeline, and the generated inquiry keeps the source/request context. The live endpoint smoke confirmed `/api/inbound` can persist a WhatsApp/Instagram-style payload into production state and that cleanup returns the Supabase table to an empty state.

@@ -89,11 +89,11 @@ Current branch: `codex/backend-foundation`
 Recent shipped code commits:
 
 ```text
+80bb19a Add CRM channel intake workflow
 bbb4581 Recover production bootstrap persistence
 fea3615 Add mobile navigation drawer
 8faf59d Avoid stale deployment identifiers in docs
 b10c2d3 Update deployment handover details
-f7413d0 Add production persistence deployment
 ```
 
 Deployment and persistence setup files added in this slice:
@@ -184,6 +184,8 @@ Important limitation: this is prototype auth only. Passwords and staff records a
   - `GET /api/auth`
   - `PUT /api/auth`
   - `DELETE /api/data`
+  - `GET /api/inbound`
+  - `POST /api/inbound`
 - Runtime state/auth JSON files are stored under `data/` and ignored by git.
 - Frontend now checks backend storage on boot.
 - Frontend saves state/auth to backend when available and to localStorage as fallback.
@@ -231,6 +233,17 @@ Important limitation: this is prototype auth only. Passwords and staff records a
 - Updated API error handling so bootstrap/state/auth return safe storage errors instead of a generic 500 for Supabase failures.
 - Deployed the recovered production build from commit `bbb4581`.
 - Verified live `/api/health`, `/api/bootstrap`, API write/read/reset, empty post-test Supabase table, and clean Vercel runtime logs.
+
+### CRM Channel Intake
+
+- Added `channelMessages` to the workspace state model.
+- Added a CRM Inbox channel message intake form for WhatsApp, Instagram, Website, Referral, and Walk-in sources.
+- Added a channel intake queue with source, sender/contact, message, desired garment, occasion, deadline, budget, routing status, and follow-up state.
+- Added route-to-inquiry, archive, reopen, and follow-up update actions.
+- Added `/api/inbound` for local and Vercel production so same-origin JSON posts can append inbound channel messages to persisted state.
+- Updated the dashboard demand metric to count raw channel messages as new leads until they are routed.
+- Deployed the CRM channel intake build from commit `80bb19a`.
+- Verified local endpoint behavior, local mobile/desktop browser flow, live `/api/inbound`, live asset presence, Supabase cleanup, and Vercel runtime logs.
 
 ## Current LocalStorage Keys
 
@@ -282,7 +295,7 @@ Results:
   - URL: `https://fashion-store-os-navy.vercel.app`
   - Status: Ready
   - HTML `/`, JS `/src/app.js`, and CSS `/src/styles.css` return 200.
-  - Serverless functions present: `api/auth`, `api/bootstrap`, `api/data`, `api/health`, and `api/state`.
+  - Serverless functions present: `api/auth`, `api/bootstrap`, `api/data`, `api/health`, `api/inbound`, and `api/state`.
 - Production persistence code checks confirmed:
   - `npm.cmd run check` validates 11 JavaScript files.
   - `npm.cmd run build` generates the static deployment bundle.
@@ -303,6 +316,14 @@ Results:
   - `npm.cmd run check` and `npm.cmd run build` passed after the recovery edits.
   - Vercel production deployment is Ready and aliased to the live URL.
   - Live smoke test wrote probe state/auth records, read them through bootstrap, reset them, and confirmed the Supabase table returned to 0 documents.
+- CRM channel intake checks confirmed:
+  - `npm.cmd run check` validates 13 JavaScript files after adding `api/_inbound.js` and `api/inbound.js`.
+  - `npm.cmd run build` passes.
+  - Local `/api/inbound` POST normalizes lowercase channel/follow-up values, persists to bootstrap state, and cleans up.
+  - Local browser smoke passed at 390px and 1280px: save channel message, update follow-up, route to inquiry, and no horizontal overflow.
+  - Live `/api/inbound` POST appeared in `/api/inbound` and `/api/bootstrap`, then cleanup returned state/auth to absent.
+  - Live `src/app.js` contains the channel intake queue and route action code.
+  - Vercel runtime error/fatal logs were clean after live smoke testing.
 
 ## UI/UX Expectations
 
@@ -328,10 +349,10 @@ Key design constraints from the owner:
 
 Suggested next work slices:
 
-1. CRM channel intake
-   - Add a backend endpoint for inbound WhatsApp/Instagram-style messages.
-   - Map source, sender, handle/phone, message, desired garment, deadline, and follow-up status into CRM Inbox inquiries.
-   - Add UI for reviewing and converting inbound channel messages.
+1. Production auth hardening
+   - Replace plaintext prototype passwords.
+   - Decide whether to use Supabase Auth or a different server-side auth/session model.
+   - Move staff permissions server-side and define workspace authorization rules.
 
 2. GitHub-triggered Vercel deployments
    - GitHub is being kept updated from `codex/backend-foundation`.
@@ -339,10 +360,9 @@ Suggested next work slices:
    - Decide whether `main` should deploy to production and feature branches should create preview deployments.
    - Decide whether `main` should deploy to production and feature branches should create preview deployments.
 
-3. Production auth decision
-   - Choose the production backend/database stack.
-   - Replace plaintext prototype passwords.
-   - Define user/session model and staff permissions server-side.
+3. Real channel integrations
+   - Wire WhatsApp Business API or Instagram Graph API into `/api/inbound`.
+   - Add webhook signature verification and platform delivery/error logging.
 
 4. Responsive QA pass
    - Check mobile, tablet, laptop, and desktop widths.

@@ -4,7 +4,7 @@ Last updated: 2026-06-25
 
 ## Current Focus
 
-CRM channel intake is in progress: add a raw channel message queue, routing/follow-up workflow, and same-origin inbound API for WhatsApp/Instagram-style messages.
+CRM channel intake is complete. The live app has a raw channel message queue, routing/follow-up workflow, and same-origin `/api/inbound` endpoint for WhatsApp/Instagram-style messages.
 
 ## Completed
 
@@ -39,12 +39,12 @@ CRM channel intake is in progress: add a raw channel message queue, routing/foll
 - Amended the deployment commit author to a Vercel team member and pushed `codex/backend-foundation` to GitHub.
 - Restored Supabase project `duimatbeahwfeghcviju` from `INACTIVE`, reapplied migrations, updated Vercel env vars, and deployed production bootstrap diagnostics.
 - Verified live production `/api/health`, `/api/bootstrap`, API write/read/reset, empty post-test Supabase table, and clean Vercel runtime logs after the recovery deployment.
+- Added CRM channel intake with `channelMessages`, a CRM Inbox intake queue, route/archive/follow-up controls, and local/Vercel `/api/inbound` routes.
+- Verified live `/api/inbound` post/read/bootstrap/cleanup, deployed CRM intake assets, empty post-test Supabase table, and clean Vercel runtime logs.
 
 ## In Progress
 
-- Item: CRM channel intake.
-  Owner: Codex.
-  Notes: Phase artifacts live under `.planning/phases/004-crm-channel-intake/`.
+- Item: None.
 
 ## Blocked
 
@@ -52,7 +52,7 @@ CRM channel intake is in progress: add a raw channel message queue, routing/foll
 
 ## Next Action
 
-Implement `channelMessages`, `/api/inbound`, and CRM Inbox routing controls, then verify locally and live.
+Start the production auth hardening phase.
 
 ## Verification Snapshot
 
@@ -128,3 +128,19 @@ Implement `channelMessages`, `/api/inbound`, and CRM Inbox routing controls, the
   Result: Passed on 2026-06-25; `/api/health` returned `ok: true`, `/api/bootstrap` worked, live API write/read/reset succeeded, and Supabase document count returned to 0 after cleanup.
 - Command/check: Vercel runtime error scan
   Result: Passed on 2026-06-25; no production error/fatal serverless logs found after smoke testing.
+- Command/check: `npm.cmd run check`
+  Result: Passed on 2026-06-25 after CRM channel intake; 13 JavaScript files checked.
+- Command/check: `npm.cmd run build`
+  Result: Passed on 2026-06-25 after CRM channel intake; 6 public files built into `dist/`.
+- Command/check: Local `/api/inbound` smoke
+  Result: Passed on 2026-06-25; POST normalized lowercase source/status values, appeared in bootstrap state, and cleanup removed test data.
+- Command/check: Local browser CRM smoke
+  Result: Passed on 2026-06-25 at 390px and 1280px; channel message save, follow-up update, route-to-inquiry, and no-horizontal-overflow checks passed.
+- Command/check: Vercel production deploy
+  Result: Passed on 2026-06-25; production deployment is Ready and aliased to `https://fashion-store-os-navy.vercel.app`.
+- Command/check: Live `/api/inbound` smoke
+  Result: Passed on 2026-06-25; live POST appeared in `/api/inbound` and `/api/bootstrap`, then `/api/data` cleanup returned state/auth to absent.
+- Command/check: Live asset check
+  Result: Passed on 2026-06-25; production `src/app.js` contains channel intake, route action, and intake queue code.
+- Command/check: Vercel runtime error scan
+  Result: Passed on 2026-06-25; no production error/fatal serverless logs found for the CRM intake deployment after smoke testing.

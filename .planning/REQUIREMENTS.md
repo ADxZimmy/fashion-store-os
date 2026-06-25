@@ -16,6 +16,8 @@
   Acceptance: Users can update display name, logo, primary/accent/sidebar/success colors, background mode, and contact details.
 - Requirement: Backend-backed persistence foundation.
   Acceptance: When served through the local app backend, state and auth records load from and save to server-managed JSON files; when deployed on Vercel, the same API contract persists state and auth records to Supabase; direct/static usage falls back to localStorage.
+- Requirement: CRM channel intake.
+  Acceptance: WhatsApp/Instagram-style messages can be captured as raw channel records with source, sender/contact, message, desired garment, deadline, routing status, and follow-up state, then routed into the CRM inquiry pipeline.
 
 ## Non-Functional
 

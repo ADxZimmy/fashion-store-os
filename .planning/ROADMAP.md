@@ -2,14 +2,14 @@
 
 ## Now
 
-- Phase: CRM channel intake.
-  Outcome: WhatsApp/Instagram-style inbound messages can become CRM inbox inquiries with source, contact, message, routing status, and follow-up state.
+- Phase: Production auth hardening.
+  Outcome: Replace local prototype passwords and shared workspace access with a production authentication/authorization model.
   Status: Next.
 
 ## Next
 
-- Phase: Production auth hardening.
-  Outcome: Replace local prototype passwords and shared workspace access with a production authentication/authorization model.
+- Phase: Intelligence and reporting.
+  Outcome: AI reply drafts, auto-quote drafts, smart stock alerts, and richer reports.
   Status: Planned.
 
 ## Done
@@ -20,9 +20,8 @@
 - Phase: Production bootstrap recovery.
   Outcome: Vercel production APIs accurately report Supabase reachability, `/api/bootstrap` no longer masks storage failures, and the live app can persist/reload state from an active Supabase project.
   Status: Complete.
+- Phase: CRM channel intake.
+  Outcome: WhatsApp/Instagram-style inbound messages can become CRM inbox inquiries with source, contact, message, routing status, and follow-up state.
+  Status: Complete.
 
 ## Later
-
-- Phase: Intelligence and reporting.
-  Outcome: AI reply drafts, auto-quote drafts, smart stock alerts, and richer reports.
-  Status: Planned.
