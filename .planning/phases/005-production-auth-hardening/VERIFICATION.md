@@ -11,12 +11,18 @@
 - Command: `npm.cmd run build`
   Result: Passed on 2026-06-25.
   Notes: Built 6 public files into `dist/`.
+- Command: Live production auth smoke at `https://fashion-store-os-navy.vercel.app`.
+  Result: Passed on 2026-06-25.
+  Notes: Session signup returned a sanitized auth payload, protected state write succeeded with the session, unauthenticated bootstrap locked state, and `/api/data` cleanup returned state/auth to absent.
 
 ## Manual Checks
 
 - Check: Smoke data cleanup.
   Result: Passed on 2026-06-25.
   Notes: Local `data/` was returned to only `.gitkeep` after verification.
+- Check: Production cleanup.
+  Result: Passed on 2026-06-25.
+  Notes: Live `/api/bootstrap` returned `stateExists: false` and `authExists: false` after smoke cleanup.
 
 ## Residual Risk
 

@@ -4,7 +4,7 @@ Last updated: 2026-06-25
 
 ## Current Focus
 
-The next three phases are implemented and locally verified; commit, push, and production deploy are next.
+The next three phases are implemented, pushed, deployed to Vercel production, and smoke-tested live.
 
 ## Completed
 
@@ -45,10 +45,13 @@ The next three phases are implemented and locally verified; commit, push, and pr
 - Added Reports with conversion, revenue, production pressure, stock risk, reply drafts, quote drafts, stock alerts, production load, and usage-learning insights.
 - Added `/api/channel-webhook` for direct and Meta-style webhook payloads with optional verify-token and HMAC signature checks.
 - Verified the next three phases locally with API smoke tests, Playwright mobile/desktop checks, `npm.cmd run check`, and `npm.cmd run build`.
+- Committed and pushed `e8cb943` to `origin/codex/backend-foundation`.
+- Deployed production deployment `dpl_893bRFqBbz2xUSXtyi2AZVNWgBjz`, aliased to `https://fashion-store-os-navy.vercel.app`.
+- Verified live `/api/health`, session signup/state lock/webhook/reset flow, clean post-test bootstrap, live Reports browser smoke, and clean Vercel error logs.
 
 ## In Progress
 
-- Item: Commit, push, and deploy the verified next-three-phase implementation.
+- Item: None.
 
 ## Blocked
 
@@ -56,7 +59,7 @@ The next three phases are implemented and locally verified; commit, push, and pr
 
 ## Next Action
 
-Commit the verified implementation, push `codex/backend-foundation`, deploy to Vercel production, and run live smoke checks.
+Configure real provider webhook verify/signing secrets in Vercel when WhatsApp/Instagram platform apps are ready.
 
 ## Verification Snapshot
 
@@ -148,3 +151,19 @@ Commit the verified implementation, push `codex/backend-foundation`, deploy to V
   Result: Passed on 2026-06-25; production `src/app.js` contains channel intake, route action, and intake queue code.
 - Command/check: Vercel runtime error scan
   Result: Passed on 2026-06-25; no production error/fatal serverless logs found for the CRM intake deployment after smoke testing.
+- Command/check: `npm.cmd run check`
+  Result: Passed on 2026-06-25 after phases 005-007; 17 JavaScript files checked.
+- Command/check: `npm.cmd run build`
+  Result: Passed on 2026-06-25 after phases 005-007; 6 public files built into `dist/`.
+- Command/check: Local API auth/webhook smoke
+  Result: Passed on 2026-06-25; signup created hashed auth storage, unauthenticated bootstrap locked state, staff limited access persisted, and direct/Meta webhook payloads normalized.
+- Command/check: Local Playwright Reports smoke
+  Result: Passed on 2026-06-25 at 390px and 1280px; Reports rendered, drawer closed after mobile navigation, no horizontal overflow, and browser console had 0 errors.
+- Command/check: Vercel production deploy
+  Result: Passed on 2026-06-25; deployment `dpl_893bRFqBbz2xUSXtyi2AZVNWgBjz` is Ready and aliased to `https://fashion-store-os-navy.vercel.app`.
+- Command/check: Live production auth/webhook/reset smoke
+  Result: Passed on 2026-06-25; live session signup, protected state write, unauthenticated bootstrap lock, channel webhook append, authenticated bootstrap read, and cleanup all succeeded.
+- Command/check: Live production Reports smoke
+  Result: Passed on 2026-06-25; live browser reached Reports, rendered learning insights, and had no desktop horizontal overflow.
+- Command/check: Vercel runtime error scan
+  Result: Passed on 2026-06-25; `vercel logs --since 15m --level error` returned no logs after live smoke testing.

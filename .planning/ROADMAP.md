@@ -2,21 +2,27 @@
 
 ## Now
 
-- Phase: Production auth hardening.
-  Outcome: Replace local prototype passwords and shared workspace access with a production authentication/authorization model.
-  Status: Complete locally; pending production deploy.
+- Phase: GitHub-triggered Vercel deployment polish.
+  Outcome: Production deploys flow cleanly from the GitHub branch once team-author restrictions are fully resolved.
+  Status: Planned.
 
 ## Next
 
-- Phase: Intelligence and reporting.
-  Outcome: AI reply drafts, auto-quote drafts, smart stock alerts, and richer reports.
-  Status: Complete locally; pending production deploy.
-- Phase: Real channel integrations.
-  Outcome: Signed webhook adapters normalize WhatsApp/Instagram-style provider payloads into the CRM intake queue.
-  Status: Complete locally; pending production deploy.
+- Phase: To be selected after live UAT.
+  Outcome: Pick the next product slice from data workflows, validation, accessibility, or GitHub-triggered deployment polish.
+  Status: Open.
 
 ## Done
 
+- Phase: Production auth hardening.
+  Outcome: Server-backed auth stores password hashes/session hashes, issues HttpOnly cookies, returns sanitized auth, and gates staff changes behind manager sessions.
+  Status: Complete and deployed.
+- Phase: Intelligence and reporting.
+  Outcome: Reports workspace shows conversion, revenue, workload, stock risk, reply drafts, quote drafts, stock alerts, production load, and learning insights.
+  Status: Complete and deployed.
+- Phase: Real channel integrations.
+  Outcome: `/api/channel-webhook` normalizes direct and Meta-style provider payloads into the CRM intake queue with optional challenge/signature verification.
+  Status: Complete and deployed.
 - Phase: Backend persistence foundation.
   Outcome: The static prototype runs behind a local backend API with server-backed state/auth persistence and local fallback.
   Status: Complete.
@@ -28,7 +34,3 @@
   Status: Complete.
 
 ## Later
-
-- Phase: GitHub-triggered Vercel deployment polish.
-  Outcome: Production deploys flow cleanly from the GitHub branch once team-author restrictions are fully resolved.
-  Status: Planned.

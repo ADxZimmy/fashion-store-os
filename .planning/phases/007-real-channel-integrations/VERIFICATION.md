@@ -14,6 +14,9 @@
 - Command: Local Meta-style webhook smoke against `POST /api/channel-webhook`.
   Result: Passed on 2026-06-25.
   Notes: WhatsApp-style `entry[].changes[].value.messages[]` payload returned `accepted: 1` and normalized with channel `WhatsApp`.
+- Command: Live production webhook smoke against `POST /api/channel-webhook`.
+  Result: Passed on 2026-06-25.
+  Notes: Direct Instagram-style payload returned `accepted: 1`, appeared in authenticated bootstrap state, and was removed by cleanup.
 
 ## Manual Checks
 

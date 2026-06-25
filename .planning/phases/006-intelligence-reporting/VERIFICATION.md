@@ -14,6 +14,9 @@
 - Command: Playwright CLI browser smoke at 1280px.
   Result: Passed on 2026-06-25.
   Notes: Reports showed the four KPI metrics and five report panels with no horizontal overflow.
+- Command: Live production Reports smoke.
+  Result: Passed on 2026-06-25.
+  Notes: Live browser reached Reports, rendered learning insights, and reported document scroll width equal to the 1280px viewport.
 
 ## Manual Checks
 
