@@ -1,10 +1,10 @@
 # State
 
-Last updated: 2026-06-11
+Last updated: 2026-06-25
 
 ## Current Focus
 
-Production persistence is implemented, activated on Vercel, and verified against Supabase.
+Production bootstrap recovery: the Supabase project has been restored and the API diagnostics patch is ready for Vercel deployment/live verification.
 
 ## Completed
 
@@ -35,19 +35,22 @@ Production persistence is implemented, activated on Vercel, and verified against
 - Set Vercel production env vars for Supabase persistence.
 - Deployed production build with serverless API functions from the local Git commit.
 - Verified live Supabase-backed API persistence at `https://fashion-store-os-navy.vercel.app`.
+- Shipped and live-audited the mobile navigation drawer at `https://fashion-store-os-navy.vercel.app`.
+- Amended the deployment commit author to a Vercel team member and pushed `codex/backend-foundation` to GitHub.
 
 ## In Progress
 
-- Item: None.
+- Item: Production bootstrap recovery.
+  Owner: Codex.
+  Notes: Supabase project `duimatbeahwfeghcviju` was restored from `INACTIVE`, migrations were reapplied, Vercel production env vars were updated, and API health now probes storage reachability.
 
 ## Blocked
 
-- Item: Git-author/team access for direct repo-based Vercel deployments.
-  Reason: Vercel blocks deployments attributed to Git author `info@nitechsoftware.com.ng` because that author is not a member of `nnazimuzoos-projects`; clean non-Git staging deploy works as a temporary workaround.
+- Item: None.
 
 ## Next Action
 
-Resolve Git-author access for direct repo-based Vercel deployments, then start the CRM channel intake phase.
+Commit, push, deploy the storage-diagnostics patch, then verify live `/api/health`, `/api/bootstrap`, and write/read/delete persistence.
 
 ## Verification Snapshot
 
@@ -97,3 +100,23 @@ Resolve Git-author access for direct repo-based Vercel deployments, then start t
   Result: Passed; `/api/health` reports Supabase, `/api/bootstrap` works, and live API write/read/delete completed successfully.
 - Command/check: Vercel runtime error scan
   Result: Passed; no production error/fatal logs found for the last hour.
+- Command/check: Live mobile navigation audit
+  Result: Passed on 2026-06-25; production assets include mobile appbar/off-canvas drawer code, no horizontal overflow was detected, and the drawer opened with full navigation links.
+- Command/check: Live `/api/bootstrap` recovery probe
+  Result: Failed on 2026-06-25; production returned HTTP 500.
+- Command/check: Supabase DNS probe
+  Result: Failed on 2026-06-25; `duimatbeahwfeghcviju.supabase.co` returned NXDOMAIN via `nslookup`.
+- Command/check: Supabase MCP probe
+  Result: Failed on 2026-06-25; SQL and API-log calls for project `duimatbeahwfeghcviju` timed out.
+- Command/check: Supabase project restore
+  Result: Passed on 2026-06-25; project `duimatbeahwfeghcviju` is `ACTIVE_HEALTHY`.
+- Command/check: Supabase migration reapply and advisors
+  Result: Passed on 2026-06-25; document table/RLS/policy were recreated and security/performance advisors returned no lints.
+- Command/check: Supabase REST read probe
+  Result: Passed on 2026-06-25; REST read to `fashion_store_os_documents` returned HTTP 200 with an empty list.
+- Command/check: API handler probes
+  Result: Passed on 2026-06-25; unconfigured storage returns 503, unreachable storage returns 502, and health reports `ok: false` with safe diagnostics.
+- Command/check: `npm.cmd run check`
+  Result: Passed on 2026-06-25; 11 JavaScript files checked.
+- Command/check: `npm.cmd run build`
+  Result: Passed on 2026-06-25; 6 public files built into `dist/`.

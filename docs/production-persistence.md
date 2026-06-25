@@ -41,6 +41,8 @@ It creates `public.fashion_store_os_documents`, a small JSON document table keye
 
 RLS is enabled. The first migration revokes public access; the second migration grants tightly scoped document access for the default workspace so Vercel functions can use a server-side Supabase REST key.
 
+Recovery note: on 2026-06-25 the Supabase project was found `INACTIVE`, restored, and the committed migrations were reapplied. If the API host returns DNS failures or Cloudflare upstream errors again, check the project status before changing application code.
+
 ## Vercel Environment Variables
 
 These are set on the Vercel production project:
@@ -55,6 +57,8 @@ FASHION_STORE_WORKSPACE_ID
 
 When available, `SUPABASE_SERVICE_ROLE_KEY` can be used instead of `SUPABASE_REST_API_KEY`. Keep both server-side only in Vercel. Do not expose either value in frontend code or with a public env var prefix.
 
+The current production `SUPABASE_REST_API_KEY` can be a Supabase publishable key because RLS and grants restrict access to `workspace_id = 'default'` and `document_key in ('state', 'auth')`. Prefer the publishable key over a service-role key unless a later server-only workflow needs elevated access.
+
 ## Verification
 
 Useful verification commands:
@@ -66,14 +70,17 @@ Invoke-RestMethod https://fashion-store-os-navy.vercel.app/api/bootstrap
 
 Expected:
 
-- `/api/health` returns `storage: "supabase"`.
+- `/api/health` returns `ok: true`, `storage: "supabase"`, the redacted `supabaseHost`, and `workspace: "default"`.
 - `/api/bootstrap` returns state/auth payloads or `stateExists: false`, `authExists: false`.
 - Creating a manager/profile in the live app persists after refresh and across browsers.
 
+If storage is unreachable, `/api/health` still returns HTTP 200 with `ok: false` and `storage: "supabase-unreachable"` so monitors and humans can distinguish an app outage from an upstream Supabase issue.
+
 Latest verification:
 
-- Supabase project is active and healthy.
-- Both migrations are recorded.
+- Supabase project is active and healthy after the 2026-06-25 restore.
+- Both migrations have been reapplied to the restored project.
+- Supabase security and performance advisors reported no lints after recovery.
 - Vercel production deployment is Ready.
 - Live `/api/health` returns `ok: true`, `storage: "supabase"`, and `workspace: "default"`.
 - Live API write/read/delete test passed through the production URL.

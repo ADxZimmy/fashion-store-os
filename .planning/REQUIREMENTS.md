@@ -15,7 +15,7 @@
 - Requirement: Appearance/branding settings.
   Acceptance: Users can update display name, logo, primary/accent/sidebar/success colors, background mode, and contact details.
 - Requirement: Backend-backed persistence foundation.
-  Acceptance: When served through the app backend, state and auth records load from and save to server-managed JSON files, while direct/static usage falls back to localStorage.
+  Acceptance: When served through the local app backend, state and auth records load from and save to server-managed JSON files; when deployed on Vercel, the same API contract persists state and auth records to Supabase; direct/static usage falls back to localStorage.
 
 ## Non-Functional
 
@@ -25,11 +25,13 @@
   Acceptance: Refreshing the browser retains profile, records, reservations, auth/session records, and theme settings through backend storage when available or browser storage as fallback.
 - Requirement: Clear async feedback.
   Acceptance: The app shows a loading state while checking backend storage and exposes whether records are using server storage or browser fallback.
+- Requirement: Production storage observability.
+  Acceptance: `/api/health` performs a real Supabase reachability probe, returns a redacted host/workspace summary, and reports storage failures without exposing secrets.
 
 ## Out Of Scope
 
 - Item: Real WhatsApp/Instagram integrations.
-- Item: Production multi-user authentication and cloud database.
+- Item: Production multi-user authentication beyond the current shared workspace API.
 - Item: Advanced pattern-making mathematics.
 
 ## Open Questions
@@ -37,4 +39,4 @@
 - Question: Should a later phase migrate this static MVP into the missing existing app framework if that source tree is provided?
   Status: Open.
 - Question: Which production backend should replace the current JSON-file persistence layer?
-  Status: Open; current slice intentionally keeps persistence dependency-free.
+  Status: Answered for the current slice; Vercel production uses Supabase document storage while the local backend remains dependency-free.

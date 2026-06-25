@@ -1,6 +1,6 @@
 # Fashion Store OS Handover
 
-Last updated: 2026-06-11
+Last updated: 2026-06-25
 Current repo: `C:\Users\PC\Documents\Nitech\Personal\Fashion Store OS`
 
 ## Project Summary
@@ -78,7 +78,7 @@ URL: https://duimatbeahwfeghcviju.supabase.co
 Region: us-east-1
 ```
 
-Important: the current live deployment is created locally from a clean temporary staging copy made from the local Git commit, not from GitHub. Direct deploys from the repo are blocked by Vercel team-collaboration protection because the Git commit author (`info@nitechsoftware.com.ng`) is not a member of the Vercel team. The config changes have been pushed to GitHub; resolve Git/Vercel author access before relying on GitHub-triggered deployments.
+Important: current production deploys are still triggered from the local repo with the Vercel CLI, while GitHub is kept updated from branch `codex/backend-foundation`. The earlier Vercel Git-author block was worked around by committing as a Vercel team member (`nnazimuzoo@nitechsoftware.com.ng`), but GitHub-triggered production deployments have not been re-verified as the primary deployment path.
 
 The Vercel deployment publishes the static frontend from `dist/` and serverless API routes from `api/`. Live production persistence is backed by Supabase through Vercel env vars. See `docs/production-persistence.md`.
 
@@ -215,6 +215,21 @@ Important limitation: this is prototype auth only. Passwords and staff records a
 - Deployed production serverless functions from a clean non-Git staging copy made from the local Git commit to avoid Vercel's unverified Git-author block.
 - Verified live Supabase health, bootstrap, write, read, reset, and clean table state.
 
+### Mobile Navigation Drawer
+
+- Replaced the desktop-style mobile header/nav with a compact mobile appbar and off-canvas navigation drawer.
+- Added hamburger open/close controls, backdrop close, Escape close, and drawer focus handling.
+- Live-audited the production mobile viewport at `https://fashion-store-os-navy.vercel.app`; the mobile appbar/drawer assets were present and no horizontal overflow was detected.
+
+### Production Bootstrap Recovery
+
+- Diagnosed live `/api/bootstrap` returning HTTP 500 while `/api/health` incorrectly reported healthy storage.
+- Confirmed the documented Supabase ref `duimatbeahwfeghcviju` existed but had become `INACTIVE`, causing DNS/upstream fetch failures.
+- Restored the Supabase project, reapplied the committed document-table/RLS migrations, and verified REST reads return 200 with the current publishable key.
+- Updated Vercel production env vars for `SUPABASE_URL`, `SUPABASE_REST_API_KEY`, and `FASHION_STORE_WORKSPACE_ID`.
+- Updated API health to perform a real Supabase read probe and report `supabase-unreachable` when the upstream storage layer is down.
+- Updated API error handling so bootstrap/state/auth return safe storage errors instead of a generic 500 for Supabase failures.
+
 ## Current LocalStorage Keys
 
 The app currently uses these browser storage keys:
@@ -278,6 +293,12 @@ Results:
   - Live `/api/health` returns `{ ok: true, storage: "supabase", workspace: "default" }`.
   - Live API write/read/delete test passed through `https://fashion-store-os-navy.vercel.app`.
   - Runtime error scan found no production error/fatal logs in the last hour.
+- Production bootstrap recovery checks confirmed:
+  - `nslookup duimatbeahwfeghcviju.supabase.co 8.8.8.8` now resolves after restore.
+  - REST read probe to `public.fashion_store_os_documents` returns 200 and an empty document list after cleanup.
+  - Supabase security and performance advisors reported no lints.
+  - Handler smoke tests confirmed unconfigured storage returns 503, unreachable Supabase returns 502, and `/api/health` returns HTTP 200 with `ok: false` diagnostics.
+  - `npm.cmd run check` and `npm.cmd run build` passed after the recovery edits.
 
 ## UI/UX Expectations
 
@@ -309,9 +330,9 @@ Suggested next work slices:
    - Add UI for reviewing and converting inbound channel messages.
 
 2. GitHub-triggered Vercel deployments
-   - Commit the current Vercel config files.
-   - Push to GitHub and connect/verify the Vercel Git integration.
-   - Resolve Vercel team access for the Git commit author or change commit authorship to a Vercel team member before relying on Git-based deployments.
+   - GitHub is being kept updated from `codex/backend-foundation`.
+   - Verify whether the Vercel Git integration should promote this branch or `main` to production.
+   - Decide whether `main` should deploy to production and feature branches should create preview deployments.
    - Decide whether `main` should deploy to production and feature branches should create preview deployments.
 
 3. Production auth decision
@@ -391,8 +412,8 @@ Commit:
 - There is no migration system for future localStorage schema changes.
 - No automated browser regression suite exists yet.
 - Static HTML/CSS/JS is simple and fast, but larger features may need modularization.
-- Local Vercel deployment included uncommitted config files, so GitHub-triggered deployments will not match it until those files are committed and pushed.
-- Vercel deployment from the Git repo is currently blocked by unverified Git author/team access; clean non-Git staging deploy works as a temporary workaround.
+- GitHub-triggered production deployments are not yet the verified deployment path; current production deploys are made from the local repo through Vercel CLI.
+- Supabase projects can become inactive; `/api/health` now detects upstream storage failure, but live persistence still depends on the project staying active.
 - Prototype auth is still not production-secure even after durable persistence; a real auth/session model is a separate hardening phase.
 
 ## GSD Hybrid Skill Transfer

@@ -47,7 +47,7 @@ function handleOptions(request, response, methods) {
 
 function handleError(response, error) {
   const statusCode = error.statusCode || 500;
-  const message = statusCode === 503 ? error.message : statusCode >= 500 ? "Internal server error" : error.message;
+  const message = error.publicMessage || (statusCode === 503 ? error.message : statusCode >= 500 ? "Internal server error" : error.message);
   console.error(error);
   sendJson(response, statusCode, { error: message });
 }

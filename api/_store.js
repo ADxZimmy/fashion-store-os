@@ -4,12 +4,12 @@ const DOCUMENT_KEYS = new Set(["state", "auth"]);
 function getSupabaseConfig() {
   const supabaseUrl = trimTrailingSlash(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "");
   const apiKey =
-    process.env.SUPABASE_REST_API_KEY ||
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_PUBLISHABLE_KEY ||
-    process.env.SUPABASE_ANON_KEY ||
-    process.env.SUPABASE_SERVICE_KEY ||
-    process.env.SUPABASE_SECRET_KEY ||
+    normalizeEnv(process.env.SUPABASE_REST_API_KEY) ||
+    normalizeEnv(process.env.SUPABASE_SERVICE_ROLE_KEY) ||
+    normalizeEnv(process.env.SUPABASE_PUBLISHABLE_KEY) ||
+    normalizeEnv(process.env.SUPABASE_ANON_KEY) ||
+    normalizeEnv(process.env.SUPABASE_SERVICE_KEY) ||
+    normalizeEnv(process.env.SUPABASE_SECRET_KEY) ||
     "";
 
   if (!supabaseUrl || !apiKey) {
@@ -18,11 +18,53 @@ function getSupabaseConfig() {
     throw error;
   }
 
-  return { supabaseUrl, apiKey };
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(supabaseUrl);
+  } catch (error) {
+    error.message = "Production storage URL is invalid";
+    error.statusCode = 503;
+    throw error;
+  }
+
+  if (parsedUrl.protocol !== "https:") {
+    const error = new Error("Production storage URL must use HTTPS");
+    error.statusCode = 503;
+    throw error;
+  }
+
+  return { supabaseUrl, apiKey, host: parsedUrl.host };
 }
 
 function workspaceId() {
   return process.env.FASHION_STORE_WORKSPACE_ID || "default";
+}
+
+function getStorageSummary() {
+  try {
+    const { host } = getSupabaseConfig();
+    return {
+      configured: true,
+      host,
+      storage: "supabase",
+      workspace: workspaceId(),
+    };
+  } catch (error) {
+    return {
+      configured: false,
+      error: error.message,
+      storage: "unconfigured",
+      workspace: workspaceId(),
+    };
+  }
+}
+
+async function probeStorage() {
+  await supabaseRequest(
+    "GET",
+    `/${TABLE_NAME}?workspace_id=eq.${encodeURIComponent(workspaceId())}&select=workspace_id&limit=1`,
+  );
+  return getStorageSummary();
 }
 
 async function getDocument(documentKey) {
@@ -77,21 +119,34 @@ async function removeDocuments(documentKeys) {
 
 async function supabaseRequest(method, pathAndQuery, body, extraHeaders = {}, expectedStatuses = [200]) {
   const { supabaseUrl, apiKey } = getSupabaseConfig();
-  const response = await fetch(`${supabaseUrl}/rest/v1${pathAndQuery}`, {
-    method,
-    headers: {
-      Accept: "application/json",
-      apikey: apiKey,
-      Authorization: `Bearer ${apiKey}`,
-      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
-      ...extraHeaders,
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  const endpoint = `${supabaseUrl}/rest/v1${pathAndQuery}`;
+  let response;
+
+  try {
+    response = await fetch(endpoint, {
+      method,
+      headers: {
+        Accept: "application/json",
+        apikey: apiKey,
+        Authorization: `Bearer ${apiKey}`,
+        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+        ...extraHeaders,
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch (cause) {
+    const error = new Error(`Supabase request failed: ${cause.message || "network request failed"}`);
+    error.statusCode = 502;
+    error.publicMessage = "Production storage is unreachable";
+    error.cause = cause;
+    throw error;
+  }
 
   if (!expectedStatuses.includes(response.status)) {
     const error = new Error(await readSupabaseError(response));
-    error.statusCode = response.status >= 400 && response.status < 500 ? 502 : response.status;
+    error.statusCode = 502;
+    error.publicMessage = "Production storage request failed";
+    error.storageStatus = response.status;
     throw error;
   }
 
@@ -118,12 +173,18 @@ function assertDocumentKey(documentKey) {
 }
 
 function trimTrailingSlash(value) {
-  return value.replace(/\/+$/, "");
+  return normalizeEnv(value).replace(/\/+$/, "");
+}
+
+function normalizeEnv(value) {
+  return String(value || "").trim();
 }
 
 module.exports = {
   getDocument,
   getSupabaseConfig,
+  getStorageSummary,
+  probeStorage,
   removeDocuments,
   setDocument,
 };

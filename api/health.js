@@ -1,5 +1,5 @@
 const { handleError, handleOptions, sendJson, sendMethodNotAllowed } = require("./_response");
-const { getSupabaseConfig } = require("./_store");
+const { getStorageSummary, probeStorage } = require("./_store");
 
 module.exports = async function handler(request, response) {
   const methods = ["GET", "OPTIONS"];
@@ -10,23 +10,40 @@ module.exports = async function handler(request, response) {
   }
 
   try {
-    getSupabaseConfig();
+    const storage = await probeStorage();
     sendJson(response, 200, {
       ok: true,
       storage: "supabase",
-      workspace: process.env.FASHION_STORE_WORKSPACE_ID || "default",
+      supabaseHost: storage.host,
+      workspace: storage.workspace,
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
+    const storage = getStorageSummary();
+
     if (error.statusCode === 503) {
       sendJson(response, 200, {
         ok: false,
         storage: "unconfigured",
         error: error.message,
+        workspace: storage.workspace,
         timestamp: new Date().toISOString(),
       });
       return;
     }
+
+    if (error.statusCode === 502) {
+      sendJson(response, 200, {
+        ok: false,
+        storage: "supabase-unreachable",
+        error: error.publicMessage || error.message,
+        supabaseHost: storage.host,
+        workspace: storage.workspace,
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+
     handleError(response, error);
   }
 };
