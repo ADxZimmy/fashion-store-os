@@ -1,6 +1,19 @@
 const BODY_LIMIT = 1024 * 1024 * 5;
 
 async function readJsonBody(request) {
+  const rawBody = await readRawBody(request);
+  if (!rawBody.length) return null;
+
+  try {
+    return JSON.parse(rawBody.toString("utf8"));
+  } catch (error) {
+    error.statusCode = 400;
+    error.message = "Invalid JSON body";
+    throw error;
+  }
+}
+
+async function readRawBody(request) {
   const chunks = [];
   let size = 0;
 
@@ -14,15 +27,7 @@ async function readJsonBody(request) {
     chunks.push(chunk);
   }
 
-  if (!chunks.length) return null;
-
-  try {
-    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
-  } catch (error) {
-    error.statusCode = 400;
-    error.message = "Invalid JSON body";
-    throw error;
-  }
+  return chunks.length ? Buffer.concat(chunks) : Buffer.alloc(0);
 }
 
 function sendJson(response, statusCode, payload) {
@@ -56,6 +61,7 @@ module.exports = {
   handleError,
   handleOptions,
   readJsonBody,
+  readRawBody,
   sendJson,
   sendMethodNotAllowed,
 };

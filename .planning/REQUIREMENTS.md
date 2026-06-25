@@ -18,6 +18,12 @@
   Acceptance: When served through the local app backend, state and auth records load from and save to server-managed JSON files; when deployed on Vercel, the same API contract persists state and auth records to Supabase; direct/static usage falls back to localStorage.
 - Requirement: CRM channel intake.
   Acceptance: WhatsApp/Instagram-style messages can be captured as raw channel records with source, sender/contact, message, desired garment, deadline, routing status, and follow-up state, then routed into the CRM inquiry pipeline.
+- Requirement: Production auth hardening.
+  Acceptance: Server-backed environments store password hashes and session-token hashes instead of plaintext passwords, issue HttpOnly session cookies, sanitize auth data returned to the browser, and keep staff access changes behind manager authorization.
+- Requirement: Intelligence and reporting.
+  Acceptance: The app provides a Reports workspace with conversion, revenue, workload, stock-risk, reply-draft, quote-draft, and learning-insight outputs derived from current Studio OS records.
+- Requirement: Real channel webhook adapters.
+  Acceptance: A server API accepts direct and Meta-style webhook payloads, optionally verifies challenge/signature secrets from environment variables, normalizes provider messages, and appends them to the existing CRM channel queue without committing third-party tokens.
 
 ## Non-Functional
 
@@ -32,8 +38,8 @@
 
 ## Out Of Scope
 
-- Item: Real WhatsApp/Instagram integrations.
-- Item: Production multi-user authentication beyond the current shared workspace API.
+- Item: Platform OAuth setup, paid WhatsApp Business onboarding, Graph API permission review, and outbound send APIs.
+- Item: Database-native per-tenant RBAC beyond the current single-workspace document model.
 - Item: Advanced pattern-making mathematics.
 
 ## Open Questions

@@ -1067,6 +1067,65 @@ input[type="color"] {
   flex: 1 1 220px;
 }
 
+.reports-content {
+  gap: 18px;
+}
+
+.reports-metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.report-panel {
+  align-content: start;
+}
+
+.draft-card,
+.report-alert,
+.report-insight {
+  display: grid;
+  gap: 10px;
+}
+
+.draft-copy {
+  line-height: 1.58;
+  color: var(--text);
+}
+
+.report-split {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.report-split span {
+  min-height: 54px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: color-mix(in srgb, var(--panel-strong) 64%, transparent);
+}
+
+.report-split strong,
+.report-split small {
+  display: block;
+}
+
+.report-split small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.report-alert-grid,
+.report-step-list {
+  display: grid;
+  gap: 10px;
+}
+
+.report-insight-grid {
+  align-items: stretch;
+}
+
 .material-table {
   display: grid;
   gap: 8px;

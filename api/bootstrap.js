@@ -1,5 +1,6 @@
 const { handleError, handleOptions, sendJson, sendMethodNotAllowed } = require("./_response");
-const { getDocument } = require("./_store");
+const { normalizeAuthDocument, resolveSession, sanitizeAuth } = require("./_auth");
+const { getDocument, setDocument } = require("./_store");
 
 module.exports = async function handler(request, response) {
   const methods = ["GET", "OPTIONS"];
@@ -14,11 +15,19 @@ module.exports = async function handler(request, response) {
       getDocument("state"),
       getDocument("auth"),
     ]);
+    const normalized = normalizeAuthDocument(authResult.value || {});
+    if (authResult.exists && normalized.changed) {
+      await setDocument("auth", normalized.auth);
+    }
+    const resolved = resolveSession(normalized.auth, request);
+    const canReadState = !normalized.auth.users.length || Boolean(resolved.user);
     sendJson(response, 200, {
-      state: stateResult.value,
+      state: canReadState ? stateResult.value : null,
       stateExists: stateResult.exists,
-      auth: authResult.value,
-      authExists: authResult.exists,
+      auth: sanitizeAuth(normalized.auth, resolved.user?.id || ""),
+      authExists: authResult.exists || normalized.auth.users.length > 0,
+      authenticated: Boolean(resolved.user),
+      stateLocked: !canReadState && stateResult.exists,
     });
   } catch (error) {
     handleError(response, error);

@@ -4,13 +4,16 @@
 
 - Phase: Production auth hardening.
   Outcome: Replace local prototype passwords and shared workspace access with a production authentication/authorization model.
-  Status: Next.
+  Status: Complete locally; pending production deploy.
 
 ## Next
 
 - Phase: Intelligence and reporting.
   Outcome: AI reply drafts, auto-quote drafts, smart stock alerts, and richer reports.
-  Status: Planned.
+  Status: Complete locally; pending production deploy.
+- Phase: Real channel integrations.
+  Outcome: Signed webhook adapters normalize WhatsApp/Instagram-style provider payloads into the CRM intake queue.
+  Status: Complete locally; pending production deploy.
 
 ## Done
 
@@ -25,3 +28,7 @@
   Status: Complete.
 
 ## Later
+
+- Phase: GitHub-triggered Vercel deployment polish.
+  Outcome: Production deploys flow cleanly from the GitHub branch once team-author restrictions are fully resolved.
+  Status: Planned.

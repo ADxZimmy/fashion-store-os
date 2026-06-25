@@ -20,10 +20,13 @@ Fashion Store OS now has Vercel serverless API routes for production persistence
   - `GET /api/state`
   - `PUT /api/state`
   - `GET /api/auth`
-  - `PUT /api/auth`
+  - `GET /api/session`
+  - `POST /api/session`
   - `DELETE /api/data`
   - `GET /api/inbound`
   - `POST /api/inbound`
+  - `GET /api/channel-webhook`
+  - `POST /api/channel-webhook`
 - Local development can still run `npm.cmd start` and use `server.js` with JSON files under `data/`.
 - Vercel production uses files under `api/` and stores documents in Supabase.
 
@@ -53,9 +56,13 @@ These are set on the Vercel production project:
 SUPABASE_URL
 SUPABASE_REST_API_KEY
 FASHION_STORE_WORKSPACE_ID
+CHANNEL_WEBHOOK_VERIFY_TOKEN
+CHANNEL_WEBHOOK_SECRET
 ```
 
 `FASHION_STORE_WORKSPACE_ID` can stay `default` until the app has a multi-workspace model.
+
+`CHANNEL_WEBHOOK_VERIFY_TOKEN` and `CHANNEL_WEBHOOK_SECRET` are optional for local testing but should be set for production webhook subscriptions. The verify token is used for provider challenge checks. The secret verifies `x-hub-signature-256` HMAC SHA-256 signatures over the raw request body.
 
 When available, `SUPABASE_SERVICE_ROLE_KEY` can be used instead of `SUPABASE_REST_API_KEY`. Keep both server-side only in Vercel. Do not expose either value in frontend code or with a public env var prefix.
 
@@ -73,8 +80,10 @@ Invoke-RestMethod https://fashion-store-os-navy.vercel.app/api/bootstrap
 Expected:
 
 - `/api/health` returns `ok: true`, `storage: "supabase"`, the redacted `supabaseHost`, and `workspace: "default"`.
-- `/api/bootstrap` returns state/auth payloads or `stateExists: false`, `authExists: false`.
-- `/api/inbound` accepts a JSON channel message, appends it to `state.channelMessages`, and returns the normalized message.
+- `/api/bootstrap` returns sanitized auth and only returns state when no accounts exist or the request has a valid session cookie.
+- `/api/session` handles manager signup, signin, signout, and manager-gated staff access changes with HttpOnly cookies.
+- `/api/inbound` requires a session when accounts exist.
+- `/api/channel-webhook` accepts signed provider payloads and appends normalized messages to `state.channelMessages`.
 - Creating a manager/profile in the live app persists after refresh and across browsers.
 
 If storage is unreachable, `/api/health` still returns HTTP 200 with `ok: false` and `storage: "supabase-unreachable"` so monitors and humans can distinguish an app outage from an upstream Supabase issue.

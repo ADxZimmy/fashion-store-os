@@ -3,8 +3,9 @@ const VIEW_KEY = "fashion-studio-os-view-v1";
 const AUTH_KEY = "fashion-studio-os-auth-v1";
 const API_BOOTSTRAP_PATH = "/api/bootstrap";
 const API_STATE_PATH = "/api/state";
-const API_AUTH_PATH = "/api/auth";
+const API_SESSION_PATH = "/api/session";
 const API_DATA_PATH = "/api/data";
+const MIN_PASSWORD_LENGTH = 8;
 
 const app = document.getElementById("app");
 const toast = document.getElementById("toast");
@@ -92,6 +93,7 @@ const navItems = [
   ["recipes", "recipes", "Style Recipes"],
   ["inventory", "inventory", "Material Reserve"],
   ["production", "production", "Production Flow"],
+  ["reports", "reports", "Reports"],
   ["settings", "settings", "Settings"],
 ];
 
@@ -119,16 +121,17 @@ async function initializeApp() {
     const localStateExists = Boolean(localStorage.getItem(STORAGE_KEY));
     const localAuthExists = Boolean(localStorage.getItem(AUTH_KEY));
 
-    state = normalizeState(snapshot.state || loadState());
+    state = snapshot.stateLocked ? createSeedState() : normalizeState(snapshot.state || loadState());
     auth = normalizeAuth(snapshot.auth || loadAuth());
-    persistLocalState();
+    if (snapshot.stateLocked) {
+      localStorage.removeItem(STORAGE_KEY);
+    } else {
+      persistLocalState();
+    }
     persistLocalAuth();
 
     if (!snapshot.stateExists && localStateExists) {
       void saveBackendData(API_STATE_PATH, state);
-    }
-    if (!snapshot.authExists && localAuthExists) {
-      void saveBackendData(API_AUTH_PATH, auth);
     }
   }
 
@@ -148,6 +151,7 @@ async function loadBackendSnapshot() {
   try {
     const response = await fetch(API_BOOTSTRAP_PATH, {
       headers: { Accept: "application/json" },
+      credentials: "same-origin",
     });
     if (!response.ok) {
       throw new Error(`Backend responded with ${response.status}`);
@@ -203,10 +207,10 @@ function normalizeAuth(nextAuth = {}) {
           access: normalizeAccess(user.access),
           createdAt: user.createdAt || isoDate(0),
         }))
-        .filter((user) => user.email)
+        .filter((user) => user.email || nextAuth.serverManaged)
     : [];
   const sessionUserId = users.some((user) => user.id === nextAuth.sessionUserId) ? nextAuth.sessionUserId : "";
-  return { users, sessionUserId };
+  return { users, sessionUserId, serverManaged: Boolean(nextAuth.serverManaged) };
 }
 
 function normalizeState(nextState = {}) {
@@ -876,11 +880,11 @@ function renderSignUpForm() {
       </label>
       <label class="field">
         <span>Password</span>
-        <input name="password" type="password" autocomplete="new-password" required minlength="6" placeholder="Minimum 6 characters">
+        <input name="password" type="password" autocomplete="new-password" required minlength="${MIN_PASSWORD_LENGTH}" placeholder="Minimum ${MIN_PASSWORD_LENGTH} characters">
       </label>
       <label class="field">
         <span>Confirm password</span>
-        <input name="confirmPassword" type="password" autocomplete="new-password" required minlength="6" placeholder="Repeat password">
+        <input name="confirmPassword" type="password" autocomplete="new-password" required minlength="${MIN_PASSWORD_LENGTH}" placeholder="Repeat password">
       </label>
       <div class="auth-note full">The first account is the manager and can create up to two staff accounts in Settings.</div>
       <div class="button-row full">
@@ -1041,6 +1045,8 @@ function renderView() {
       return renderInventory();
     case "production":
       return renderProduction();
+    case "reports":
+      return renderReports();
     case "settings":
       return renderSettings();
     default:
@@ -1335,6 +1341,163 @@ function renderInquiries() {
         </div>
       </section>
     </section>
+  `;
+}
+
+function renderReports() {
+  const report = buildReportData();
+
+  return `
+    <section class="content reports-content">
+      <section class="metric-grid reports-metrics">
+        ${metricCard("Lead Conversion", `${report.conversionRate}%`, `${report.convertedLeads} converted from ${report.totalLeads} leads`, "reports", report.conversionRate >= 40 ? "up" : "")}
+        ${metricCard("Revenue Pipeline", money(report.revenuePipeline), `${report.activeOrders.length} active orders`, "orders", "up")}
+        ${metricCard("Production Pressure", report.productionPressure, `${report.overdueOrders.length} overdue, ${report.dueSoon.length} due soon`, "production", report.overdueOrders.length ? "alert" : "")}
+        ${metricCard("Stock Risk", report.lowStock.length, report.lowStock.length ? "Restock watchlist active" : "All materials above minimum", "warning", report.lowStock.length ? "alert" : "")}
+      </section>
+
+      <section class="grid-2">
+        <article class="panel report-panel">
+          <div class="panel-header">
+            <div>
+              <h2>Reply drafts</h2>
+              <p>Suggested replies for open channel messages.</p>
+            </div>
+            <span class="status">${report.replyDrafts.length} ready</span>
+          </div>
+          <div class="list">
+            ${report.replyDrafts.map(renderReplyDraft).join("") || emptyState("No open channel messages need replies.")}
+          </div>
+        </article>
+
+        <article class="panel report-panel">
+          <div class="panel-header">
+            <div>
+              <h2>Quote drafts</h2>
+              <p>First-pass quote language from inquiry details and style recipes.</p>
+            </div>
+            <span class="status">${report.quoteDrafts.length} ready</span>
+          </div>
+          <div class="list">
+            ${report.quoteDrafts.map(renderQuoteDraft).join("") || emptyState("No inquiry is waiting for a quote draft.")}
+          </div>
+        </article>
+      </section>
+
+      <section class="grid-2">
+        <article class="panel report-panel">
+          <div class="panel-header">
+            <div>
+              <h2>Smart stock alerts</h2>
+              <p>Materials with low available stock or active reservation pressure.</p>
+            </div>
+          </div>
+          <div class="report-alert-grid">
+            ${report.stockAlerts.map(renderStockAlert).join("") || emptyState("No stock pressure detected.")}
+          </div>
+        </article>
+
+        <article class="panel report-panel">
+          <div class="panel-header">
+            <div>
+              <h2>Production load</h2>
+              <p>Where the current work is concentrated.</p>
+            </div>
+          </div>
+          <div class="report-step-list">
+            ${report.stepLoad.map(({ step, count, percent: stepPercent }) => `
+              <div class="progress-line">
+                <div class="record-header">
+                  <strong>${escapeHtml(step)}</strong>
+                  <span class="pill">${count} ${count === 1 ? "piece" : "pieces"}</span>
+                </div>
+                <div class="progress-bar"><span style="width: ${stepPercent}%;"></span></div>
+              </div>
+            `).join("")}
+          </div>
+        </article>
+      </section>
+
+      <section class="panel report-panel">
+        <div class="panel-header">
+          <div>
+            <h2>Learning insights</h2>
+            <p>Estimate-versus-actual usage signals from completed work.</p>
+          </div>
+          <span class="status">${state.usageRecords.length} records</span>
+        </div>
+        <div class="grid-3 report-insight-grid">
+          ${report.learningInsights.map(renderLearningInsight).join("") || emptyState("Complete orders with usage notes to build estimate intelligence.")}
+        </div>
+      </section>
+    </section>
+  `;
+}
+
+function renderReplyDraft(draft) {
+  return `
+    <article class="record draft-card">
+      <div class="record-header">
+        <div>
+          <strong>${escapeHtml(draft.name)}</strong>
+          <p class="muted small-text">${escapeHtml(draft.channel)}${draft.contact ? ` - ${escapeHtml(draft.contact)}` : ""}</p>
+        </div>
+        <span class="status ${statusTone(draft.followUpStatus)}">${escapeHtml(draft.followUpStatus)}</span>
+      </div>
+      <p class="draft-copy">${escapeHtml(draft.copy)}</p>
+      <div class="tag-list">
+        ${draft.desiredStyle ? `<span class="pill">${escapeHtml(draft.desiredStyle)}</span>` : ""}
+        ${draft.deadline ? `<span class="pill">Due ${formatDate(draft.deadline)}</span>` : ""}
+      </div>
+    </article>
+  `;
+}
+
+function renderQuoteDraft(draft) {
+  return `
+    <article class="record draft-card">
+      <div class="record-header">
+        <div>
+          <strong>${escapeHtml(draft.clientName)}</strong>
+          <p class="muted small-text">${escapeHtml(draft.desiredStyle || "Custom garment")} - ${escapeHtml(draft.channel)}</p>
+        </div>
+        <span class="status">${escapeHtml(draft.status)}</span>
+      </div>
+      <p class="draft-copy">${escapeHtml(draft.copy)}</p>
+      <div class="report-split">
+        <span><strong>${money(draft.estimate)}</strong><small> Suggested quote</small></span>
+        <span><strong>${draft.productionDays}</strong><small> days</small></span>
+      </div>
+    </article>
+  `;
+}
+
+function renderStockAlert(alert) {
+  return `
+    <article class="record report-alert ${alert.tone}">
+      <div class="record-header">
+        <div>
+          <strong>${escapeHtml(alert.name)}</strong>
+          <p class="muted small-text">${escapeHtml(alert.category)} - ${alert.available} ${escapeHtml(alert.unit)} available</p>
+        </div>
+        <span class="status ${alert.tone}">${escapeHtml(alert.label)}</span>
+      </div>
+      <p class="muted small-text">${escapeHtml(alert.note)}</p>
+    </article>
+  `;
+}
+
+function renderLearningInsight(insight) {
+  return `
+    <article class="record report-insight">
+      <div class="record-header">
+        <div>
+          <strong>${escapeHtml(insight.title)}</strong>
+          <p class="muted small-text">${escapeHtml(insight.detail)}</p>
+        </div>
+        <span class="status ${insight.tone}">${escapeHtml(insight.value)}</span>
+      </div>
+    </article>
   `;
 }
 
@@ -1899,7 +2062,7 @@ function renderStaffCreateForm() {
         </label>
         <label class="field">
           <span>Password</span>
-          <input name="password" type="password" required minlength="6" placeholder="Minimum 6 characters">
+          <input name="password" type="password" required minlength="${MIN_PASSWORD_LENGTH}" placeholder="Minimum ${MIN_PASSWORD_LENGTH} characters">
         </label>
         <div class="field">
           <span>Access</span>
@@ -2190,12 +2353,25 @@ function wireEvents() {
   };
 }
 
-function handleSignUp(form) {
+async function handleSignUp(form) {
   const data = new FormData(form);
   const name = clean(data.get("name"));
   const email = clean(data.get("email")).toLowerCase();
   const password = String(data.get("password") || "");
   const confirmPassword = String(data.get("confirmPassword") || "");
+
+  if (password.length < MIN_PASSWORD_LENGTH || password !== confirmPassword) {
+    showToast(`Passwords must match and be at least ${MIN_PASSWORD_LENGTH} characters.`);
+    return;
+  }
+
+  if (backendReady) {
+    await runServerAuthAction("signup", { name, email, password, confirmPassword }, {
+      successMessage: "Manager access created.",
+      nextView: "dashboard",
+    });
+    return;
+  }
 
   if (auth.users.some((user) => user.email === email)) {
     showToast("An account already exists for that email.");
@@ -2207,11 +2383,6 @@ function handleSignUp(form) {
     render();
     return;
   }
-  if (password.length < 6 || password !== confirmPassword) {
-    showToast("Passwords must match and be at least 6 characters.");
-    return;
-  }
-
   const manager = {
     id: uid("user"),
     name,
@@ -2230,10 +2401,19 @@ function handleSignUp(form) {
   render();
 }
 
-function handleSignIn(form) {
+async function handleSignIn(form) {
   const data = new FormData(form);
   const email = clean(data.get("email")).toLowerCase();
   const password = String(data.get("password") || "");
+
+  if (backendReady) {
+    await runServerAuthAction("signin", { email, password }, {
+      successMessage: "Signed in.",
+      nextView: "first-accessible",
+    });
+    return;
+  }
+
   const user = auth.users.find((item) => item.email === email && item.password === password);
   if (!user) {
     showToast("Sign in details do not match.");
@@ -2248,8 +2428,17 @@ function handleSignIn(form) {
   render();
 }
 
-function signOut() {
+async function signOut() {
   mobileNavOpen = false;
+
+  if (backendReady && auth.serverManaged) {
+    await runServerAuthAction("signout", {}, {
+      successMessage: "Signed out.",
+      clearState: true,
+    });
+    return;
+  }
+
   auth.sessionUserId = "";
   saveAuth();
   authMode = auth.users.length ? "signin" : "signup";
@@ -2342,7 +2531,7 @@ function applyNeutralBrand() {
   render();
 }
 
-function handleStaffSubmit(form) {
+async function handleStaffSubmit(form) {
   if (currentUser()?.role !== "manager") {
     showToast("Only the manager can create staff accounts.");
     return;
@@ -2356,12 +2545,21 @@ function handleStaffSubmit(form) {
   const name = clean(data.get("name"));
   const email = clean(data.get("email")).toLowerCase();
   const password = String(data.get("password") || "");
-  if (auth.users.some((user) => user.email === email)) {
-    showToast("An account already exists for that email.");
+
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    showToast(`Staff password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
     return;
   }
-  if (password.length < 6) {
-    showToast("Staff password must be at least 6 characters.");
+
+  if (backendReady && auth.serverManaged) {
+    await runServerAuthAction("create-staff", { name, email, password, access: selectedAccessFrom(form) }, {
+      successMessage: "Staff account created.",
+    });
+    return;
+  }
+
+  if (auth.users.some((user) => user.email === email)) {
+    showToast("An account already exists for that email.");
     return;
   }
 
@@ -2379,11 +2577,19 @@ function handleStaffSubmit(form) {
   render();
 }
 
-function handleStaffAccessSubmit(form) {
+async function handleStaffAccessSubmit(form) {
   if (currentUser()?.role !== "manager") {
     showToast("Only the manager can update staff access.");
     return;
   }
+
+  if (backendReady && auth.serverManaged) {
+    await runServerAuthAction("update-staff-access", { id: form.dataset.staffAccess, access: selectedAccessFrom(form) }, {
+      successMessage: "Staff access updated.",
+    });
+    return;
+  }
+
   const staff = auth.users.find((user) => user.id === form.dataset.staffAccess && user.role === "staff");
   if (!staff) return;
   staff.access = selectedAccessFrom(form);
@@ -2403,11 +2609,20 @@ function deleteStaff(id) {
   render();
 }
 
-function confirmDeleteStaff(id) {
+async function confirmDeleteStaff(id) {
   if (currentUser()?.role !== "manager") {
     showToast("Only the manager can remove staff accounts.");
     return;
   }
+
+  if (backendReady && auth.serverManaged) {
+    closeModal(false);
+    await runServerAuthAction("delete-staff", { id }, {
+      successMessage: "Staff account removed.",
+    });
+    return;
+  }
+
   const staff = auth.users.find((user) => user.id === id && user.role === "staff");
   if (!staff) return;
   auth.users = auth.users.filter((user) => user.id !== id);
@@ -3247,6 +3462,7 @@ function fixedItemForCategory(category, quantity, role) {
 
 function findBestStyle(text) {
   const value = (text || "").toLowerCase();
+  if (!value) return null;
   return state.styles.find((style) => value.includes(style.name.toLowerCase()) || style.name.toLowerCase().includes(value));
 }
 
@@ -3288,6 +3504,150 @@ function lowStockItems() {
   return state.inventory.filter((item) => availableQty(item) <= Number(item.minimumStock || 0));
 }
 
+function buildReportData() {
+  const channelMessages = normalizeChannelMessages(state.channelMessages || []);
+  const activeOrders = state.orders.filter((order) => !["Completed", "Cancelled"].includes(order.status));
+  const convertedInquiries = state.inquiries.filter((inquiry) => ["Converted to Order", "Confirmed"].includes(inquiry.status));
+  const routedMessages = channelMessages.filter((message) => message.routingStatus === "Routed to Inquiry");
+  const totalLeads = state.inquiries.length + channelMessages.length;
+  const convertedLeads = convertedInquiries.length + routedMessages.length;
+  const dueSoon = ordersDueWithin(10);
+  const overdueOrders = activeOrders.filter((order) => daysUntil(order.deadline) < 0);
+  const revenuePipeline = state.orders.filter((order) => order.status !== "Cancelled").reduce((sum, order) => sum + Number(order.quote || 0), 0);
+  const productionPressure = activeOrders.filter((order) => ["Cutting", "Sewing", "First Fitting", "Adjustments", "Finishing", "Quality Check"].includes(order.productionStep)).length;
+  const lowStock = lowStockItems();
+  const maxStepCount = Math.max(1, ...productionSteps.map((step) => activeOrders.filter((order) => order.productionStep === step).length));
+
+  return {
+    activeOrders,
+    convertedLeads,
+    conversionRate: totalLeads ? Math.round((convertedLeads / totalLeads) * 100) : 0,
+    dueSoon,
+    lowStock,
+    overdueOrders,
+    productionPressure,
+    revenuePipeline,
+    totalLeads,
+    replyDrafts: channelMessages
+      .filter((message) => message.routingStatus !== "Archived" && message.followUpStatus !== "Closed")
+      .slice(0, 4)
+      .map(replyDraftForMessage),
+    quoteDrafts: state.inquiries
+      .filter((inquiry) => !["Converted to Order", "Declined"].includes(inquiry.status))
+      .slice(0, 4)
+      .map(quoteDraftForInquiry),
+    stockAlerts: stockAlerts(lowStock),
+    stepLoad: productionSteps.map((step) => {
+      const count = activeOrders.filter((order) => order.productionStep === step).length;
+      return { step, count, percent: Math.round((count / maxStepCount) * 100) };
+    }),
+    learningInsights: learningInsights(),
+  };
+}
+
+function replyDraftForMessage(message) {
+  const name = message.senderName || "there";
+  const style = message.desiredStyle || "your outfit";
+  const deadline = message.deadline ? ` for ${formatDate(message.deadline)}` : "";
+  const fabricAsk = message.message.toLowerCase().includes("fabric")
+    ? "Please also confirm the fabric type, width, and quantity you have."
+    : "Please send reference photos, preferred fit, measurements status, and fabric details if you already have fabric.";
+
+  return {
+    name: message.senderName || message.contact || "Unknown sender",
+    channel: message.channel,
+    contact: message.contact,
+    desiredStyle: message.desiredStyle,
+    deadline: message.deadline,
+    followUpStatus: message.followUpStatus,
+    copy: `Hi ${name}, thanks for reaching out about ${style}${deadline}. ${fabricAsk} Once I have those details, I can confirm timing and prepare a clean quote.`,
+  };
+}
+
+function quoteDraftForInquiry(inquiry) {
+  const style = findBestStyle(inquiry.desiredStyle);
+  const estimate = style ? Number(style.basePrice || 0) : Number(inquiry.budget || 0);
+  const productionDays = style ? Number(style.productionDays || 7) : 7;
+  const deadlineText = inquiry.deadline ? ` Target date: ${formatDate(inquiry.deadline)}.` : "";
+  const budgetText = inquiry.budget ? ` Your stated budget is ${money(inquiry.budget)}.` : "";
+  const estimateText = estimate ? `A starting quote is ${money(estimate)}, subject to fabric, measurements, and finishing choices.` : "I can confirm pricing after fabric, measurements, and finishing choices are clear.";
+
+  return {
+    clientName: inquiry.clientName || "New client",
+    channel: inquiry.channel || "CRM",
+    desiredStyle: inquiry.desiredStyle,
+    estimate,
+    productionDays,
+    status: inquiry.status,
+    copy: `Hi ${inquiry.clientName || "there"}, thanks for the ${inquiry.desiredStyle || "custom garment"} request.${deadlineText}${budgetText} ${estimateText} Production would need about ${productionDays} working days after confirmation and material availability.`,
+  };
+}
+
+function stockAlerts(lowStock = []) {
+  const alerts = lowStock.map((item) => ({
+    name: item.name,
+    category: item.category,
+    available: availableQty(item),
+    unit: item.unit,
+    tone: "danger",
+    label: "Low",
+    note: `Minimum stock is ${round2(item.minimumStock)} ${item.unit}; restock before confirming work that needs this material.`,
+  }));
+
+  const reservedPressure = state.inventory
+    .filter((item) => Number(item.reserved || 0) > 0 && !lowStock.some((low) => low.id === item.id))
+    .sort((a, b) => Number(b.reserved || 0) - Number(a.reserved || 0))
+    .slice(0, Math.max(0, 6 - alerts.length))
+    .map((item) => ({
+      name: item.name,
+      category: item.category,
+      available: availableQty(item),
+      unit: item.unit,
+      tone: "warning",
+      label: "Reserved",
+      note: `${round2(item.reserved)} ${item.unit} is reserved for active work; check availability before quoting similar pieces.`,
+    }));
+
+  return [...alerts, ...reservedPressure].slice(0, 6);
+}
+
+function learningInsights() {
+  if (!state.usageRecords.length) return [];
+  const totalDifference = state.usageRecords.reduce((sum, record) => sum + Number(record.difference || 0), 0);
+  const overages = state.usageRecords.filter((record) => Number(record.difference || 0) > 0);
+  const savings = state.usageRecords.filter((record) => Number(record.difference || 0) < 0);
+  const largestOverage = [...state.usageRecords].sort((a, b) => Number(b.difference || 0) - Number(a.difference || 0))[0];
+
+  return [
+    {
+      title: "Net material variance",
+      detail: "Positive values mean actual usage ran above the estimate.",
+      value: `${totalDifference > 0 ? "+" : ""}${round2(totalDifference)}`,
+      tone: totalDifference > 0 ? "warning" : "success",
+    },
+    {
+      title: "Over-estimate pressure",
+      detail: `${overages.length} completed ${overages.length === 1 ? "piece used" : "pieces used"} more material than planned.`,
+      value: String(overages.length),
+      tone: overages.length ? "warning" : "success",
+    },
+    {
+      title: "Best savings signal",
+      detail: savings.length ? `${savings.length} records came in below estimate.` : "No below-estimate usage records yet.",
+      value: String(savings.length),
+      tone: savings.length ? "success" : "",
+    },
+    largestOverage
+      ? {
+          title: "Largest variance",
+          detail: largestOverage.styleName || "Completed order",
+          value: `${Number(largestOverage.difference || 0) > 0 ? "+" : ""}${round2(largestOverage.difference)} ${largestOverage.unit || ""}`.trim(),
+          tone: Number(largestOverage.difference || 0) > 0 ? "warning" : "success",
+        }
+      : null,
+  ].filter(Boolean);
+}
+
 function availableQty(item) {
   if (!item) return 0;
   return round2(Number(item.quantity || 0) - Number(item.reserved || 0));
@@ -3307,6 +3667,7 @@ function viewTitle(view) {
     recipes: "Style Recipes",
     inventory: "Material Reserve",
     production: "Production Flow",
+    reports: "Reports",
     settings: "Brand & Settings",
   };
   return titles[view] || "Studio Control Room";
@@ -3322,6 +3683,7 @@ function viewSubtitle(view) {
     recipes: "Editable garment blueprints and bill-of-material estimates.",
     inventory: "Track fabric, trims, notions, reserved materials, and available quantity.",
     production: "Move work through the studio pipeline with accountability and QC.",
+    reports: "Read conversion, quote, stock, production, and usage signals from current records.",
     settings: "Customize identity, brand colors, units, and reusable business details.",
   };
   return subtitles[view] || "";
@@ -3396,6 +3758,72 @@ function viewLabel(view) {
   return navItems.find(([key]) => key === view)?.[2] || view;
 }
 
+async function runServerAuthAction(action, payload = {}, options = {}) {
+  try {
+    const response = await fetch(API_SESSION_PATH, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      credentials: "same-origin",
+      body: JSON.stringify({ action, ...payload }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(result.error || `Auth request failed with ${response.status}`);
+    }
+
+    applyServerSessionResult(result, options);
+    if (options.successMessage) {
+      showToast(options.successMessage);
+    }
+    render();
+    return result;
+  } catch (error) {
+    console.warn("Server auth action failed.", error);
+    showToast(error.message || "Auth request failed.");
+    return null;
+  }
+}
+
+function applyServerSessionResult(result = {}, options = {}) {
+  backendReady = true;
+  storageMode = "server";
+  storageMessage = "Server storage";
+  syncFailureAnnounced = false;
+
+  if (result.auth) {
+    auth = normalizeAuth(result.auth);
+    persistLocalAuth();
+  }
+
+  if (options.clearState) {
+    localStorage.removeItem(STORAGE_KEY);
+    state = createSeedState();
+  } else if (Object.prototype.hasOwnProperty.call(result, "state") && result.state) {
+    state = normalizeState(result.state);
+    persistLocalState();
+  }
+
+  authMode = auth.users.length ? "signin" : "signup";
+  selectedClientId = state.clients[0]?.id || "";
+  draftOrderStyleId = state.styles[0]?.id || "";
+
+  if (options.nextView === "first-accessible") {
+    const nav = accessibleNavItems();
+    currentView = nav[0]?.[0] || "dashboard";
+    localStorage.setItem(VIEW_KEY, currentView);
+  } else if (options.nextView) {
+    currentView = options.nextView;
+    localStorage.setItem(VIEW_KEY, currentView);
+  }
+
+  if (!currentUser()) {
+    mobileNavOpen = false;
+  }
+}
+
 function saveState() {
   persistLocalState();
   void saveBackendData(API_STATE_PATH, state);
@@ -3403,7 +3831,6 @@ function saveState() {
 
 function saveAuth() {
   persistLocalAuth();
-  void saveBackendData(API_AUTH_PATH, auth);
 }
 
 function persistLocalState() {

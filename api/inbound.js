@@ -1,4 +1,5 @@
 const { appendInboundMessage, normalizeChannelMessages } = require("./_inbound");
+const { normalizeAuthDocument, requireSession } = require("./_auth");
 const { handleError, handleOptions, readJsonBody, sendJson, sendMethodNotAllowed } = require("./_response");
 const { getDocument, setDocument } = require("./_store");
 
@@ -7,6 +8,13 @@ module.exports = async function handler(request, response) {
   if (handleOptions(request, response, methods)) return;
 
   try {
+    const authResult = await getDocument("auth");
+    const normalized = normalizeAuthDocument(authResult.value || {});
+    if (authResult.exists && normalized.changed) {
+      await setDocument("auth", normalized.auth);
+    }
+    requireSession(normalized.auth, request);
+
     const result = await getDocument("state");
     const state = result.value || {};
 

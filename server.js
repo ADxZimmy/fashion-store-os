@@ -1,6 +1,22 @@
 const http = require("http");
 const path = require("path");
 const fs = require("fs/promises");
+const {
+  buildClearSessionCookie,
+  buildSessionCookie,
+  createStaff,
+  deleteStaff,
+  normalizeAuthDocument,
+  requireManager,
+  requireSession,
+  resolveSession,
+  sanitizeAuth,
+  signIn,
+  signOut,
+  signUpManager,
+  updateStaffAccess,
+} = require("./api/_auth");
+const { normalizeWebhookPayload, verifyWebhookChallenge, verifyWebhookSignature } = require("./api/_channel_webhook");
 const { appendInboundMessage, normalizeChannelMessages } = require("./api/_inbound");
 
 const ROOT_DIR = __dirname;
@@ -53,8 +69,19 @@ async function routeRequest(request, response) {
 }
 
 async function routeApi(request, response, url) {
-  if (request.method === "OPTIONS" && url.pathname === "/api/inbound") {
-    response.writeHead(204, { Allow: "GET, POST, OPTIONS" });
+  const optionsAllow = {
+    "/api/auth": "GET, OPTIONS",
+    "/api/bootstrap": "GET, OPTIONS",
+    "/api/channel-webhook": "GET, POST, OPTIONS",
+    "/api/data": "DELETE, OPTIONS",
+    "/api/health": "GET, OPTIONS",
+    "/api/inbound": "GET, POST, OPTIONS",
+    "/api/session": "GET, POST, OPTIONS",
+    "/api/state": "GET, PUT, OPTIONS",
+  };
+
+  if (request.method === "OPTIONS" && optionsAllow[url.pathname]) {
+    response.writeHead(204, { Allow: optionsAllow[url.pathname] });
     response.end();
     return;
   }
@@ -69,16 +96,155 @@ async function routeApi(request, response, url) {
       readJsonWithExists(STATE_FILE),
       readJsonWithExists(AUTH_FILE),
     ]);
+    const normalized = normalizeAuthDocument(authResult.value || {});
+    if (authResult.exists && normalized.changed) {
+      await writeJsonAtomic(AUTH_FILE, normalized.auth);
+    }
+    const resolved = resolveSession(normalized.auth, request);
+    const canReadState = !normalized.auth.users.length || Boolean(resolved.user);
     sendJson(response, 200, {
-      state: stateResult.value,
+      state: canReadState ? stateResult.value : null,
       stateExists: stateResult.exists,
-      auth: authResult.value,
-      authExists: authResult.exists,
+      auth: sanitizeAuth(normalized.auth, resolved.user?.id || ""),
+      authExists: authResult.exists || normalized.auth.users.length > 0,
+      authenticated: Boolean(resolved.user),
+      stateLocked: !canReadState && stateResult.exists,
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/session") {
+    const { auth, exists, changed } = await readAuthDocument();
+    if (exists && changed) {
+      await writeJsonAtomic(AUTH_FILE, auth);
+    }
+
+    if (request.method === "GET") {
+      await sendSessionPayload(response, request, auth);
+      return;
+    }
+
+    if (request.method === "POST") {
+      const body = (await readJsonBody(request)) || {};
+      const action = String(body.action || "").trim();
+
+      if (action === "signup") {
+        const result = signUpManager(auth, body);
+        await writeJsonAtomic(AUTH_FILE, result.auth);
+        response.setHeader("Set-Cookie", buildSessionCookie(result.token, request));
+        await sendSessionPayload(response, request, result.auth, 201, { session: result.session, user: result.user });
+        return;
+      }
+
+      if (action === "signin") {
+        const result = signIn(auth, body);
+        await writeJsonAtomic(AUTH_FILE, result.auth);
+        response.setHeader("Set-Cookie", buildSessionCookie(result.token, request));
+        await sendSessionPayload(response, request, result.auth, 200, { session: result.session, user: result.user });
+        return;
+      }
+
+      if (action === "signout") {
+        const nextAuth = signOut(auth, request);
+        await writeJsonAtomic(AUTH_FILE, nextAuth);
+        response.setHeader("Set-Cookie", buildClearSessionCookie(request));
+        sendJson(response, 200, {
+          ok: true,
+          authenticated: false,
+          auth: sanitizeAuth(nextAuth),
+          state: null,
+          stateExists: false,
+        });
+        return;
+      }
+
+      const { user } = requireSession(auth, request);
+
+      if (action === "create-staff") {
+        const nextAuth = createStaff(auth, user, body);
+        await writeJsonAtomic(AUTH_FILE, nextAuth);
+        await sendSessionPayload(response, request, nextAuth, 201);
+        return;
+      }
+
+      if (action === "update-staff-access") {
+        const nextAuth = updateStaffAccess(auth, user, body);
+        await writeJsonAtomic(AUTH_FILE, nextAuth);
+        await sendSessionPayload(response, request, nextAuth);
+        return;
+      }
+
+      if (action === "delete-staff") {
+        const nextAuth = deleteStaff(auth, user, body);
+        await writeJsonAtomic(AUTH_FILE, nextAuth);
+        await sendSessionPayload(response, request, nextAuth);
+        return;
+      }
+
+      const error = new Error("Unknown session action");
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/channel-webhook") {
+    const challenge = verifyWebhookChallenge(url.searchParams, process.env.CHANNEL_WEBHOOK_VERIFY_TOKEN || "");
+    if (challenge !== null) {
+      response.statusCode = 200;
+      response.setHeader("Content-Type", "text/plain; charset=utf-8");
+      response.setHeader("Cache-Control", "no-store");
+      response.end(challenge);
+      return;
+    }
+
+    const result = await readJsonWithExists(STATE_FILE);
+    sendJson(response, 200, {
+      ok: true,
+      messages: normalizeChannelMessages(result.value?.channelMessages),
+      exists: result.exists,
+    });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/channel-webhook") {
+    const rawBody = await readRawBody(request);
+    verifyWebhookSignature(rawBody, process.env.CHANNEL_WEBHOOK_SECRET || "", request.headers["x-hub-signature-256"] || "");
+
+    let payload;
+    try {
+      payload = rawBody.length ? JSON.parse(rawBody.toString("utf8")) : {};
+    } catch (error) {
+      error.statusCode = 400;
+      error.message = "Invalid JSON body";
+      throw error;
+    }
+
+    const messages = normalizeWebhookPayload(payload);
+    const result = await readJsonWithExists(STATE_FILE);
+    let nextState = result.value || {};
+    const accepted = [];
+
+    for (const message of messages) {
+      const next = appendInboundMessage(nextState, message);
+      nextState = next.state;
+      accepted.push(next.message);
+    }
+
+    if (accepted.length) {
+      await writeJsonAtomic(STATE_FILE, nextState);
+    }
+
+    sendJson(response, accepted.length ? 201 : 202, {
+      ok: true,
+      accepted: accepted.length,
+      messages: accepted,
     });
     return;
   }
 
   if (request.method === "GET" && url.pathname === "/api/inbound") {
+    const { auth } = await readAuthDocument();
+    requireSession(auth, request);
     const result = await readJsonWithExists(STATE_FILE);
     sendJson(response, 200, {
       messages: normalizeChannelMessages(result.value?.channelMessages),
@@ -88,6 +254,8 @@ async function routeApi(request, response, url) {
   }
 
   if (request.method === "POST" && url.pathname === "/api/inbound") {
+    const { auth } = await readAuthDocument();
+    requireSession(auth, request);
     const result = await readJsonWithExists(STATE_FILE);
     const next = appendInboundMessage(result.value || {}, await readJsonBody(request));
     await writeJsonAtomic(STATE_FILE, next.state);
@@ -96,12 +264,16 @@ async function routeApi(request, response, url) {
   }
 
   if (request.method === "GET" && url.pathname === "/api/state") {
+    const { auth } = await readAuthDocument();
+    requireSession(auth, request);
     const result = await readJsonWithExists(STATE_FILE);
     sendJson(response, 200, { state: result.value, exists: result.exists });
     return;
   }
 
   if (request.method === "PUT" && url.pathname === "/api/state") {
+    const { auth } = await readAuthDocument();
+    requireSession(auth, request);
     const body = await readJsonBody(request);
     await writeJsonAtomic(STATE_FILE, body);
     sendJson(response, 200, { ok: true });
@@ -109,19 +281,19 @@ async function routeApi(request, response, url) {
   }
 
   if (request.method === "GET" && url.pathname === "/api/auth") {
-    const result = await readJsonWithExists(AUTH_FILE);
-    sendJson(response, 200, { auth: result.value, exists: result.exists });
-    return;
-  }
-
-  if (request.method === "PUT" && url.pathname === "/api/auth") {
-    const body = await readJsonBody(request);
-    await writeJsonAtomic(AUTH_FILE, body);
-    sendJson(response, 200, { ok: true });
+    const { auth, exists } = await readAuthDocument();
+    const resolved = resolveSession(auth, request);
+    sendJson(response, 200, {
+      auth: sanitizeAuth(auth, resolved.user?.id || ""),
+      authenticated: Boolean(resolved.user),
+      exists: exists || auth.users.length > 0,
+    });
     return;
   }
 
   if (request.method === "DELETE" && url.pathname === "/api/data") {
+    const { auth } = await readAuthDocument();
+    requireManager(auth, request);
     await Promise.all([removeIfExists(STATE_FILE), removeIfExists(AUTH_FILE)]);
     sendJson(response, 200, { ok: true });
     return;
@@ -193,6 +365,32 @@ async function writeJsonAtomic(filePath, value) {
   await fs.rename(tempPath, filePath);
 }
 
+async function readAuthDocument() {
+  const result = await readJsonWithExists(AUTH_FILE);
+  const normalized = normalizeAuthDocument(result.value || {});
+  if (result.exists && normalized.changed) {
+    await writeJsonAtomic(AUTH_FILE, normalized.auth);
+  }
+  return {
+    auth: normalized.auth,
+    exists: result.exists,
+    changed: normalized.changed,
+  };
+}
+
+async function sendSessionPayload(response, request, auth, statusCode = 200, resolvedOverride = null) {
+  const resolved = resolvedOverride || resolveSession(auth, request);
+  const stateResult = resolved.user ? await readJsonWithExists(STATE_FILE) : { value: null, exists: false };
+  sendJson(response, statusCode, {
+    ok: true,
+    authenticated: Boolean(resolved.user),
+    auth: sanitizeAuth(auth, resolved.user?.id || ""),
+    state: stateResult.value,
+    stateExists: stateResult.exists,
+    sessionExpiresAt: resolved.session?.expiresAt || "",
+  });
+}
+
 async function removeIfExists(filePath) {
   try {
     await fs.unlink(filePath);
@@ -204,6 +402,18 @@ async function removeIfExists(filePath) {
 }
 
 async function readJsonBody(request) {
+  const rawBody = await readRawBody(request);
+  if (!rawBody.length) return null;
+
+  try {
+    return JSON.parse(rawBody.toString("utf8"));
+  } catch (error) {
+    error.statusCode = 400;
+    throw error;
+  }
+}
+
+async function readRawBody(request) {
   const chunks = [];
   let size = 0;
 
@@ -217,20 +427,12 @@ async function readJsonBody(request) {
     chunks.push(chunk);
   }
 
-  if (!chunks.length) return null;
-
-  try {
-    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
-  } catch (error) {
-    error.statusCode = 400;
-    throw error;
-  }
+  return chunks.length ? Buffer.concat(chunks) : Buffer.alloc(0);
 }
 
 function sendJson(response, statusCode, payload) {
-  response.writeHead(statusCode, {
-    "Content-Type": "application/json; charset=utf-8",
-    "Cache-Control": "no-store",
-  });
+  response.statusCode = statusCode;
+  response.setHeader("Content-Type", "application/json; charset=utf-8");
+  response.setHeader("Cache-Control", "no-store");
   response.end(JSON.stringify(payload));
 }

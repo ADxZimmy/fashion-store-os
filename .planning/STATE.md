@@ -4,7 +4,7 @@ Last updated: 2026-06-25
 
 ## Current Focus
 
-CRM channel intake is complete. The live app has a raw channel message queue, routing/follow-up workflow, and same-origin `/api/inbound` endpoint for WhatsApp/Instagram-style messages.
+The next three phases are implemented and locally verified; commit, push, and production deploy are next.
 
 ## Completed
 
@@ -41,10 +41,14 @@ CRM channel intake is complete. The live app has a raw channel message queue, ro
 - Verified live production `/api/health`, `/api/bootstrap`, API write/read/reset, empty post-test Supabase table, and clean Vercel runtime logs after the recovery deployment.
 - Added CRM channel intake with `channelMessages`, a CRM Inbox intake queue, route/archive/follow-up controls, and local/Vercel `/api/inbound` routes.
 - Verified live `/api/inbound` post/read/bootstrap/cleanup, deployed CRM intake assets, empty post-test Supabase table, and clean Vercel runtime logs.
+- Added production auth hardening with server-owned password hashes, HttpOnly session cookies, sanitized auth bootstrap, read-only `/api/auth`, and manager-gated staff session actions.
+- Added Reports with conversion, revenue, production pressure, stock risk, reply drafts, quote drafts, stock alerts, production load, and usage-learning insights.
+- Added `/api/channel-webhook` for direct and Meta-style webhook payloads with optional verify-token and HMAC signature checks.
+- Verified the next three phases locally with API smoke tests, Playwright mobile/desktop checks, `npm.cmd run check`, and `npm.cmd run build`.
 
 ## In Progress
 
-- Item: None.
+- Item: Commit, push, and deploy the verified next-three-phase implementation.
 
 ## Blocked
 
@@ -52,7 +56,7 @@ CRM channel intake is complete. The live app has a raw channel message queue, ro
 
 ## Next Action
 
-Start the production auth hardening phase.
+Commit the verified implementation, push `codex/backend-foundation`, deploy to Vercel production, and run live smoke checks.
 
 ## Verification Snapshot
 
