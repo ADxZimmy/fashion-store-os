@@ -76,7 +76,7 @@ Phases 013-016 are implemented and verified locally. Owner-side Vercel/Supabase 
 
 ## Next Action
 
-Commit and push the Phase 013-016 implementation to `codex/backend-foundation`, then have `ADxZimmy` perform the Git-connected owner release after adding Supabase env vars/migrations to the production Vercel project.
+Have `ADxZimmy` perform the Git-connected owner release from the pushed `codex/backend-foundation` work after adding Supabase env vars/migrations to the production Vercel project, then run the pilot UAT script.
 
 ## Verification Snapshot
 
