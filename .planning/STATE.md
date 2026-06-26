@@ -1,10 +1,10 @@
 # State
 
-Last updated: 2026-06-25
+Last updated: 2026-06-26
 
 ## Current Focus
 
-The next three phases are implemented, pushed, deployed to Vercel production, and smoke-tested live.
+GitHub-to-Vercel deployment is wired and pushes to `main` create production deployments, but Vercel blocks the current Git-triggered deployments before build because the commit author lacks Vercel project/team access on a Hobby plan.
 
 ## Completed
 
@@ -59,7 +59,7 @@ The next three phases are implemented, pushed, deployed to Vercel production, an
 
 ## Next Action
 
-Configure real provider webhook verify/signing secrets in Vercel when WhatsApp/Instagram platform apps are ready.
+Choose the Vercel access route for GitHub deploys: upgrade/enable collaboration, move the project to a team/account that can include the commit authors, or make production commits from a Vercel owner/member account. Then add Supabase env vars to the Git-connected project and re-run live `/api/health`.
 
 ## Verification Snapshot
 

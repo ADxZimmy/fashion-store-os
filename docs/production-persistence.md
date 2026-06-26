@@ -50,7 +50,7 @@ Recovery note: on 2026-06-25 the Supabase project was found `INACTIVE`, restored
 
 ## Vercel Environment Variables
 
-These are set on the Vercel production project:
+These are required on any Vercel production project that serves the serverless APIs. They are set on the previously verified production deployment, but the Git-connected `sanuske2-2147s-projects/fashion-store-os` project currently has no environment variables (`vercel env ls` returned none on 2026-06-26):
 
 ```text
 SUPABASE_URL
@@ -105,12 +105,17 @@ Latest verification:
 
 ## Deployment Caveat
 
-Direct deployment from the Git repo is currently blocked by Vercel team-collaboration protection because the latest Git commit author, `info@nitechsoftware.com.ng`, is not a member of the Vercel team.
+GitHub-triggered deployment is now wired to the Git-connected project and `main` is the production branch. Pushes to `main` create Vercel production deployments, but the latest checked deployment was blocked before build:
 
-The successful production deployment was created from a clean temporary staging copy without `.git` metadata, generated from the local Git commit:
-
-```powershell
-vercel deploy <temp-staging-path> --prod --yes --no-wait --project fashion-store-os --scope nnazimuzoos-projects
+```text
+Deployment: dpl_4r5s5fFQDm9d4VbHxS8ZkPWKEoKm
+URL: https://fashion-store-iszf3jyt8-sanuske2-2147s-projects.vercel.app
+State: BLOCKED
+Reason: TEAM_ACCESS_REQUIRED
+Message: The Deployment was blocked because the commit author does not have contributing access to the project on Vercel.
+Author: NnazimuzoO / nnazimuzoo@nitechsoftware.com.ng
 ```
 
-Before relying on GitHub-triggered deployments, commit the Vercel/Supabase config changes and resolve the Git author/team access issue.
+The Vercel API maps that GitHub author to Vercel user `nnazimuzoo`, but `nnazimuzoo` is not a confirmed member of the Vercel team/project. Attempting to invite `nnazimuzoo@nitechsoftware.com.ng` failed because the project team is on Vercel Hobby, which does not permit team members. Resolve this by upgrading/enabling collaboration, moving the project to an account/team that can include the commit authors, or making production Git commits from a Vercel owner/member account with contributing access.
+
+After the Vercel access block is resolved, add the required Supabase env vars to the Git-connected project and re-run `/api/health` before retiring the older local/CLI deployment.

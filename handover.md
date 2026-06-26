@@ -1,7 +1,7 @@
 # Fashion Store OS Handover
 
-Last updated: 2026-06-25
-Current repo: `C:\Users\PC\Documents\Nitech\Personal\Fashion Store OS`
+Last updated: 2026-06-26
+Current repo: `F:\Fashion Store OS`
 
 ## Project Summary
 
@@ -78,9 +78,22 @@ URL: https://duimatbeahwfeghcviju.supabase.co
 Region: us-east-1
 ```
 
-Important: current production deploys are still triggered from the local repo with the Vercel CLI, while GitHub is kept updated from branch `codex/backend-foundation`. The earlier Vercel Git-author block was worked around by committing as a Vercel team member (`nnazimuzoo@nitechsoftware.com.ng`), but GitHub-triggered production deployments have not been re-verified as the primary deployment path.
+Important: GitHub is now the intended deployment source. Branch `main` has been promoted from `codex/backend-foundation`, and the Vercel Git integration for `sanuske2-2147s-projects/fashion-store-os` fires production deployments when `main` is pushed. The current Git-triggered deployments are blocked before build by Vercel team access (`TEAM_ACCESS_REQUIRED`) because commit author `NnazimuzoO` / Vercel user `nnazimuzoo` is not a member of the Vercel team/project. The team is on the Hobby plan, and `vercel teams invite nnazimuzoo@nitechsoftware.com.ng --scope sanuske2-2147s-projects` failed because Hobby teams do not permit team members. Resolve by upgrading/enabling collaboration, moving the project under an account that can include the commit authors, or ensuring production pushes are authored by a Vercel owner/member with contributing access.
 
 The Vercel deployment publishes the static frontend from `dist/` and serverless API routes from `api/`. Live production persistence is backed by Supabase through Vercel env vars. See `docs/production-persistence.md`.
+
+Current Git-connected Vercel project accessible from this workspace:
+
+```text
+Project: sanuske2-2147s-projects/fashion-store-os
+Project ID: prj_3oNJjdlNXi5yTKkqenDEzY2jVELi
+Team ID: team_SumcS7BfGXgJWdQc7y2iAxSk
+Production branch: main
+Production alias: https://fashion-store-os-sanuske2-2147s-projects.vercel.app
+Latest Git-triggered deploy: dpl_4r5s5fFQDm9d4VbHxS8ZkPWKEoKm (BLOCKED, TEAM_ACCESS_REQUIRED)
+```
+
+The Git-connected project currently has no Vercel env vars (`vercel env ls` returned none on 2026-06-26). After the access block is resolved, add `SUPABASE_URL`, `SUPABASE_REST_API_KEY`, `FASHION_STORE_WORKSPACE_ID`, and optional channel webhook secrets before treating it as the production persistence target.
 
 ## Current Git State
 
@@ -426,7 +439,7 @@ Commit:
 - Should staff access be limited to 2 permanently, or is that only for the current prototype?
 - Should Mo'ora Afrika branding assets be replaced with final production files later?
 - Should the onboarding flow include workspace setup before the dashboard opens?
-- Should Vercel deployments be driven by GitHub integration rather than local CLI deploys?
+- Vercel deployments should be driven by GitHub integration once the Vercel Hobby/team access block is resolved and Supabase env vars are added to the Git-connected project.
 
 ## Known Risks
 
@@ -436,7 +449,7 @@ Commit:
 - There is no migration system for future localStorage schema changes.
 - No automated browser regression suite exists yet.
 - Static HTML/CSS/JS is simple and fast, but larger features may need modularization.
-- GitHub-triggered production deployments are not yet the verified deployment path; current production deploys are made from the local repo through Vercel CLI.
+- GitHub-triggered production deployments are wired and fire on `main`, but the current Git-connected project blocks collaborator-authored deploys with `TEAM_ACCESS_REQUIRED` on the Hobby plan.
 - Supabase projects can become inactive; `/api/health` now detects upstream storage failure, but live persistence still depends on the project staying active.
 - Prototype auth is still not production-secure even after durable persistence; a real auth/session model is a separate hardening phase.
 
