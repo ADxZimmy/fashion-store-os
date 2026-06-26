@@ -71,6 +71,13 @@ const channelFollowUpStatuses = ["Needs reply", "Awaiting details", "Quote sent"
 const channelRoutingStatuses = ["New", "Routed to Inquiry", "Archived"];
 const channelConsentStatuses = ["Unknown", "Opted in", "Opted out"];
 const staffStatuses = ["active", "invited", "suspended"];
+const orderFollowUpStatuses = ["No follow-up", "Deposit reminder", "Fitting reminder", "Collection reminder", "Closed"];
+const paymentMethods = ["Cash", "Bank transfer", "POS/card", "Mobile money", "Other"];
+const fittingTypes = ["Initial fitting", "First fitting", "Adjustment fitting", "Final fitting", "Pickup fitting"];
+const fittingStatuses = ["Scheduled", "Completed", "Missed", "Rescheduled"];
+const managerReviewStatuses = ["Not requested", "Review requested", "Changes requested", "Approved"];
+const handoffMethods = ["Collection", "Delivery", "Dispatch rider", "Pickup by representative"];
+const inventoryAdjustmentReasons = ["Restock", "Correction", "Damage", "Supplier return", "Manual count", "Other"];
 const productionSteps = [
   "Consultation",
   "Measurement Taken",
@@ -244,7 +251,8 @@ function normalizeState(nextState = {}) {
     channelDeliveryEvents: Array.isArray(nextState.channelDeliveryEvents) ? normalizeChannelDeliveryEvents(nextState.channelDeliveryEvents) : [],
     styles: Array.isArray(nextState.styles) ? nextState.styles : seed.styles,
     inventory: Array.isArray(nextState.inventory) ? nextState.inventory : seed.inventory,
-    orders: Array.isArray(nextState.orders) ? nextState.orders : seed.orders,
+    inventoryAdjustments: Array.isArray(nextState.inventoryAdjustments) ? normalizeInventoryAdjustments(nextState.inventoryAdjustments) : [],
+    orders: Array.isArray(nextState.orders) ? nextState.orders.map(normalizeOrder) : seed.orders.map(normalizeOrder),
     usageRecords: Array.isArray(nextState.usageRecords) ? nextState.usageRecords : seed.usageRecords,
   };
 }
@@ -304,6 +312,155 @@ function normalizeChannelDeliveryEvents(events = []) {
       createdAt: clean(event.createdAt) || isoDate(0),
     }))
     .filter((event) => event.status)
+    .slice(0, 200);
+}
+
+function normalizeOrder(order = {}) {
+  const id = clean(order.id) || uid("ord");
+  const quote = numberValue(order.quote);
+  const legacyDeposit = numberValue(order.deposit);
+  const paymentRecords = normalizePaymentRecords(order.paymentRecords, { orderId: id, legacyDeposit });
+  const paymentTotal = paymentRecords.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+
+  return {
+    ...order,
+    id,
+    clientId: clean(order.clientId),
+    styleId: clean(order.styleId),
+    fabricId: clean(order.fabricId),
+    modifiers: Array.isArray(order.modifiers) ? order.modifiers.map(clean).filter(Boolean) : [],
+    status: clean(order.status) || "Quoted",
+    productionStep: normalizeChoice(order.productionStep, productionSteps, "Consultation"),
+    deadline: clean(order.deadline),
+    fittingDate: clean(order.fittingDate),
+    quote,
+    deposit: round2(paymentTotal || legacyDeposit),
+    assignedTo: clean(order.assignedTo),
+    notes: clean(order.notes),
+    estimatedMaterials: Array.isArray(order.estimatedMaterials) ? order.estimatedMaterials : [],
+    reservedMaterials: Array.isArray(order.reservedMaterials) ? order.reservedMaterials : [],
+    actualMaterials: Array.isArray(order.actualMaterials) ? order.actualMaterials : [],
+    stockWarnings: Array.isArray(order.stockWarnings) ? order.stockWarnings.map(clean).filter(Boolean) : [],
+    paymentRecords,
+    fittingEvents: normalizeFittingEvents(order.fittingEvents, order.fittingDate),
+    followUpStatus: normalizeChoice(order.followUpStatus, orderFollowUpStatuses, order.status === "Completed" ? "Closed" : "No follow-up"),
+    followUpNote: clean(order.followUpNote),
+    followUpAt: clean(order.followUpAt),
+    managerReview: normalizeManagerReview(order.managerReview),
+    handoff: normalizeHandoff(order.handoff),
+    activity: normalizeOrderActivity(order.activity),
+    createdAt: clean(order.createdAt) || isoDate(0),
+    completedAt: clean(order.completedAt),
+  };
+}
+
+function normalizePaymentRecords(records = [], options = {}) {
+  const normalized = (Array.isArray(records) ? records : [])
+    .map((payment) => ({
+      id: clean(payment.id) || uid("pay"),
+      amount: numberValue(payment.amount),
+      method: normalizeChoice(payment.method, paymentMethods, "Cash"),
+      receivedAt: clean(payment.receivedAt) || isoDate(0),
+      note: clean(payment.note),
+      recordedBy: clean(payment.recordedBy),
+    }))
+    .filter((payment) => payment.amount > 0);
+
+  if (!normalized.length && options.legacyDeposit > 0) {
+    normalized.push({
+      id: `pay-${options.orderId || "order"}-deposit`,
+      amount: round2(options.legacyDeposit),
+      method: "Cash",
+      receivedAt: isoDate(0),
+      note: "Initial deposit",
+      recordedBy: "",
+    });
+  }
+
+  return normalized.slice(0, 50);
+}
+
+function normalizeFittingEvents(events = [], fallbackDate = "") {
+  const normalized = (Array.isArray(events) ? events : [])
+    .map((event) => ({
+      id: clean(event.id) || uid("fit"),
+      type: normalizeChoice(event.type, fittingTypes, "First fitting"),
+      date: clean(event.date),
+      status: normalizeChoice(event.status, fittingStatuses, "Scheduled"),
+      assignedTo: clean(event.assignedTo),
+      notes: clean(event.notes),
+      completedAt: clean(event.completedAt),
+      createdAt: clean(event.createdAt) || isoDate(0),
+    }))
+    .filter((event) => event.date);
+
+  if (!normalized.length && fallbackDate) {
+    normalized.push({
+      id: `fit-${fallbackDate}`,
+      type: "First fitting",
+      date: clean(fallbackDate),
+      status: "Scheduled",
+      assignedTo: "",
+      notes: "",
+      completedAt: "",
+      createdAt: isoDate(0),
+    });
+  }
+
+  return normalized.slice(0, 30);
+}
+
+function normalizeManagerReview(review = {}) {
+  return {
+    status: normalizeChoice(review.status, managerReviewStatuses, "Not requested"),
+    requestedAt: clean(review.requestedAt),
+    requestedBy: clean(review.requestedBy),
+    decisionAt: clean(review.decisionAt),
+    decisionBy: clean(review.decisionBy),
+    note: clean(review.note),
+  };
+}
+
+function normalizeHandoff(handoff = {}) {
+  if (!handoff || typeof handoff !== "object" || !clean(handoff.completedAt)) return null;
+  return {
+    method: normalizeChoice(handoff.method, handoffMethods, "Collection"),
+    recipient: clean(handoff.recipient),
+    completedAt: clean(handoff.completedAt),
+    note: clean(handoff.note),
+    balanceAcknowledged: Boolean(handoff.balanceAcknowledged),
+  };
+}
+
+function normalizeOrderActivity(activity = []) {
+  return (Array.isArray(activity) ? activity : [])
+    .map((event) => ({
+      id: clean(event.id) || uid("act"),
+      label: clean(event.label),
+      detail: clean(event.detail),
+      actor: clean(event.actor),
+      createdAt: clean(event.createdAt) || isoDate(0),
+    }))
+    .filter((event) => event.label)
+    .slice(-60);
+}
+
+function normalizeInventoryAdjustments(adjustments = []) {
+  return (Array.isArray(adjustments) ? adjustments : [])
+    .map((adjustment) => ({
+      id: clean(adjustment.id) || uid("adj"),
+      itemId: clean(adjustment.itemId),
+      itemName: clean(adjustment.itemName),
+      change: numberValue(adjustment.change),
+      quantityBefore: numberValue(adjustment.quantityBefore),
+      quantityAfter: numberValue(adjustment.quantityAfter),
+      unit: clean(adjustment.unit),
+      reason: normalizeChoice(adjustment.reason, inventoryAdjustmentReasons, "Other"),
+      note: clean(adjustment.note),
+      actor: clean(adjustment.actor),
+      createdAt: clean(adjustment.createdAt) || isoDate(0),
+    }))
+    .filter((adjustment) => adjustment.itemId && adjustment.change !== 0)
     .slice(0, 200);
 }
 
@@ -681,6 +838,7 @@ function createSeedState() {
         notes: "",
       },
     ],
+    inventoryAdjustments: [],
     orders: [
       {
         id: "ord-1042",
@@ -1005,6 +1163,246 @@ function renderModal() {
             <div class="button-row">
               <button class="btn secondary" type="button" data-action="close-modal">Cancel</button>
               <button class="btn" type="submit">Update inventory</button>
+            </div>
+          </form>
+        </div>
+      </section>
+    `;
+  }
+
+  if (modalState.type === "payment") {
+    const order = getOrder(modalState.id);
+    if (!order) return "";
+    const balance = orderBalanceDue(order);
+    return `
+      <section class="modal-layer" role="presentation">
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+          <div class="modal-header">
+            <div>
+              <p class="eyebrow">Order payment</p>
+              <h2 id="modalTitle">Record payment</h2>
+            </div>
+            <button class="modal-close" type="button" data-action="close-modal" aria-label="Close payment dialog">&times;</button>
+          </div>
+          <form id="paymentForm" data-id="${escapeHtml(order.id)}" class="form-grid modal-form-grid">
+            <label class="field">
+              <span>Amount</span>
+              <input name="amount" type="number" min="0.01" step="100" inputmode="decimal" value="${balance > 0 ? balance : ""}" required autofocus data-modal-autofocus>
+            </label>
+            <label class="field">
+              <span>Method</span>
+              <select name="method">
+                ${paymentMethods.map((method) => `<option>${escapeHtml(method)}</option>`).join("")}
+              </select>
+            </label>
+            <label class="field">
+              <span>Received date</span>
+              <input name="receivedAt" type="date" value="${isoDate(0)}">
+            </label>
+            <label class="field full">
+              <span>Payment note</span>
+              <textarea name="note" placeholder="Receipt reference, transfer note, or cashier initials"></textarea>
+            </label>
+            <p class="modal-note full">Current balance: ${money(balance)} on a ${money(order.quote)} order.</p>
+            <div class="button-row full">
+              <button class="btn secondary" type="button" data-action="close-modal">Cancel</button>
+              <button class="btn" type="submit">Save payment</button>
+            </div>
+          </form>
+        </div>
+      </section>
+    `;
+  }
+
+  if (modalState.type === "fitting") {
+    const order = getOrder(modalState.id);
+    if (!order) return "";
+    return `
+      <section class="modal-layer" role="presentation">
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+          <div class="modal-header">
+            <div>
+              <p class="eyebrow">Fitting appointment</p>
+              <h2 id="modalTitle">Schedule fitting</h2>
+            </div>
+            <button class="modal-close" type="button" data-action="close-modal" aria-label="Close fitting dialog">&times;</button>
+          </div>
+          <form id="fittingForm" data-id="${escapeHtml(order.id)}" class="form-grid modal-form-grid">
+            <label class="field">
+              <span>Fitting type</span>
+              <select name="type">
+                ${fittingTypes.map((type) => `<option>${escapeHtml(type)}</option>`).join("")}
+              </select>
+            </label>
+            <label class="field">
+              <span>Date</span>
+              <input name="date" type="date" value="${order.fittingDate || isoDate(3)}" required autofocus data-modal-autofocus>
+            </label>
+            <label class="field">
+              <span>Assigned to</span>
+              <input name="assignedTo" value="${escapeHtml(order.assignedTo || "")}" placeholder="Tailor or fitting lead">
+            </label>
+            <label class="field full">
+              <span>Fitting notes</span>
+              <textarea name="notes" placeholder="What to check, alter, or confirm"></textarea>
+            </label>
+            <div class="button-row full">
+              <button class="btn secondary" type="button" data-action="close-modal">Cancel</button>
+              <button class="btn" type="submit">Schedule fitting</button>
+            </div>
+          </form>
+        </div>
+      </section>
+    `;
+  }
+
+  if (modalState.type === "review") {
+    const order = getOrder(modalState.id);
+    if (!order) return "";
+    return `
+      <section class="modal-layer" role="presentation">
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+          <div class="modal-header">
+            <div>
+              <p class="eyebrow">Manager review</p>
+              <h2 id="modalTitle">Request review</h2>
+            </div>
+            <button class="modal-close" type="button" data-action="close-modal" aria-label="Close review dialog">&times;</button>
+          </div>
+          <form id="managerReviewForm" data-id="${escapeHtml(order.id)}">
+            <label class="field full">
+              <span>Review note</span>
+              <textarea name="note" required autofocus data-modal-autofocus placeholder="What should the manager inspect before handoff?">${escapeHtml(order.managerReview?.note || "")}</textarea>
+            </label>
+            <div class="button-row">
+              <button class="btn secondary" type="button" data-action="close-modal">Cancel</button>
+              <button class="btn" type="submit">Request review</button>
+            </div>
+          </form>
+        </div>
+      </section>
+    `;
+  }
+
+  if (modalState.type === "follow-up") {
+    const order = getOrder(modalState.id);
+    if (!order) return "";
+    return `
+      <section class="modal-layer" role="presentation">
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+          <div class="modal-header">
+            <div>
+              <p class="eyebrow">Customer follow-up</p>
+              <h2 id="modalTitle">Update follow-up</h2>
+            </div>
+            <button class="modal-close" type="button" data-action="close-modal" aria-label="Close follow-up dialog">&times;</button>
+          </div>
+          <form id="followUpForm" data-id="${escapeHtml(order.id)}" class="form-grid modal-form-grid">
+            <label class="field">
+              <span>Status</span>
+              <select name="followUpStatus" autofocus data-modal-autofocus>
+                ${orderFollowUpStatuses.map((status) => `<option ${status === order.followUpStatus ? "selected" : ""}>${escapeHtml(status)}</option>`).join("")}
+              </select>
+            </label>
+            <label class="field">
+              <span>Next follow-up date</span>
+              <input name="followUpAt" type="date" value="${escapeHtml(order.followUpAt || "")}">
+            </label>
+            <label class="field full">
+              <span>Follow-up note</span>
+              <textarea name="followUpNote" placeholder="Deposit reminder, fitting reminder, collection note, or closure note">${escapeHtml(order.followUpNote || "")}</textarea>
+            </label>
+            <div class="button-row full">
+              <button class="btn secondary" type="button" data-action="close-modal">Cancel</button>
+              <button class="btn" type="submit">Save follow-up</button>
+            </div>
+          </form>
+        </div>
+      </section>
+    `;
+  }
+
+  if (modalState.type === "handoff") {
+    const order = getOrder(modalState.id);
+    if (!order) return "";
+    const balance = orderBalanceDue(order);
+    return `
+      <section class="modal-layer" role="presentation">
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+          <div class="modal-header">
+            <div>
+              <p class="eyebrow">Order handoff</p>
+              <h2 id="modalTitle">Close handoff</h2>
+            </div>
+            <button class="modal-close" type="button" data-action="close-modal" aria-label="Close handoff dialog">&times;</button>
+          </div>
+          <form id="handoffForm" data-id="${escapeHtml(order.id)}" class="form-grid modal-form-grid">
+            <label class="field">
+              <span>Handoff method</span>
+              <select name="method" autofocus data-modal-autofocus>
+                ${handoffMethods.map((method) => `<option>${escapeHtml(method)}</option>`).join("")}
+              </select>
+            </label>
+            <label class="field">
+              <span>Handoff date</span>
+              <input name="completedAt" type="date" value="${isoDate(0)}" required>
+            </label>
+            <label class="field full">
+              <span>Recipient</span>
+              <input name="recipient" value="${escapeHtml(getClient(order.clientId)?.name || "")}" placeholder="Client or representative name">
+            </label>
+            <label class="field full">
+              <span>Handoff note</span>
+              <textarea name="note" placeholder="Condition, packaging, dispatch reference, or signature note"></textarea>
+            </label>
+            ${balance > 0 ? `
+              <label class="check-tile full">
+                <input name="balanceAcknowledged" type="checkbox">
+                <span>Balance of ${money(balance)} is acknowledged before closing.</span>
+              </label>
+            ` : ""}
+            <div class="button-row full">
+              <button class="btn secondary" type="button" data-action="close-modal">Cancel</button>
+              <button class="btn success" type="submit">Complete handoff</button>
+            </div>
+          </form>
+        </div>
+      </section>
+    `;
+  }
+
+  if (modalState.type === "inventory-adjust") {
+    const item = getInventoryItem(modalState.id);
+    if (!item) return "";
+    return `
+      <section class="modal-layer" role="presentation">
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+          <div class="modal-header">
+            <div>
+              <p class="eyebrow">Inventory adjustment</p>
+              <h2 id="modalTitle">Adjust ${escapeHtml(item.name)}</h2>
+            </div>
+            <button class="modal-close" type="button" data-action="close-modal" aria-label="Close inventory adjustment dialog">&times;</button>
+          </div>
+          <form id="inventoryAdjustmentForm" data-id="${escapeHtml(item.id)}" class="form-grid modal-form-grid">
+            <label class="field">
+              <span>Change quantity</span>
+              <input name="change" type="number" step="0.01" inputmode="decimal" required autofocus data-modal-autofocus placeholder="-1 or 5">
+            </label>
+            <label class="field">
+              <span>Reason</span>
+              <select name="reason">
+                ${inventoryAdjustmentReasons.filter((reason) => reason !== "Restock").map((reason) => `<option>${escapeHtml(reason)}</option>`).join("")}
+              </select>
+            </label>
+            <label class="field full">
+              <span>Adjustment note</span>
+              <textarea name="note" placeholder="Count note, damage note, or supplier return reference"></textarea>
+            </label>
+            <p class="modal-note full">Current stock: ${round2(item.quantity)} ${escapeHtml(item.unit)}. Reserved: ${round2(item.reserved)} ${escapeHtml(item.unit)}.</p>
+            <div class="button-row full">
+              <button class="btn secondary" type="button" data-action="close-modal">Cancel</button>
+              <button class="btn" type="submit">Save adjustment</button>
             </div>
           </form>
         </div>
@@ -2014,9 +2412,21 @@ function renderInventory() {
             <span>In stock</span>
             <span>Reserved</span>
             <span>Available</span>
-            <span>Status</span>
+            <span>Status & actions</span>
           </div>
           ${state.inventory.map(renderMaterialRow).join("")}
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Inventory adjustment history</h2>
+            <p>Restocks, corrections, damages, and manual counts are logged for store operations review.</p>
+          </div>
+        </div>
+        <div class="list">
+          ${state.inventoryAdjustments.slice(0, 8).map(renderInventoryAdjustment).join("") || emptyState("No inventory adjustments logged yet.")}
         </div>
       </section>
     </section>
@@ -2474,7 +2884,16 @@ function wireEvents() {
     if (action === "advance-order") advanceOrder(id);
     if (action === "complete-order") completeOrder(id);
     if (action === "cancel-order") cancelOrder(id);
+    if (action === "record-payment") recordPayment(id);
+    if (action === "schedule-fitting") scheduleFitting(id);
+    if (action === "complete-fitting") completeLatestFitting(id);
+    if (action === "request-manager-review") requestManagerReview(id);
+    if (action === "approve-manager-review") approveManagerReview(id);
+    if (action === "request-review-changes") requestReviewChanges(id);
+    if (action === "update-follow-up") updateFollowUp(id);
+    if (action === "handoff-order") handoffOrder(id);
     if (action === "restock-item") restockItem(id);
+    if (action === "adjust-item") adjustInventoryItem(id);
     if (action === "apply-premium-brand") applyPremiumBrand();
     if (action === "apply-neutral-brand") applyNeutralBrand();
     if (action === "close-modal") closeModal();
@@ -2549,6 +2968,12 @@ function wireEvents() {
     if (form.id === "recipeForm") handleRecipeSubmit(form);
     if (form.id === "orderForm") handleOrderSubmit(form);
     if (form.id === "restockForm") handleRestockSubmit(form);
+    if (form.id === "paymentForm") handlePaymentSubmit(form);
+    if (form.id === "fittingForm") handleFittingSubmit(form);
+    if (form.id === "managerReviewForm") handleManagerReviewSubmit(form);
+    if (form.id === "followUpForm") handleFollowUpSubmit(form);
+    if (form.id === "handoffForm") handleHandoffSubmit(form);
+    if (form.id === "inventoryAdjustmentForm") handleInventoryAdjustmentSubmit(form);
   };
 }
 
@@ -3076,6 +3501,8 @@ function handleOrderSubmit(form) {
   const style = getStyle(clean(data.get("styleId")));
   const modifiers = data.getAll("modifiers").map(clean);
   const quote = numberValue(data.get("quote")) || adjustedPrice(style, modifiers);
+  const deposit = numberValue(data.get("deposit"));
+  const fittingDate = clean(data.get("fittingDate"));
 
   const order = {
     id: uid("ord"),
@@ -3086,15 +3513,48 @@ function handleOrderSubmit(form) {
     status: "Quoted",
     productionStep: "Consultation",
     deadline: clean(data.get("deadline")),
-    fittingDate: clean(data.get("fittingDate")),
+    fittingDate,
     quote,
-    deposit: numberValue(data.get("deposit")),
+    deposit,
     assignedTo: clean(data.get("assignedTo")),
     notes: clean(data.get("notes")),
     estimatedMaterials: [],
     reservedMaterials: [],
     actualMaterials: [],
     stockWarnings: [],
+    paymentRecords: deposit > 0
+      ? [{
+          id: uid("pay"),
+          amount: deposit,
+          method: "Cash",
+          receivedAt: isoDate(0),
+          note: "Initial deposit",
+          recordedBy: currentUserLabel(),
+        }]
+      : [],
+    fittingEvents: fittingDate
+      ? [{
+          id: uid("fit"),
+          type: "First fitting",
+          date: fittingDate,
+          status: "Scheduled",
+          assignedTo: clean(data.get("assignedTo")),
+          notes: "Initial order fitting.",
+          createdAt: isoDate(0),
+        }]
+      : [],
+    followUpStatus: deposit > 0 ? "No follow-up" : "Deposit reminder",
+    followUpNote: "",
+    followUpAt: "",
+    managerReview: normalizeManagerReview(),
+    handoff: null,
+    activity: [{
+      id: uid("act"),
+      label: "Order draft created",
+      detail: deposit > 0 ? `Deposit recorded: ${money(deposit)}` : "Awaiting deposit or confirmation.",
+      actor: currentUserLabel(),
+      createdAt: isoDate(0),
+    }],
     createdAt: isoDate(0),
   };
 
@@ -3145,6 +3605,20 @@ function convertInquiry(id) {
     reservedMaterials: [],
     actualMaterials: [],
     stockWarnings: [],
+    paymentRecords: [],
+    fittingEvents: [],
+    followUpStatus: "Deposit reminder",
+    followUpNote: "",
+    followUpAt: "",
+    managerReview: normalizeManagerReview(),
+    handoff: null,
+    activity: [{
+      id: uid("act"),
+      label: "Converted from inquiry",
+      detail: inquiry.desiredStyle || "CRM inquiry converted to order.",
+      actor: currentUserLabel(),
+      createdAt: isoDate(0),
+    }],
     createdAt: isoDate(0),
   };
   order.estimatedMaterials = estimateOrder(order).lineItems;
@@ -3266,6 +3740,8 @@ function reserveOrder(id) {
   order.status = "Materials Reserved";
   order.productionStep = "Materials Reserved";
   order.stockWarnings = [];
+  order.followUpStatus = orderPaidTotal(order) > 0 ? "No follow-up" : "Deposit reminder";
+  recordOrderActivity(order, "Materials reserved", `${estimate.lineItems.length} material lines reserved.`);
   saveState();
   showToast("Estimated materials reserved.");
   render();
@@ -3317,6 +3793,7 @@ function cutOrder(id) {
   order.stockWarnings = actual > mainFabric.quantity
     ? [`Actual fabric exceeded estimate by ${round2(actual - mainFabric.quantity)} ${mainFabric.unit}.`]
     : [];
+  recordOrderActivity(order, "Cutting recorded", `${actual} ${mainFabric.unit} actual main fabric used.`);
 
   saveState();
   showToast(actual > mainFabric.quantity ? "Cutting recorded with extra usage warning." : "Cutting recorded and unused reserve released.");
@@ -3338,6 +3815,7 @@ function advanceOrder(id) {
   }
 
   order.status = productionStepToStatus(order.productionStep);
+  recordOrderActivity(order, "Production advanced", order.productionStep);
   saveState();
   render();
 }
@@ -3346,13 +3824,22 @@ function completeOrder(id) {
   const order = getOrder(id);
   if (!order) return;
 
+  finalizeOrderCompletion(order);
+  recordOrderActivity(order, "Order completed", "Marked complete without handoff details.");
+  saveState();
+  showToast("Order completed and learning record saved.");
+  render();
+}
+
+function finalizeOrderCompletion(order) {
+  const alreadyCompleted = order.status === "Completed";
   consumeRemainingReserved(order);
   const mainEstimate = (order.estimatedMaterials || order.reservedMaterials || []).find((line) => line.role === "Main fabric");
   const mainActual = (order.actualMaterials || []).find((line) => line.role === "Main fabric");
   const estimated = mainEstimate?.quantity || mainActual?.estimated || 0;
   const actual = mainActual?.actual || estimated;
 
-  if (mainEstimate) {
+  if (!alreadyCompleted && mainEstimate && !state.usageRecords.some((record) => record.orderId === order.id)) {
     state.usageRecords.unshift({
       id: uid("learn"),
       orderId: order.id,
@@ -3368,10 +3855,10 @@ function completeOrder(id) {
 
   order.status = "Completed";
   order.productionStep = "Delivered/Collected";
-  order.completedAt = isoDate(0);
-  saveState();
-  showToast("Order completed and learning record saved.");
-  render();
+  order.completedAt = order.completedAt || isoDate(0);
+  if (order.followUpStatus !== "Closed") {
+    order.followUpStatus = "Collection reminder";
+  }
 }
 
 function cancelOrder(id) {
@@ -3380,8 +3867,233 @@ function cancelOrder(id) {
   releaseReservation(order);
   order.status = "Cancelled";
   order.productionStep = "Consultation";
+  order.followUpStatus = "Closed";
+  recordOrderActivity(order, "Order cancelled", "Reservations released.");
   saveState();
   showToast("Order cancelled and reservations released.");
+  render();
+}
+
+function recordPayment(id) {
+  const order = getOrder(id);
+  if (!order) return;
+  modalState = { type: "payment", id };
+  render();
+}
+
+function handlePaymentSubmit(form) {
+  const order = getOrder(form.dataset.id);
+  if (!order) return;
+  const data = new FormData(form);
+  const amount = numberValue(data.get("amount"));
+  if (!amount || amount <= 0) {
+    showToast("Enter a payment amount.");
+    return;
+  }
+
+  order.paymentRecords = normalizePaymentRecords(order.paymentRecords);
+  order.paymentRecords.push({
+    id: uid("pay"),
+    amount,
+    method: normalizeChoice(data.get("method"), paymentMethods, "Cash"),
+    receivedAt: clean(data.get("receivedAt")) || isoDate(0),
+    note: clean(data.get("note")),
+    recordedBy: currentUserLabel(),
+  });
+  order.deposit = round2(orderPaidTotal(order));
+  if (orderBalanceDue(order) <= 0 && !["Completed", "Cancelled"].includes(order.status)) {
+    order.followUpStatus = "Collection reminder";
+  }
+  recordOrderActivity(order, "Payment recorded", `${money(amount)} via ${normalizeChoice(data.get("method"), paymentMethods, "Cash")}.`);
+  closeModal(false);
+  saveState();
+  showToast("Payment recorded.");
+  render();
+}
+
+function scheduleFitting(id) {
+  const order = getOrder(id);
+  if (!order) return;
+  modalState = { type: "fitting", id };
+  render();
+}
+
+function handleFittingSubmit(form) {
+  const order = getOrder(form.dataset.id);
+  if (!order) return;
+  const data = new FormData(form);
+  const date = clean(data.get("date"));
+  if (!date) {
+    showToast("Choose a fitting date.");
+    return;
+  }
+
+  order.fittingEvents = normalizeFittingEvents(order.fittingEvents);
+  order.fittingEvents.push({
+    id: uid("fit"),
+    type: normalizeChoice(data.get("type"), fittingTypes, "First fitting"),
+    date,
+    status: "Scheduled",
+    assignedTo: clean(data.get("assignedTo")),
+    notes: clean(data.get("notes")),
+    createdAt: isoDate(0),
+  });
+  order.fittingDate = date;
+  order.followUpStatus = "Fitting reminder";
+  order.followUpAt = date;
+  recordOrderActivity(order, "Fitting scheduled", `${formatDate(date)} ${clean(data.get("assignedTo")) ? `with ${clean(data.get("assignedTo"))}` : ""}`.trim());
+  closeModal(false);
+  saveState();
+  showToast("Fitting scheduled.");
+  render();
+}
+
+function completeLatestFitting(id) {
+  const order = getOrder(id);
+  if (!order) return;
+  const fittings = normalizeFittingEvents(order.fittingEvents);
+  const fitting = [...fittings].reverse().find((event) => event.status === "Scheduled" || event.status === "Rescheduled");
+  if (!fitting) {
+    showToast("No scheduled fitting to complete.");
+    return;
+  }
+
+  fitting.status = "Completed";
+  fitting.completedAt = isoDate(0);
+  order.fittingEvents = fittings;
+  if (!["Completed", "Cancelled"].includes(order.status)) {
+    order.productionStep = order.productionStep === "First Fitting" ? "Adjustments" : order.productionStep;
+    order.status = productionStepToStatus(order.productionStep);
+  }
+  order.followUpStatus = "No follow-up";
+  recordOrderActivity(order, "Fitting completed", `${fitting.type} on ${formatDate(fitting.date)}.`);
+  saveState();
+  showToast("Fitting marked complete.");
+  render();
+}
+
+function requestManagerReview(id) {
+  const order = getOrder(id);
+  if (!order) return;
+  modalState = { type: "review", id };
+  render();
+}
+
+function handleManagerReviewSubmit(form) {
+  const order = getOrder(form.dataset.id);
+  if (!order) return;
+  const data = new FormData(form);
+  order.managerReview = {
+    status: "Review requested",
+    requestedAt: isoDate(0),
+    requestedBy: currentUserLabel(),
+    decisionAt: "",
+    decisionBy: "",
+    note: clean(data.get("note")),
+  };
+  if (!["Completed", "Cancelled"].includes(order.status)) {
+    order.productionStep = "Quality Check";
+    order.status = "Quality Check";
+  }
+  recordOrderActivity(order, "Manager review requested", order.managerReview.note || "Quality review requested.");
+  closeModal(false);
+  saveState();
+  showToast("Manager review requested.");
+  render();
+}
+
+function approveManagerReview(id) {
+  const order = getOrder(id);
+  if (!order) return;
+  order.managerReview = {
+    ...normalizeManagerReview(order.managerReview),
+    status: "Approved",
+    decisionAt: isoDate(0),
+    decisionBy: currentUserLabel(),
+  };
+  if (!["Completed", "Cancelled"].includes(order.status)) {
+    order.productionStep = "Ready";
+    order.status = "Ready for Collection";
+    order.followUpStatus = "Collection reminder";
+  }
+  recordOrderActivity(order, "Manager review approved", "Order moved to ready state.");
+  saveState();
+  showToast("Manager review approved.");
+  render();
+}
+
+function requestReviewChanges(id) {
+  const order = getOrder(id);
+  if (!order) return;
+  order.managerReview = {
+    ...normalizeManagerReview(order.managerReview),
+    status: "Changes requested",
+    decisionAt: isoDate(0),
+    decisionBy: currentUserLabel(),
+  };
+  if (!["Completed", "Cancelled"].includes(order.status)) {
+    order.productionStep = "Adjustments";
+    order.status = "Adjustments";
+    order.followUpStatus = "Fitting reminder";
+  }
+  recordOrderActivity(order, "Review changes requested", order.managerReview.note || "Adjustments requested before approval.");
+  saveState();
+  showToast("Changes requested.");
+  render();
+}
+
+function updateFollowUp(id) {
+  const order = getOrder(id);
+  if (!order) return;
+  modalState = { type: "follow-up", id };
+  render();
+}
+
+function handleFollowUpSubmit(form) {
+  const order = getOrder(form.dataset.id);
+  if (!order) return;
+  const data = new FormData(form);
+  order.followUpStatus = normalizeChoice(data.get("followUpStatus"), orderFollowUpStatuses, "No follow-up");
+  order.followUpAt = clean(data.get("followUpAt"));
+  order.followUpNote = clean(data.get("followUpNote"));
+  recordOrderActivity(order, "Follow-up updated", `${order.followUpStatus}${order.followUpAt ? ` for ${formatDate(order.followUpAt)}` : ""}.`);
+  closeModal(false);
+  saveState();
+  showToast("Follow-up updated.");
+  render();
+}
+
+function handoffOrder(id) {
+  const order = getOrder(id);
+  if (!order) return;
+  modalState = { type: "handoff", id };
+  render();
+}
+
+function handleHandoffSubmit(form) {
+  const order = getOrder(form.dataset.id);
+  if (!order) return;
+  const data = new FormData(form);
+  const balance = orderBalanceDue(order);
+  const acknowledged = data.get("balanceAcknowledged") === "on" || balance <= 0;
+  if (balance > 0 && !acknowledged) {
+    showToast("Acknowledge the open balance before closing handoff.");
+    return;
+  }
+
+  finalizeOrderCompletion(order);
+  order.handoff = {
+    method: normalizeChoice(data.get("method"), handoffMethods, "Collection"),
+    recipient: clean(data.get("recipient")),
+    completedAt: clean(data.get("completedAt")) || isoDate(0),
+    note: clean(data.get("note")),
+    balanceAcknowledged: acknowledged,
+  };
+  order.followUpStatus = "Closed";
+  recordOrderActivity(order, "Order handed off", `${order.handoff.method} to ${order.handoff.recipient || "client"}.`);
+  closeModal(false);
+  saveState();
+  showToast("Order handoff completed.");
   render();
 }
 
@@ -3397,11 +4109,61 @@ function handleRestockSubmit(form) {
   if (!item) return;
   const amount = Number(new FormData(form).get("amount"));
   if (!Number.isFinite(amount) || amount <= 0) return;
-  item.quantity = round2(Number(item.quantity || 0) + amount);
+  recordInventoryAdjustment(item, amount, "Restock", "Restock entry");
   closeModal(false);
   saveState();
   showToast("Inventory updated.");
   render();
+}
+
+function adjustInventoryItem(id) {
+  const item = getInventoryItem(id);
+  if (!item) return;
+  modalState = { type: "inventory-adjust", id };
+  render();
+}
+
+function handleInventoryAdjustmentSubmit(form) {
+  const item = getInventoryItem(form.dataset.id);
+  if (!item) return;
+  const data = new FormData(form);
+  const change = numberValue(data.get("change"));
+  if (!change) {
+    showToast("Enter an inventory adjustment.");
+    return;
+  }
+  const after = round2(Number(item.quantity || 0) + change);
+  if (after < Number(item.reserved || 0)) {
+    showToast("Stock cannot be adjusted below reserved quantity.");
+    return;
+  }
+
+  recordInventoryAdjustment(item, change, normalizeChoice(data.get("reason"), inventoryAdjustmentReasons, "Other"), clean(data.get("note")));
+  closeModal(false);
+  saveState();
+  showToast("Inventory adjustment saved.");
+  render();
+}
+
+function recordInventoryAdjustment(item, change, reason, note = "") {
+  const before = round2(Number(item.quantity || 0));
+  const after = round2(before + Number(change || 0));
+  item.quantity = after;
+  state.inventoryAdjustments = normalizeInventoryAdjustments(state.inventoryAdjustments);
+  state.inventoryAdjustments.unshift({
+    id: uid("adj"),
+    itemId: item.id,
+    itemName: item.name,
+    change: round2(change),
+    quantityBefore: before,
+    quantityAfter: after,
+    unit: item.unit,
+    reason: normalizeChoice(reason, inventoryAdjustmentReasons, "Other"),
+    note,
+    actor: currentUserLabel(),
+    createdAt: new Date().toISOString(),
+  });
+  state.inventoryAdjustments = state.inventoryAdjustments.slice(0, 200);
 }
 
 function resetLocalData() {
@@ -3588,6 +4350,12 @@ function renderOrderCard(order) {
   const estimate = order.estimatedMaterials?.length ? order.estimatedMaterials : estimateOrder(order).lineItems;
   const isReserved = order.reservedMaterials?.length;
   const isTerminal = ["Completed", "Cancelled"].includes(order.status);
+  const paid = orderPaidTotal(order);
+  const balance = orderBalanceDue(order);
+  const latestFitting = latestOrderFitting(order);
+  const pendingFitting = latestPendingFitting(order);
+  const review = normalizeManagerReview(order.managerReview);
+  const handoff = normalizeHandoff(order.handoff);
 
   return `
     <article class="order-card">
@@ -3602,6 +4370,10 @@ function renderOrderCard(order) {
         <span class="pill">Step: ${escapeHtml(order.productionStep)}</span>
         ${order.fittingDate ? `<span class="pill">Fitting ${formatDate(order.fittingDate)}</span>` : ""}
         ${order.assignedTo ? `<span class="pill">${escapeHtml(order.assignedTo)}</span>` : ""}
+        <span class="pill">Paid: ${money(paid)}</span>
+        <span class="pill ${balance > 0 ? "warning-text" : ""}">Balance: ${money(balance)}</span>
+        <span class="pill">Review: ${escapeHtml(review.status)}</span>
+        <span class="pill">Follow-up: ${escapeHtml(order.followUpStatus || "No follow-up")}</span>
         ${(order.modifiers || []).map((id) => style?.modifiers.find((modifier) => modifier.id === id)?.name).filter(Boolean).map((name) => `<span class="pill">${escapeHtml(name)}</span>`).join("")}
       </div>
       ${order.notes ? `<p class="muted small-text" style="margin-top: 10px;">${escapeHtml(order.notes)}</p>` : ""}
@@ -3620,14 +4392,42 @@ function renderOrderCard(order) {
           </div>
         </div>
       </div>
+      <div class="divider"></div>
+      <div class="grid-2 order-workflow-grid">
+        <div>
+          <strong>Payment & follow-up</strong>
+          <div class="tag-list">
+            ${(order.paymentRecords || []).slice(-3).map((payment) => `<span class="pill">${money(payment.amount)} ${escapeHtml(payment.method)} ${formatDate(payment.receivedAt)}</span>`).join("") || `<span class="muted small-text">No payments recorded.</span>`}
+            ${order.followUpAt ? `<span class="pill">Next: ${formatDate(order.followUpAt)}</span>` : ""}
+          </div>
+          ${order.followUpNote ? `<p class="muted small-text" style="margin-top: 8px;">${escapeHtml(order.followUpNote)}</p>` : ""}
+        </div>
+        <div>
+          <strong>Fitting, review & handoff</strong>
+          <div class="tag-list">
+            ${latestFitting ? `<span class="pill">${escapeHtml(latestFitting.type)}: ${escapeHtml(latestFitting.status)} ${formatDate(latestFitting.date)}</span>` : `<span class="muted small-text">No fitting scheduled.</span>`}
+            ${review.note ? `<span class="pill">Review note saved</span>` : ""}
+            ${handoff ? `<span class="pill">${escapeHtml(handoff.method)} ${formatDate(handoff.completedAt)}</span>` : ""}
+          </div>
+          ${handoff?.note ? `<p class="muted small-text" style="margin-top: 8px;">${escapeHtml(handoff.note)}</p>` : ""}
+        </div>
+      </div>
       ${(order.stockWarnings || []).length ? `<div class="divider"></div><p class="warning-text small-text">${order.stockWarnings.map(escapeHtml).join("<br>")}</p>` : ""}
       <div class="button-row" style="margin-top: 14px;">
+        ${!isTerminal ? `<button class="btn small secondary" type="button" data-action="record-payment" data-id="${escapeHtml(order.id)}">Record payment</button>` : balance > 0 ? `<button class="btn small secondary" type="button" data-action="record-payment" data-id="${escapeHtml(order.id)}">Record balance</button>` : ""}
+        ${!isTerminal ? `<button class="btn small secondary" type="button" data-action="schedule-fitting" data-id="${escapeHtml(order.id)}">Schedule fitting</button>` : ""}
+        ${!isTerminal && pendingFitting ? `<button class="btn small secondary" type="button" data-action="complete-fitting" data-id="${escapeHtml(order.id)}">Complete fitting</button>` : ""}
+        ${!isTerminal && review.status !== "Review requested" && review.status !== "Approved" ? `<button class="btn small secondary" type="button" data-action="request-manager-review" data-id="${escapeHtml(order.id)}">Request review</button>` : ""}
+        ${!isTerminal && review.status === "Review requested" ? `<button class="btn small success" type="button" data-action="approve-manager-review" data-id="${escapeHtml(order.id)}">Approve review</button>` : ""}
+        ${!isTerminal && review.status === "Review requested" ? `<button class="btn small secondary" type="button" data-action="request-review-changes" data-id="${escapeHtml(order.id)}">Needs changes</button>` : ""}
+        ${!isTerminal ? `<button class="btn small secondary" type="button" data-action="update-follow-up" data-id="${escapeHtml(order.id)}">Follow-up</button>` : ""}
         ${!isReserved && !isTerminal ? `<button class="btn small" type="button" data-action="reserve-order" data-id="${escapeHtml(order.id)}">Confirm & reserve</button>` : ""}
         ${isReserved && order.productionStep === "Materials Reserved" ? `
           <input data-cut-input="${escapeHtml(order.id)}" type="number" min="0" step="0.1" placeholder="Actual fabric used">
           <button class="btn small accent" type="button" data-action="cut-order" data-id="${escapeHtml(order.id)}">Start cutting</button>
         ` : ""}
         ${!isTerminal && order.productionStep !== "Materials Reserved" ? `<button class="btn small secondary" type="button" data-action="advance-order" data-id="${escapeHtml(order.id)}">Advance</button>` : ""}
+        ${!isTerminal ? `<button class="btn small success" type="button" data-action="handoff-order" data-id="${escapeHtml(order.id)}">Handoff</button>` : ""}
         ${!isTerminal ? `<button class="btn small success" type="button" data-action="complete-order" data-id="${escapeHtml(order.id)}">Complete</button>` : ""}
         ${!isTerminal ? `<button class="btn small secondary" type="button" data-action="cancel-order" data-id="${escapeHtml(order.id)}">Cancel</button>` : ""}
       </div>
@@ -3674,8 +4474,28 @@ function renderMaterialRow(item) {
       <div class="button-row">
         <span class="status ${low ? "danger" : "success"}">${low ? "Low" : "OK"}</span>
         <button class="btn small secondary" type="button" data-action="restock-item" data-id="${escapeHtml(item.id)}">Restock</button>
+        <button class="btn small secondary" type="button" data-action="adjust-item" data-id="${escapeHtml(item.id)}">Adjust</button>
       </div>
     </div>
+  `;
+}
+
+function renderInventoryAdjustment(adjustment) {
+  const sign = adjustment.change > 0 ? "+" : "";
+  return `
+    <article class="record">
+      <div class="record-header">
+        <div>
+          <strong>${escapeHtml(adjustment.itemName || getInventoryItem(adjustment.itemId)?.name || "Inventory item")}</strong>
+          <p class="muted small-text">${escapeHtml(adjustment.reason)} - ${formatDate(adjustment.createdAt)}${adjustment.actor ? ` - ${escapeHtml(adjustment.actor)}` : ""}</p>
+        </div>
+        <span class="status ${adjustment.change < 0 ? "warning" : "success"}">${sign}${round2(adjustment.change)} ${escapeHtml(adjustment.unit)}</span>
+      </div>
+      <div class="tag-list" style="margin-top: 10px;">
+        <span class="pill">${round2(adjustment.quantityBefore)} to ${round2(adjustment.quantityAfter)} ${escapeHtml(adjustment.unit)}</span>
+      </div>
+      ${adjustment.note ? `<p class="muted small-text" style="margin-top: 8px;">${escapeHtml(adjustment.note)}</p>` : ""}
+    </article>
   `;
 }
 
@@ -3951,6 +4771,43 @@ function availableQty(item) {
   return round2(Number(item.quantity || 0) - Number(item.reserved || 0));
 }
 
+function orderPaidTotal(order) {
+  const payments = normalizePaymentRecords(order.paymentRecords, { orderId: order.id, legacyDeposit: numberValue(order.deposit) });
+  const total = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  return round2(total || numberValue(order.deposit));
+}
+
+function orderBalanceDue(order) {
+  return Math.max(0, round2(numberValue(order.quote) - orderPaidTotal(order)));
+}
+
+function latestOrderFitting(order) {
+  const fittings = normalizeFittingEvents(order.fittingEvents, order.fittingDate);
+  return fittings.length ? fittings[fittings.length - 1] : null;
+}
+
+function latestPendingFitting(order) {
+  const fittings = normalizeFittingEvents(order.fittingEvents, order.fittingDate);
+  return [...fittings].reverse().find((event) => event.status === "Scheduled" || event.status === "Rescheduled") || null;
+}
+
+function currentUserLabel() {
+  const user = currentUser();
+  return user?.name || user?.email || "Local user";
+}
+
+function recordOrderActivity(order, label, detail = "") {
+  order.activity = normalizeOrderActivity(order.activity);
+  order.activity.push({
+    id: uid("act"),
+    label,
+    detail,
+    actor: currentUserLabel(),
+    createdAt: new Date().toISOString(),
+  });
+  order.activity = order.activity.slice(-60);
+}
+
 function displayName() {
   return state.profile?.displayName || state.profile?.businessName || "Fashion Studio OS";
 }
@@ -3990,7 +4847,7 @@ function viewSubtitle(view) {
 function statusTone(status) {
   if (["Completed", "Confirmed", "Converted to Order", "Ready for Pickup/Delivery", "Ready for Collection", "Ready"].includes(status)) return "success";
   if (["Routed to Inquiry"].includes(status)) return "success";
-  if (["New", "Quoted", "Materials Reserved", "Cutting", "Sewing", "Fitting", "Adjustments", "Finishing", "Quality Check"].includes(status)) return "warning";
+  if (["New", "Quoted", "Materials Reserved", "Cutting", "Sewing", "Fitting", "Adjustments", "Finishing", "Quality Check", "Review requested", "Changes requested"].includes(status)) return "warning";
   if (["Declined", "Cancelled", "Archived"].includes(status)) return "danger";
   return "";
 }

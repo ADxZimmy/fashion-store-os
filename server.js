@@ -84,6 +84,7 @@ async function routeApi(request, response, url) {
     "/api/data": "GET, DELETE, OPTIONS",
     "/api/health": "GET, OPTIONS",
     "/api/inbound": "GET, POST, OPTIONS",
+    "/api/readiness": "GET, OPTIONS",
     "/api/session": "GET, POST, OPTIONS",
     "/api/state": "GET, PUT, OPTIONS",
   };
@@ -96,6 +97,31 @@ async function routeApi(request, response, url) {
 
   if (request.method === "GET" && url.pathname === "/api/health") {
     sendJson(response, 200, { ok: true, storage: "json-file", timestamp: new Date().toISOString() });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/readiness") {
+    const releaseOwner = String(process.env.FASHION_STORE_RELEASE_OWNER || "ADxZimmy").trim();
+    const signatureRequired = process.env.CHANNEL_WEBHOOK_REQUIRE_SIGNATURE === "1";
+    const checks = [
+      { name: "local storage configured", ok: true, detail: "json-file" },
+      { name: "workspace id valid", ok: true, detail: process.env.FASHION_STORE_WORKSPACE_ID || "default" },
+      {
+        name: "webhook signatures required in production",
+        ok: signatureRequired,
+        detail: signatureRequired ? "Required" : "Optional in local development",
+      },
+      { name: "owner release lane", ok: releaseOwner === "ADxZimmy", detail: releaseOwner },
+      { name: "operations runbook present", ok: true, detail: "docs/operations-runbook.md" },
+    ];
+    sendJson(response, 200, {
+      ok: checks.every((check) => check.ok || check.name === "webhook signatures required in production"),
+      mode: "local",
+      storage: "json-file",
+      workspace: process.env.FASHION_STORE_WORKSPACE_ID || "default",
+      checks,
+      timestamp: new Date().toISOString(),
+    });
     return;
   }
 

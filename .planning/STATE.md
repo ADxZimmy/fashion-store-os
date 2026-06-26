@@ -4,7 +4,7 @@ Last updated: 2026-06-26
 
 ## Current Focus
 
-Phases 009-012 are implemented and verified locally. The next build slice is Phase 013 store workflow completion, while owner-side Vercel/Supabase setup remains required before these changes are production-deployed from GitHub.
+Phases 013-016 are implemented and verified locally. Owner-side Vercel/Supabase setup and a real-store pilot remain required before public production cutover.
 
 ## Completed
 
@@ -59,19 +59,24 @@ Phases 009-012 are implemented and verified locally. The next build slice is Pha
 - Implemented Phase 011 account lifecycle/RBAC hardening with staff invite acceptance, password change, staff suspend/reactivate, session cleanup, audit events, and Settings/onboarding controls.
 - Implemented Phase 012 production channel rollout safeguards with signature-required mode, batch limits, webhook dedupe, delivery events, consent/provider metadata, and non-leaking webhook GET behavior.
 - Updated production persistence, channel integration, env, roadmap, requirements, and phase artifacts for Phases 009-012.
+- Implemented Phase 013 store workflow completion with payment records, balance tracking, fitting scheduling/completion, manager review, handoff, customer follow-up, order activity, and inventory adjustment history.
+- Implemented Phase 014 mobile/accessibility UX acceptance with toast live-region hardening, touch target/reduced-motion/overscroll CSS fixes, and `npm.cmd run ux:audit`.
+- Implemented Phase 015 observability/backup/security operations with `/api/readiness`, local readiness parity, `docs/operations-runbook.md`, and `npm.cmd run ops:security`.
+- Implemented Phase 016 pilot UAT and launch readiness with `docs/pilot-uat.md` and `npm.cmd run launch:check`.
 
 ## In Progress
 
-- Item: Phase 013 store workflow completion.
+- Item: Owner-side production persistence activation and pilot execution.
 
 ## Blocked
 
 - Collaborator-authored Vercel production deploys are blocked with `TEAM_ACCESS_REQUIRED` because commit author `NnazimuzoO` / Vercel user `nnazimuzoo` does not have contributing access to `sanuske2-2147s-projects/fashion-store-os`. The attempted invite to `nnazimuzoo@nitechsoftware.com.ng` failed because Vercel Hobby teams do not permit team members.
 - Production persistence on the Git-connected Ready deployment is not active yet because the project has no Supabase environment variables.
+- Real-store pilot execution is not complete yet; Phase 016 artifacts and local launch checks are ready for the pilot.
 
 ## Next Action
 
-Commit and push the Phase 009-012 implementation to `codex/backend-foundation`, then proceed to Phase 013 store workflow completion. Owner-side production setup still needs Supabase env vars/migrations on the Git-connected Vercel project and an `ADxZimmy` owner release.
+Commit and push the Phase 013-016 implementation to `codex/backend-foundation`, then have `ADxZimmy` perform the Git-connected owner release after adding Supabase env vars/migrations to the production Vercel project.
 
 ## Verification Snapshot
 
@@ -197,3 +202,13 @@ Commit and push the Phase 009-012 implementation to `codex/backend-foundation`, 
   Result: Expected fail before commit on 2026-06-26 because the worktree was dirty; repository check passed and owner-author warning displayed.
 - Command/check: Browser UI smoke
   Result: Skipped on 2026-06-26; `npx playwright` hung and Chrome/Edge were not discoverable on PATH.
+- Command/check: `npm.cmd run check`
+  Result: Passed on 2026-06-26 after Phases 013-016; 23 JavaScript files checked.
+- Command/check: `npm.cmd run ux:audit`
+  Result: Passed on 2026-06-26; mobile drawer, live region, focus, reduced motion, touch target, no-overflow, Escape, and native-dialog gates passed.
+- Command/check: `npm.cmd run ops:security`
+  Result: Passed on 2026-06-26; API body limit, webhook signature mode, manager-gated export, owner lane, secret-looking values, and native-dialog checks passed.
+- Command/check: `npm.cmd run launch:check`
+  Result: Passed on 2026-06-26; syntax, UX audit, security audit, and production build all passed locally.
+- Command/check: Local `/api/health` and `/api/readiness` smoke
+  Result: Passed on 2026-06-26; local backend returned `storage: "json-file"` and readiness `mode: "local"`.

@@ -34,6 +34,14 @@
   Acceptance: Managers can create staff invites, staff can accept invites and set passwords, users can change passwords, managers can suspend/reactivate staff, and lifecycle events appear in audit history.
 - Requirement: Production channel rollout safeguards.
   Acceptance: Provider webhooks can require signatures, cap batch size, deduplicate retries, record delivery events, preserve consent status, and avoid exposing message queues through public GET requests.
+- Requirement: Daily store order workflow.
+  Acceptance: Orders support payment records, balance tracking, fitting scheduling/completion, manager review request/approval/change states, handoff details, customer follow-up state, and activity history.
+- Requirement: Audited inventory adjustments.
+  Acceptance: Restocks and manual inventory adjustments update stock while recording item, quantity before/after, reason, note, actor, and timestamp; adjustments below reserved quantity are blocked.
+- Requirement: Production readiness diagnostics.
+  Acceptance: `/api/readiness` returns safe readiness checks for storage configuration, server-side Supabase key usage, workspace id, webhook signature mode, owner release lane, and operations runbook presence.
+- Requirement: Pilot launch readiness.
+  Acceptance: A pilot UAT document and `npm.cmd run launch:check` validate core local gates before owner-side production release.
 
 ## Non-Functional
 
@@ -47,6 +55,10 @@
   Acceptance: `/api/health` performs a real Supabase reachability probe, returns a redacted host/workspace summary, and reports storage failures without exposing secrets.
 - Requirement: Runtime log hygiene.
   Acceptance: Expected 4xx auth/client responses do not emit error stacks, while 5xx failures still log for diagnosis.
+- Requirement: Repeatable mobile/accessibility acceptance.
+  Acceptance: `npm.cmd run ux:audit` verifies drawer navigation, live feedback, focus visibility, reduced motion, touch target sizing, overscroll/no-overflow protections, and absence of native dialogs.
+- Requirement: Repeatable security hygiene check.
+  Acceptance: `npm.cmd run ops:security` checks body-limit presence, webhook signature-required support, manager-gated export, owner release lane, native-dialog absence, and secret-looking values.
 
 ## Out Of Scope
 

@@ -8,6 +8,9 @@
     "start": "node server.js",
     "dev": "node server.js",
     "check": "node scripts/check.js",
+    "ux:audit": "node scripts/ux-audit.js",
+    "ops:security": "node scripts/security-audit.js",
+    "launch:check": "node scripts/launch-readiness.js",
     "release:preflight": "node scripts/release-preflight.js"
   },
   "engines": {

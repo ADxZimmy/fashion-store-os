@@ -2,8 +2,8 @@
 
 ## Now
 
-- Phase 013: Store workflow completion.
-  Outcome: Quotes, deposits/payments, fitting appointments, production status changes, order handoff, inventory adjustments, customer follow-up, and manager review flows are complete enough for daily store use.
+- Phase 017: Production cutover and post-launch support.
+  Outcome: Custom domain, final env vars, release tag, handover docs, rollback plan, monitoring watch window, and post-launch issue process are in place.
   Status: Planned.
 
 ## Next
@@ -11,9 +11,6 @@
 - Phase 008: Git-connected production persistence activation.
   Outcome: The Git-connected Vercel production project has Supabase env vars, `/api/health` reports Supabase storage, and the live app passes authenticated read/write/reset smoke tests from the GitHub deployment.
   Status: Owner-side setup pending.
-- Phase 014: Mobile, accessibility, and UX acceptance.
-  Outcome: Core workflows pass mobile-first UAT, keyboard/focus checks, accessible labels, contrast review, empty/error/loading states, and no-overflow verification across target phone and desktop widths.
-  Status: Planned.
 
 ## Done
 
@@ -50,15 +47,21 @@
 - Phase 012: Production channel rollout.
   Outcome: Webhook signature-required mode, dedupe, delivery events, consent metadata, batch limits, and non-leaking GET behavior were added.
   Status: Complete locally; pending provider credentials and owner release.
+- Phase 013: Store workflow completion.
+  Outcome: Payments, fittings, production activity, manager review, handoff, follow-up, and inventory adjustments were added to the daily store workflow.
+  Status: Complete locally; pending owner release and pilot validation.
+- Phase 014: Mobile, accessibility, and UX acceptance.
+  Outcome: Toast live region, touch targets, reduced motion, mobile drawer regression checks, and `npm.cmd run ux:audit` were added.
+  Status: Complete locally.
+- Phase 015: Observability, backup, and security operations.
+  Outcome: `/api/readiness`, local readiness parity, operations runbook, and `npm.cmd run ops:security` were added.
+  Status: Complete locally; owner-side backup/restore rehearsal pending.
+- Phase 016: Pilot UAT and launch readiness.
+  Outcome: Pilot UAT script, issue triage, and `npm.cmd run launch:check` were added.
+  Status: Complete locally; real-store pilot execution pending.
 
 ## Later
 
-- Phase 015: Observability, backup, and security operations.
-  Outcome: Production has runtime monitoring, error visibility, backup/restore rehearsal, secret rotation notes, API abuse controls, and a security review checklist.
-  Status: Planned.
-- Phase 016: Pilot UAT and launch readiness.
-  Outcome: A real-store pilot validates onboarding, CRM intake, quote/order lifecycle, inventory deduction, reports, staff access, and recovery docs with issue triage before public launch.
-  Status: Planned.
-- Phase 017: Production cutover and post-launch support.
-  Outcome: Custom domain, final env vars, release tag, handover docs, rollback plan, monitoring watch window, and post-launch issue process are in place.
-  Status: Planned.
+- Item: Post-pilot enhancements and public launch follow-up.
+  Outcome: Incorporate pilot feedback before final public cutover.
+  Status: Planned after Phase 017.
