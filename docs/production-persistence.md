@@ -4,9 +4,12 @@ Fashion Store OS now has Vercel serverless API routes for production persistence
 
 ## Current Production Setup
 
-- Vercel project: `nnazimuzoos-projects/fashion-store-os`
-- Live URL: `https://fashion-store-os-navy.vercel.app`
-- Current deployment can be inspected with `vercel inspect https://fashion-store-os-navy.vercel.app`
+- Previously verified Vercel production project: `nnazimuzoos-projects/fashion-store-os`
+- Previously verified live URL: `https://fashion-store-os-navy.vercel.app`
+- Git-connected Vercel project in this workspace: `sanuske2-2147s-projects/fashion-store-os`
+- Git-connected production alias: `https://fashion-store-os-sanuske2-2147s-projects.vercel.app`
+- Git-connected project ID: `prj_3oNJjdlNXi5yTKkqenDEzY2jVELi`
+- Current Git-triggered deploy can be inspected with `vercel inspect https://fashion-store-gnm1h1k6x-sanuske2-2147s-projects.vercel.app`
 - Supabase project: `Fashion Store OS`
 - Supabase ref: `duimatbeahwfeghcviju`
 - Supabase URL: `https://duimatbeahwfeghcviju.supabase.co`
@@ -105,17 +108,17 @@ Latest verification:
 
 ## Deployment Caveat
 
-GitHub-triggered deployment is now wired to the Git-connected project and `main` is the production branch. Pushes to `main` create Vercel production deployments, but the latest checked deployment was blocked before build:
+GitHub-triggered deployment is now wired to the Git-connected project and `main` is the production branch. Pushes to `main` create Vercel production deployments. The latest owner-authored GitHub deployment is Ready:
 
 ```text
-Deployment: dpl_4r5s5fFQDm9d4VbHxS8ZkPWKEoKm
-URL: https://fashion-store-iszf3jyt8-sanuske2-2147s-projects.vercel.app
-State: BLOCKED
-Reason: TEAM_ACCESS_REQUIRED
-Message: The Deployment was blocked because the commit author does not have contributing access to the project on Vercel.
-Author: NnazimuzoO / nnazimuzoo@nitechsoftware.com.ng
+Deployment: dpl_GKDe4822iJSPiRTHJWzYgzV79mRH
+URL: https://fashion-store-gnm1h1k6x-sanuske2-2147s-projects.vercel.app
+State: READY
+Author: ADxZimmy
 ```
 
-The Vercel API maps that GitHub author to Vercel user `nnazimuzoo`, but `nnazimuzoo` is not a confirmed member of the Vercel team/project. Attempting to invite `nnazimuzoo@nitechsoftware.com.ng` failed because the project team is on Vercel Hobby, which does not permit team members. Resolve this by upgrading/enabling collaboration, moving the project to an account/team that can include the commit authors, or making production Git commits from a Vercel owner/member account with contributing access.
+The Ready deployment serves the frontend, but `/api/health` returns `ok: false` with `storage: "unconfigured"` because the Git-connected project has no Supabase environment variables yet.
 
-After the Vercel access block is resolved, add the required Supabase env vars to the Git-connected project and re-run `/api/health` before retiring the older local/CLI deployment.
+Collaborator-authored GitHub deploys remain blocked. The Vercel API maps `NnazimuzoO` to Vercel user `nnazimuzoo`, but `nnazimuzoo` is not a confirmed member of the Vercel team/project. Attempting to invite `nnazimuzoo@nitechsoftware.com.ng` failed because the project team is on Vercel Hobby, which does not permit team members. Resolve this by upgrading/enabling collaboration, moving the project to an account/team that can include the commit authors, or making production Git commits from a Vercel owner/member account with contributing access.
+
+After the Supabase env vars are added to the Git-connected project, re-run `/api/health` before retiring the older local/CLI deployment.

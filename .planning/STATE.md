@@ -4,7 +4,7 @@ Last updated: 2026-06-26
 
 ## Current Focus
 
-GitHub-to-Vercel deployment is wired and pushes to `main` create production deployments, but Vercel blocks the current Git-triggered deployments before build because the commit author lacks Vercel project/team access on a Hobby plan.
+GitHub-to-Vercel deployment is wired, `main` is the production branch, and owner-authored GitHub pushes now create Ready production deployments. The Ready Git-connected deployment still needs Supabase env vars, and collaborator-authored pushes remain blocked by Vercel Hobby/team access.
 
 ## Completed
 
@@ -48,6 +48,10 @@ GitHub-to-Vercel deployment is wired and pushes to `main` create production depl
 - Committed and pushed `e8cb943` to `origin/codex/backend-foundation`.
 - Deployed a Ready production build, aliased to `https://fashion-store-os-navy.vercel.app`.
 - Verified live `/api/health`, session signup/state lock/webhook/reset flow, clean post-test bootstrap, live Reports browser smoke, and clean Vercel error logs.
+- Promoted `codex/backend-foundation` to `main` for GitHub-triggered Vercel production deployments.
+- Confirmed owner-authored GitHub pushes from `ADxZimmy` create Ready production deployments on the Git-connected Vercel project `sanuske2-2147s-projects/fashion-store-os`.
+- Confirmed collaborator-authored GitHub pushes from `NnazimuzoO` still block with `TEAM_ACCESS_REQUIRED` because Vercel Hobby does not allow adding that user as a team member.
+- Confirmed the Ready Git-connected deployment serves the frontend and `/api/health` reports `storage: "unconfigured"` because Supabase env vars are not set on that project.
 
 ## In Progress
 
@@ -55,11 +59,12 @@ GitHub-to-Vercel deployment is wired and pushes to `main` create production depl
 
 ## Blocked
 
-- Item: None.
+- Collaborator-authored Vercel production deploys are blocked with `TEAM_ACCESS_REQUIRED` because commit author `NnazimuzoO` / Vercel user `nnazimuzoo` does not have contributing access to `sanuske2-2147s-projects/fashion-store-os`. The attempted invite to `nnazimuzoo@nitechsoftware.com.ng` failed because Vercel Hobby teams do not permit team members.
+- Production persistence on the Git-connected Ready deployment is not active yet because the project has no Supabase environment variables.
 
 ## Next Action
 
-Choose the Vercel access route for GitHub deploys: upgrade/enable collaboration, move the project to a team/account that can include the commit authors, or make production commits from a Vercel owner/member account. Then add Supabase env vars to the Git-connected project and re-run live `/api/health`.
+Add Supabase env vars to the Git-connected Vercel project and re-run live `/api/health`. Separately choose the Vercel access route for collaborator-authored deploys: upgrade/enable collaboration, move the project to a team/account that can include the commit authors, or keep production commits owner-authored.
 
 ## Verification Snapshot
 
@@ -167,3 +172,9 @@ Choose the Vercel access route for GitHub deploys: upgrade/enable collaboration,
   Result: Passed on 2026-06-25; live browser reached Reports, rendered learning insights, and had no desktop horizontal overflow.
 - Command/check: Vercel runtime error scan
   Result: Passed on 2026-06-25; `vercel logs --since 15m --level error` returned no logs after live smoke testing.
+- Command/check: GitHub owner-authored push to `main`
+  Result: Passed on 2026-06-26; Vercel created Ready production deployment `dpl_GKDe4822iJSPiRTHJWzYgzV79mRH`.
+- Command/check: Live Git-connected `/`
+  Result: Passed on 2026-06-26; `https://fashion-store-gnm1h1k6x-sanuske2-2147s-projects.vercel.app` returned HTTP 200.
+- Command/check: Live Git-connected `/api/health`
+  Result: Failed persistence readiness on 2026-06-26; returned `ok: false`, `storage: "unconfigured"` until Supabase env vars are added.

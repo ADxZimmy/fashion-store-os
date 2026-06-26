@@ -78,7 +78,7 @@ URL: https://duimatbeahwfeghcviju.supabase.co
 Region: us-east-1
 ```
 
-Important: GitHub is now the intended deployment source. Branch `main` has been promoted from `codex/backend-foundation`, and the Vercel Git integration for `sanuske2-2147s-projects/fashion-store-os` fires production deployments when `main` is pushed. The current Git-triggered deployments are blocked before build by Vercel team access (`TEAM_ACCESS_REQUIRED`) because commit author `NnazimuzoO` / Vercel user `nnazimuzoo` is not a member of the Vercel team/project. The team is on the Hobby plan, and `vercel teams invite nnazimuzoo@nitechsoftware.com.ng --scope sanuske2-2147s-projects` failed because Hobby teams do not permit team members. Resolve by upgrading/enabling collaboration, moving the project under an account that can include the commit authors, or ensuring production pushes are authored by a Vercel owner/member with contributing access.
+Important: GitHub is now the intended deployment source. Branch `main` has been promoted from `codex/backend-foundation`, and the Vercel Git integration for `sanuske2-2147s-projects/fashion-store-os` fires production deployments when `main` is pushed. A GitHub-authored owner commit from `ADxZimmy` deployed successfully to production on 2026-06-26. Collaborator-authored commits by `NnazimuzoO` / Vercel user `nnazimuzoo` still block before build with Vercel `TEAM_ACCESS_REQUIRED` because that user is not a member of the Vercel team/project. The team is on the Hobby plan, and `vercel teams invite nnazimuzoo@nitechsoftware.com.ng --scope sanuske2-2147s-projects` failed because Hobby teams do not permit team members. Resolve collaborator deploys by upgrading/enabling collaboration, moving the project under an account that can include the commit authors, or ensuring production pushes are authored by a Vercel owner/member with contributing access.
 
 The Vercel deployment publishes the static frontend from `dist/` and serverless API routes from `api/`. Live production persistence is backed by Supabase through Vercel env vars. See `docs/production-persistence.md`.
 
@@ -90,10 +90,10 @@ Project ID: prj_3oNJjdlNXi5yTKkqenDEzY2jVELi
 Team ID: team_SumcS7BfGXgJWdQc7y2iAxSk
 Production branch: main
 Production alias: https://fashion-store-os-sanuske2-2147s-projects.vercel.app
-Latest Git-triggered deploy: dpl_4r5s5fFQDm9d4VbHxS8ZkPWKEoKm (BLOCKED, TEAM_ACCESS_REQUIRED)
+Latest Git-triggered deploy: dpl_GKDe4822iJSPiRTHJWzYgzV79mRH (READY, owner-authored ADxZimmy commit 0d45ac7)
 ```
 
-The Git-connected project currently has no Vercel env vars (`vercel env ls` returned none on 2026-06-26). After the access block is resolved, add `SUPABASE_URL`, `SUPABASE_REST_API_KEY`, `FASHION_STORE_WORKSPACE_ID`, and optional channel webhook secrets before treating it as the production persistence target.
+The Git-connected project currently has no Vercel env vars (`vercel env ls` returned none on 2026-06-26). The Ready Git deployment serves the frontend, but `/api/health` returns `ok: false` and `storage: "unconfigured"` until `SUPABASE_URL`, `SUPABASE_REST_API_KEY`, `FASHION_STORE_WORKSPACE_ID`, and optional channel webhook secrets are added.
 
 ## Current Git State
 
@@ -368,10 +368,10 @@ Suggested next work slices:
    - Move staff permissions server-side and define workspace authorization rules.
 
 2. GitHub-triggered Vercel deployments
-   - GitHub is being kept updated from `codex/backend-foundation`.
-   - Verify whether the Vercel Git integration should promote this branch or `main` to production.
-   - Decide whether `main` should deploy to production and feature branches should create preview deployments.
-   - Decide whether `main` should deploy to production and feature branches should create preview deployments.
+   - `main` is now the production branch for the Git-connected Vercel project.
+   - Owner-authored GitHub commits from `ADxZimmy` deploy successfully to production.
+   - Add Supabase env vars to the Git-connected project before treating it as the live persistence target.
+   - Decide whether to upgrade/move the Vercel project so collaborator-authored commits can deploy without `TEAM_ACCESS_REQUIRED`.
 
 3. Real channel integrations
    - Wire WhatsApp Business API or Instagram Graph API into `/api/inbound`.
@@ -439,7 +439,7 @@ Commit:
 - Should staff access be limited to 2 permanently, or is that only for the current prototype?
 - Should Mo'ora Afrika branding assets be replaced with final production files later?
 - Should the onboarding flow include workspace setup before the dashboard opens?
-- Vercel deployments should be driven by GitHub integration once the Vercel Hobby/team access block is resolved and Supabase env vars are added to the Git-connected project.
+- Vercel deployments should be driven by GitHub integration; owner-authored pushes now work, while collaborator-authored pushes need a Vercel access/plan decision.
 
 ## Known Risks
 
