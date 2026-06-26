@@ -90,7 +90,7 @@ Project ID: prj_3oNJjdlNXi5yTKkqenDEzY2jVELi
 Team ID: team_SumcS7BfGXgJWdQc7y2iAxSk
 Production branch: main
 Production alias: https://fashion-store-os-sanuske2-2147s-projects.vercel.app
-Latest Git-triggered deploy: dpl_GKDe4822iJSPiRTHJWzYgzV79mRH (READY, owner-authored ADxZimmy commit 0d45ac7)
+Verified Git-triggered deploy: dpl_GKDe4822iJSPiRTHJWzYgzV79mRH (READY, owner-authored ADxZimmy commit 0d45ac7)
 ```
 
 The Git-connected project currently has no Vercel env vars (`vercel env ls` returned none on 2026-06-26). The Ready Git deployment serves the frontend, but `/api/health` returns `ok: false` and `storage: "unconfigured"` until `SUPABASE_URL`, `SUPABASE_REST_API_KEY`, `FASHION_STORE_WORKSPACE_ID`, and optional channel webhook secrets are added.

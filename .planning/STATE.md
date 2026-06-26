@@ -51,7 +51,7 @@ GitHub-to-Vercel deployment is wired, `main` is the production branch, and owner
 - Promoted `codex/backend-foundation` to `main` for GitHub-triggered Vercel production deployments.
 - Confirmed owner-authored GitHub pushes from `ADxZimmy` create Ready production deployments on the Git-connected Vercel project `sanuske2-2147s-projects/fashion-store-os`.
 - Confirmed collaborator-authored GitHub pushes from `NnazimuzoO` still block with `TEAM_ACCESS_REQUIRED` because Vercel Hobby does not allow adding that user as a team member.
-- Confirmed the Ready Git-connected deployment serves the frontend and `/api/health` reports `storage: "unconfigured"` because Supabase env vars are not set on that project.
+- Confirmed a Ready Git-connected deployment serves the frontend and `/api/health` reports `storage: "unconfigured"` because Supabase env vars are not set on that project.
 
 ## In Progress
 

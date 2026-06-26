@@ -9,7 +9,7 @@ Fashion Store OS now has Vercel serverless API routes for production persistence
 - Git-connected Vercel project in this workspace: `sanuske2-2147s-projects/fashion-store-os`
 - Git-connected production alias: `https://fashion-store-os-sanuske2-2147s-projects.vercel.app`
 - Git-connected project ID: `prj_3oNJjdlNXi5yTKkqenDEzY2jVELi`
-- Current Git-triggered deploy can be inspected with `vercel inspect https://fashion-store-gnm1h1k6x-sanuske2-2147s-projects.vercel.app`
+- Verified Git-triggered deploy from setup can be inspected with `vercel inspect https://fashion-store-gnm1h1k6x-sanuske2-2147s-projects.vercel.app`
 - Supabase project: `Fashion Store OS`
 - Supabase ref: `duimatbeahwfeghcviju`
 - Supabase URL: `https://duimatbeahwfeghcviju.supabase.co`
@@ -108,7 +108,7 @@ Latest verification:
 
 ## Deployment Caveat
 
-GitHub-triggered deployment is now wired to the Git-connected project and `main` is the production branch. Pushes to `main` create Vercel production deployments. The latest owner-authored GitHub deployment is Ready:
+GitHub-triggered deployment is now wired to the Git-connected project and `main` is the production branch. Pushes to `main` create Vercel production deployments. A verified owner-authored GitHub deployment is Ready:
 
 ```text
 Deployment: dpl_GKDe4822iJSPiRTHJWzYgzV79mRH
