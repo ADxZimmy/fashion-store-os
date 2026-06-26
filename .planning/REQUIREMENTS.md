@@ -24,6 +24,16 @@
   Acceptance: The app provides a Reports workspace with conversion, revenue, workload, stock-risk, reply-draft, quote-draft, and learning-insight outputs derived from current Studio OS records.
 - Requirement: Real channel webhook adapters.
   Acceptance: A server API accepts direct and Meta-style webhook payloads, optionally verifies challenge/signature secrets from environment variables, normalizes provider messages, and appends them to the existing CRM channel queue without committing third-party tokens.
+- Requirement: Owner-safe GitHub/Vercel release lane.
+  Acceptance: The repo documents the `ADxZimmy` owner-release path, provides a preflight command, and does not rely on spoofed commit authorship to bypass Vercel Hobby permissions.
+- Requirement: Workspace-aware production persistence.
+  Acceptance: Supabase migrations define workspace metadata, audit events, and channel delivery events with explicit grants/RLS; server code validates workspace ids and prefers server-side Supabase keys.
+- Requirement: Manager-gated data export.
+  Acceptance: Managers can call a server API to export workspace state and sanitized auth/audit metadata without exposing password hashes or session-token hashes.
+- Requirement: Staff lifecycle management.
+  Acceptance: Managers can create staff invites, staff can accept invites and set passwords, users can change passwords, managers can suspend/reactivate staff, and lifecycle events appear in audit history.
+- Requirement: Production channel rollout safeguards.
+  Acceptance: Provider webhooks can require signatures, cap batch size, deduplicate retries, record delivery events, preserve consent status, and avoid exposing message queues through public GET requests.
 
 ## Non-Functional
 
@@ -35,6 +45,8 @@
   Acceptance: The app shows a loading state while checking backend storage and exposes whether records are using server storage or browser fallback.
 - Requirement: Production storage observability.
   Acceptance: `/api/health` performs a real Supabase reachability probe, returns a redacted host/workspace summary, and reports storage failures without exposing secrets.
+- Requirement: Runtime log hygiene.
+  Acceptance: Expected 4xx auth/client responses do not emit error stacks, while 5xx failures still log for diagnosis.
 
 ## Out Of Scope
 

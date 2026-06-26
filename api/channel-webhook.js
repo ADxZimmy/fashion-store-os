@@ -1,5 +1,5 @@
-const { normalizeWebhookPayload, verifyWebhookChallenge, verifyWebhookSignature } = require("./_channel_webhook");
-const { appendInboundMessage, normalizeChannelMessages } = require("./_inbound");
+const { appendWebhookMessages } = require("./_channel_intake");
+const { normalizeWebhookPayload, requireWebhookSignatureConfig, verifyWebhookChallenge, verifyWebhookSignature } = require("./_channel_webhook");
 const { handleError, handleOptions, readRawBody, sendJson, sendMethodNotAllowed } = require("./_response");
 const { getDocument, setDocument } = require("./_store");
 
@@ -19,18 +19,23 @@ module.exports = async function handler(request, response) {
         return;
       }
 
-      const result = await getDocument("state");
       sendJson(response, 200, {
         ok: true,
-        messages: normalizeChannelMessages(result.value?.channelMessages),
-        exists: result.exists,
+        accepts: "POST",
+        verification: "Send hub.challenge and matching verify token to complete provider setup.",
       });
       return;
     }
 
     if (request.method === "POST") {
       const rawBody = await readRawBody(request);
-      verifyWebhookSignature(rawBody, process.env.CHANNEL_WEBHOOK_SECRET || "", request.headers["x-hub-signature-256"] || "");
+      const secret = process.env.CHANNEL_WEBHOOK_SECRET || "";
+      requireWebhookSignatureConfig(secret, process.env.CHANNEL_WEBHOOK_REQUIRE_SIGNATURE === "1");
+      verifyWebhookSignature(
+        rawBody,
+        secret,
+        request.headers["x-hub-signature-256"] || request.headers["x-fashion-signature"] || "",
+      );
 
       let payload;
       try {
@@ -43,23 +48,20 @@ module.exports = async function handler(request, response) {
 
       const messages = normalizeWebhookPayload(payload);
       const result = await getDocument("state");
-      let nextState = result.value || {};
-      const accepted = [];
+      const intake = appendWebhookMessages(result.value || {}, messages, {
+        maxMessages: process.env.CHANNEL_WEBHOOK_MAX_MESSAGES,
+      });
 
-      for (const message of messages) {
-        const next = appendInboundMessage(nextState, message);
-        nextState = next.state;
-        accepted.push(next.message);
+      if (intake.accepted.length || intake.duplicates.length || intake.rejected.length || intake.overflow) {
+        await setDocument("state", intake.state);
       }
 
-      if (accepted.length) {
-        await setDocument("state", nextState);
-      }
-
-      sendJson(response, accepted.length ? 201 : 202, {
+      sendJson(response, intake.accepted.length ? 201 : 202, {
         ok: true,
-        accepted: accepted.length,
-        messages: accepted,
+        accepted: intake.accepted.length,
+        duplicates: intake.duplicates.length,
+        rejected: intake.rejected.length + intake.overflow,
+        messages: intake.accepted,
       });
       return;
     }

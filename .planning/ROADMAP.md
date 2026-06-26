@@ -2,20 +2,17 @@
 
 ## Now
 
-- Phase 008: Git-connected production persistence activation.
-  Outcome: The Git-connected Vercel production project has Supabase env vars, `/api/health` reports Supabase storage, and the live app passes authenticated read/write/reset smoke tests from the GitHub deployment.
+- Phase 013: Store workflow completion.
+  Outcome: Quotes, deposits/payments, fitting appointments, production status changes, order handoff, inventory adjustments, customer follow-up, and manager review flows are complete enough for daily store use.
   Status: Planned.
 
 ## Next
 
-- Phase 009: Deployment ownership and release lane.
-  Outcome: Production releases from GitHub are repeatable, owner/collaborator restrictions are resolved or documented, rollback is defined, and the canonical production URL is clear.
-  Status: Planned.
-- Phase 010: Data model and tenant hardening.
-  Outcome: Persistence moves beyond a single workspace document into a production-safe Supabase shape with migrations, tenant/workspace boundaries, RLS policy review, seed/backup strategy, and data export paths.
-  Status: Planned.
-- Phase 011: Account lifecycle and RBAC hardening.
-  Outcome: Manager/staff roles, invite/onboarding, session expiry, password reset/change, audit history, and protected admin actions are ready for real store operations.
+- Phase 008: Git-connected production persistence activation.
+  Outcome: The Git-connected Vercel production project has Supabase env vars, `/api/health` reports Supabase storage, and the live app passes authenticated read/write/reset smoke tests from the GitHub deployment.
+  Status: Owner-side setup pending.
+- Phase 014: Mobile, accessibility, and UX acceptance.
+  Outcome: Core workflows pass mobile-first UAT, keyboard/focus checks, accessible labels, contrast review, empty/error/loading states, and no-overflow verification across target phone and desktop widths.
   Status: Planned.
 
 ## Done
@@ -41,18 +38,21 @@
 - Phase 007: Real channel integrations.
   Outcome: `/api/channel-webhook` normalizes direct and Meta-style provider payloads into the CRM intake queue with optional challenge/signature verification.
   Status: Complete and deployed.
+- Phase 009: Deployment ownership and release lane.
+  Outcome: Production releases from GitHub are documented around the `ADxZimmy` owner lane, preflight checks exist, rollback is documented, and collaborator-authored deploy limits are not a build blocker.
+  Status: Complete locally; pending owner release.
+- Phase 010: Data model and tenant hardening.
+  Outcome: Workspace/audit/channel delivery migrations, workspace id validation, service-role key guidance, and manager-gated sanitized data export were added.
+  Status: Complete locally; pending owner Supabase migration.
+- Phase 011: Account lifecycle and RBAC hardening.
+  Outcome: Staff invites, invite acceptance, password change, staff suspend/reactivate, session cleanup, audit history, and Settings controls were added.
+  Status: Complete locally; pending owner release.
+- Phase 012: Production channel rollout.
+  Outcome: Webhook signature-required mode, dedupe, delivery events, consent metadata, batch limits, and non-leaking GET behavior were added.
+  Status: Complete locally; pending provider credentials and owner release.
 
 ## Later
 
-- Phase 012: Production channel rollout.
-  Outcome: Real WhatsApp/Instagram credentials, webhook verification, duplicate prevention, consent handling, rate-limit behavior, and channel failure states are production tested without committing secrets.
-  Status: Planned.
-- Phase 013: Store workflow completion.
-  Outcome: Quotes, deposits/payments, fitting appointments, production status changes, order handoff, inventory adjustments, customer follow-up, and manager review flows are complete enough for daily store use.
-  Status: Planned.
-- Phase 014: Mobile, accessibility, and UX acceptance.
-  Outcome: Core workflows pass mobile-first UAT, keyboard/focus checks, accessible labels, contrast review, empty/error/loading states, and no-overflow verification across target phone and desktop widths.
-  Status: Planned.
 - Phase 015: Observability, backup, and security operations.
   Outcome: Production has runtime monitoring, error visibility, backup/restore rehearsal, secret rotation notes, API abuse controls, and a security review checklist.
   Status: Planned.

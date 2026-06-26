@@ -30,6 +30,7 @@ Fashion Store OS now has Vercel serverless API routes for production persistence
   - `POST /api/inbound`
   - `GET /api/channel-webhook`
   - `POST /api/channel-webhook`
+  - `GET /api/data`
 - Local development can still run `npm.cmd start` and use `server.js` with JSON files under `data/`.
 - Vercel production uses files under `api/` and stores documents in Supabase.
 
@@ -40,14 +41,19 @@ The schema lives in:
 ```text
 supabase/migrations/20260611160501_create_fashion_store_os_documents.sql
 supabase/migrations/20260611163000_allow_default_workspace_document_api_access.sql
+supabase/migrations/20260626191000_harden_workspaces_audit_and_channel_events.sql
 ```
 
-It creates `public.fashion_store_os_documents`, a small JSON document table keyed by:
+It creates:
 
-- `workspace_id`
-- `document_key`, currently `state` or `auth`
+- `public.fashion_store_os_documents`, the compatibility document table keyed by:
+  - `workspace_id`
+  - `document_key`, currently `state` or `auth`
+- `public.fashion_store_os_workspaces`, the workspace registry used before document writes.
+- `public.fashion_store_os_audit_events`, the normalized audit-event table for the next account-lifecycle storage step.
+- `public.fashion_store_os_channel_delivery_events`, the normalized channel delivery log table for webhook rollout.
 
-RLS is enabled. The first migration revokes public access; the second migration grants tightly scoped document access for the default workspace so Vercel functions can use a server-side Supabase REST key.
+RLS is enabled. The newer migration follows Supabase's 2026 explicit-grants direction: new production tables grant access to `service_role` and revoke `anon` / `authenticated`. The original document-table grant remains for compatibility with already-running deployments until they switch to a server-only key.
 
 Recovery note: on 2026-06-25 the Supabase project was found `INACTIVE`, restored, and the committed migrations were reapplied. If the API host returns DNS failures or Cloudflare upstream errors again, check the project status before changing application code.
 
@@ -57,19 +63,21 @@ These are required on any Vercel production project that serves the serverless A
 
 ```text
 SUPABASE_URL
-SUPABASE_REST_API_KEY
+SUPABASE_SERVICE_ROLE_KEY
 FASHION_STORE_WORKSPACE_ID
 CHANNEL_WEBHOOK_VERIFY_TOKEN
 CHANNEL_WEBHOOK_SECRET
+CHANNEL_WEBHOOK_REQUIRE_SIGNATURE
+CHANNEL_WEBHOOK_MAX_MESSAGES
 ```
 
 `FASHION_STORE_WORKSPACE_ID` can stay `default` until the app has a multi-workspace model.
 
-`CHANNEL_WEBHOOK_VERIFY_TOKEN` and `CHANNEL_WEBHOOK_SECRET` are optional for local testing but should be set for production webhook subscriptions. The verify token is used for provider challenge checks. The secret verifies `x-hub-signature-256` HMAC SHA-256 signatures over the raw request body.
+`CHANNEL_WEBHOOK_VERIFY_TOKEN` and `CHANNEL_WEBHOOK_SECRET` are optional for local testing but should be set for production webhook subscriptions. The verify token is used for provider challenge checks. The secret verifies `x-hub-signature-256` or `x-fashion-signature` HMAC SHA-256 signatures over the raw request body. Set `CHANNEL_WEBHOOK_REQUIRE_SIGNATURE=1` in production so a missing signing secret fails closed. `CHANNEL_WEBHOOK_MAX_MESSAGES` defaults to `25` and caps one webhook batch.
 
-When available, `SUPABASE_SERVICE_ROLE_KEY` can be used instead of `SUPABASE_REST_API_KEY`. Keep both server-side only in Vercel. Do not expose either value in frontend code or with a public env var prefix.
+Use `SUPABASE_SERVICE_ROLE_KEY` for the Vercel/server runtime. Keep it server-side only in Vercel. Do not expose it in frontend code or with a public env var prefix.
 
-The current production `SUPABASE_REST_API_KEY` can be a Supabase publishable key because RLS and grants restrict access to `workspace_id = 'default'` and `document_key in ('state', 'auth')`. Prefer the publishable key over a service-role key unless a later server-only workflow needs elevated access.
+`SUPABASE_REST_API_KEY` remains supported as a legacy server-side variable. A public/publishable-key fallback is disabled unless `FASHION_STORE_ALLOW_PUBLIC_SUPABASE_KEY=1` is set deliberately for an existing deployment. Do not use that fallback for the production-ready lane.
 
 ## Verification
 
@@ -86,7 +94,8 @@ Expected:
 - `/api/bootstrap` returns sanitized auth and only returns state when no accounts exist or the request has a valid session cookie.
 - `/api/session` handles manager signup, signin, signout, and manager-gated staff access changes with HttpOnly cookies.
 - `/api/inbound` requires a session when accounts exist.
-- `/api/channel-webhook` accepts signed provider payloads and appends normalized messages to `state.channelMessages`.
+- `/api/channel-webhook` accepts signed provider payloads, deduplicates normalized messages, records delivery status in state, and appends accepted messages to `state.channelMessages`. Its GET route answers provider challenge checks but does not expose the message queue.
+- `GET /api/data` is manager-gated and returns a sanitized workspace export for backup/review. It excludes password hashes and session-token hashes.
 - Creating a manager/profile in the live app persists after refresh and across browsers.
 
 If storage is unreachable, `/api/health` still returns HTTP 200 with `ok: false` and `storage: "supabase-unreachable"` so monitors and humans can distinguish an app outage from an upstream Supabase issue.

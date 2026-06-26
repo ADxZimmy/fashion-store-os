@@ -1,6 +1,7 @@
 const CHANNEL_SOURCES = ["WhatsApp", "Instagram", "Website", "Referral", "Walk-in"];
 const FOLLOW_UP_STATUSES = ["Needs reply", "Awaiting details", "Quote sent", "Follow-up scheduled", "Closed"];
 const ROUTING_STATUSES = ["New", "Routed to Inquiry", "Archived"];
+const CONSENT_STATUSES = ["Unknown", "Opted in", "Opted out"];
 
 function appendInboundMessage(state = {}, payload = {}) {
   const safePayload = payload && typeof payload === "object" ? payload : {};
@@ -56,6 +57,9 @@ function normalizeChannelMessage(message = {}) {
     followUpStatus: normalizeChoice(message.followUpStatus, FOLLOW_UP_STATUSES, "Needs reply"),
     routingStatus: normalizeChoice(message.routingStatus, ROUTING_STATUSES, "New"),
     notes: clean(message.notes),
+    consentStatus: normalizeChoice(message.consentStatus || message.consent, CONSENT_STATUSES, "Unknown"),
+    providerMessageId: clean(message.providerMessageId || message.providerId || message.externalId),
+    deliveryStatus: clean(message.deliveryStatus) || "received",
     inquiryId: clean(message.inquiryId),
     receivedAt: clean(message.receivedAt) || new Date().toISOString(),
   };
@@ -82,5 +86,6 @@ function uid(prefix) {
 module.exports = {
   appendInboundMessage,
   createInboundMessage,
+  normalizeChannelMessage,
   normalizeChannelMessages,
 };

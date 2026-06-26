@@ -6,6 +6,9 @@ const PASSWORD_ITERATIONS = 120000;
 const PASSWORD_KEY_LENGTH = 32;
 const PASSWORD_DIGEST = "sha256";
 const MIN_PASSWORD_LENGTH = 8;
+const STAFF_LIMIT = 2;
+const INVITE_TTL_SECONDS = 60 * 60 * 24 * 3;
+const USER_STATUSES = new Set(["active", "invited", "suspended"]);
 const VIEW_KEYS = [
   "dashboard",
   "inquiries",
@@ -41,8 +44,16 @@ function normalizeAuthDocument(document = {}) {
       name: clean(sourceUser.name) || email,
       email,
       role: sourceUser.role === "staff" ? "staff" : "manager",
+      status: normalizeUserStatus(sourceUser.status, sourceUser.role),
       access: normalizeAccess(sourceUser.access, sourceUser.role === "staff" ? ["dashboard"] : fullAccess()),
       createdAt: clean(sourceUser.createdAt) || new Date().toISOString(),
+      updatedAt: clean(sourceUser.updatedAt) || clean(sourceUser.createdAt) || new Date().toISOString(),
+      invitedAt: clean(sourceUser.invitedAt),
+      inviteExpiresAt: clean(sourceUser.inviteExpiresAt),
+      inviteTokenHash: clean(sourceUser.inviteTokenHash),
+      inviteAcceptedAt: clean(sourceUser.inviteAcceptedAt),
+      suspendedAt: clean(sourceUser.suspendedAt),
+      lastSignInAt: clean(sourceUser.lastSignInAt),
       ...passwordRecord,
     });
   }
@@ -67,8 +78,13 @@ function normalizeAuthDocument(document = {}) {
     changed = changed || Boolean(source.sessionUserId) || Boolean(users.length);
   }
 
+  const auditEvents = normalizeAuditEvents(source.auditEvents);
+  if (!Array.isArray(source.auditEvents) && auditEvents.length) {
+    changed = true;
+  }
+
   return {
-    auth: { users, sessions },
+    auth: { users, sessions, auditEvents },
     changed,
   };
 }
@@ -90,6 +106,7 @@ function sanitizeAuth(auth, sessionUserId = "") {
 
   return {
     users: visibleUsers.map(sanitizeUser),
+    auditEvents: currentUser?.role === "manager" ? normalizeAuditEvents(auth.auditEvents) : [],
     sessionUserId: currentUser ? currentUser.id : "",
     serverManaged: true,
   };
@@ -101,8 +118,15 @@ function sanitizeUser(user) {
     name: clean(user.name),
     email: clean(user.email).toLowerCase(),
     role: user.role === "staff" ? "staff" : "manager",
+    status: normalizeUserStatus(user.status, user.role),
     access: normalizeAccess(user.access, user.role === "staff" ? ["dashboard"] : fullAccess()),
     createdAt: clean(user.createdAt),
+    updatedAt: clean(user.updatedAt),
+    invitedAt: clean(user.invitedAt),
+    inviteExpiresAt: clean(user.inviteExpiresAt),
+    inviteAcceptedAt: clean(user.inviteAcceptedAt),
+    suspendedAt: clean(user.suspendedAt),
+    lastSignInAt: clean(user.lastSignInAt),
   };
 }
 
@@ -127,11 +151,14 @@ function signUpManager(auth, payload = {}) {
     name: name || email,
     email,
     role: "manager",
+    status: "active",
     access: fullAccess(),
     createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
     ...hashPassword(password),
   };
   auth.users.push(manager);
+  appendAuditEvent(auth, "manager.signup", manager, manager, "Manager access created");
   return createSession(auth, manager.id);
 }
 
@@ -143,7 +170,11 @@ function signIn(auth, payload = {}) {
   if (!user || !verifyPassword(user, password)) {
     throwPublicError("Sign in details do not match.", 401);
   }
+  assertCanAuthenticate(user);
 
+  user.lastSignInAt = new Date().toISOString();
+  user.updatedAt = new Date().toISOString();
+  appendAuditEvent(auth, "account.signin", user, user, "User signed in");
   return createSession(auth, user.id);
 }
 
@@ -157,7 +188,7 @@ function signOut(auth, request) {
 
 function createStaff(auth, currentUser, payload = {}) {
   assertManager(currentUser);
-  if (auth.users.filter((user) => user.role === "staff").length >= 2) {
+  if (staffCount(auth) >= STAFF_LIMIT) {
     throwPublicError("Staff limit reached. Remove one staff account before adding another.", 409);
   }
 
@@ -177,11 +208,84 @@ function createStaff(auth, currentUser, payload = {}) {
     name: name || email,
     email,
     role: "staff",
+    status: "active",
     access: normalizeAccess(payload.access, ["dashboard"]),
     createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
     ...hashPassword(password),
   });
+  appendAuditEvent(auth, "staff.create", currentUser, auth.users[auth.users.length - 1], "Staff account created");
   return auth;
+}
+
+function createStaffInvite(auth, currentUser, payload = {}) {
+  assertManager(currentUser);
+  if (staffCount(auth) >= STAFF_LIMIT) {
+    throwPublicError("Staff limit reached. Remove one staff account before adding another.", 409);
+  }
+
+  const name = clean(payload.name);
+  const email = clean(payload.email).toLowerCase();
+  assertEmail(email);
+
+  if (auth.users.some((user) => user.email === email)) {
+    throwPublicError("An account already exists for that email.", 409);
+  }
+
+  const inviteToken = randomToken(24);
+  const now = new Date().toISOString();
+  const staff = {
+    id: uid("staff"),
+    name: name || email,
+    email,
+    role: "staff",
+    status: "invited",
+    access: normalizeAccess(payload.access, ["dashboard"]),
+    createdAt: now,
+    updatedAt: now,
+    invitedAt: now,
+    inviteExpiresAt: new Date(Date.now() + INVITE_TTL_SECONDS * 1000).toISOString(),
+    inviteTokenHash: hashToken(inviteToken),
+    ...passwordRecordForUser({}),
+  };
+  auth.users.push(staff);
+  appendAuditEvent(auth, "staff.invite", currentUser, staff, "Staff invite created");
+  return { auth, invite: sanitizeInvite(staff, inviteToken) };
+}
+
+function acceptStaffInvite(auth, payload = {}) {
+  const email = clean(payload.email).toLowerCase();
+  const inviteToken = clean(payload.inviteToken || payload.token);
+  const password = String(payload.password || "");
+  const confirmPassword = String(payload.confirmPassword || payload.password || "");
+  const name = clean(payload.name);
+
+  assertEmail(email);
+  assertPassword(password, confirmPassword);
+
+  const staff = auth.users.find((user) => user.email === email && user.role === "staff");
+  if (!staff || staff.status !== "invited" || !staff.inviteTokenHash) {
+    throwPublicError("Invite details do not match.", 401);
+  }
+  if (Date.parse(staff.inviteExpiresAt) <= Date.now()) {
+    throwPublicError("This staff invite has expired. Ask the manager for a new invite.", 410);
+  }
+  if (hashToken(inviteToken) !== staff.inviteTokenHash) {
+    throwPublicError("Invite details do not match.", 401);
+  }
+
+  const now = new Date().toISOString();
+  Object.assign(staff, {
+    name: name || staff.name || email,
+    status: "active",
+    updatedAt: now,
+    inviteAcceptedAt: now,
+    inviteTokenHash: "",
+    inviteExpiresAt: "",
+    ...hashPassword(password),
+  });
+  appendAuditEvent(auth, "staff.accept_invite", staff, staff, "Staff invite accepted");
+  return createSession(auth, staff.id);
 }
 
 function updateStaffAccess(auth, currentUser, payload = {}) {
@@ -191,18 +295,68 @@ function updateStaffAccess(auth, currentUser, payload = {}) {
     throwPublicError("Staff account not found.", 404);
   }
   staff.access = normalizeAccess(payload.access, ["dashboard"]);
+  staff.updatedAt = new Date().toISOString();
+  appendAuditEvent(auth, "staff.access_update", currentUser, staff, "Staff access updated");
   return auth;
 }
 
 function deleteStaff(auth, currentUser, payload = {}) {
   assertManager(currentUser);
   const staffId = clean(payload.id);
+  const staff = auth.users.find((user) => user.id === staffId && user.role === "staff");
   const before = auth.users.length;
   auth.users = auth.users.filter((user) => !(user.id === staffId && user.role === "staff"));
   auth.sessions = auth.sessions.filter((session) => session.userId !== staffId);
   if (auth.users.length === before) {
     throwPublicError("Staff account not found.", 404);
   }
+  appendAuditEvent(auth, "staff.delete", currentUser, staff, "Staff account removed");
+  return auth;
+}
+
+function suspendStaff(auth, currentUser, payload = {}) {
+  assertManager(currentUser);
+  const staff = auth.users.find((user) => user.id === clean(payload.id) && user.role === "staff");
+  if (!staff) {
+    throwPublicError("Staff account not found.", 404);
+  }
+  staff.status = "suspended";
+  staff.suspendedAt = new Date().toISOString();
+  staff.updatedAt = staff.suspendedAt;
+  auth.sessions = auth.sessions.filter((session) => session.userId !== staff.id);
+  appendAuditEvent(auth, "staff.suspend", currentUser, staff, "Staff account suspended");
+  return auth;
+}
+
+function reactivateStaff(auth, currentUser, payload = {}) {
+  assertManager(currentUser);
+  const staff = auth.users.find((user) => user.id === clean(payload.id) && user.role === "staff");
+  if (!staff) {
+    throwPublicError("Staff account not found.", 404);
+  }
+  staff.status = "active";
+  staff.suspendedAt = "";
+  staff.updatedAt = new Date().toISOString();
+  appendAuditEvent(auth, "staff.reactivate", currentUser, staff, "Staff account reactivated");
+  return auth;
+}
+
+function changePassword(auth, currentUser, payload = {}, currentSession = null) {
+  const currentPassword = String(payload.currentPassword || "");
+  const password = String(payload.password || payload.newPassword || "");
+  const confirmPassword = String(payload.confirmPassword || payload.password || payload.newPassword || "");
+
+  assertPassword(password, confirmPassword);
+  if (!verifyPassword(currentUser, currentPassword)) {
+    throwPublicError("Current password does not match.", 401);
+  }
+
+  Object.assign(currentUser, {
+    updatedAt: new Date().toISOString(),
+    ...hashPassword(password),
+  });
+  auth.sessions = auth.sessions.filter((session) => session.userId !== currentUser.id || session.id === currentSession?.id);
+  appendAuditEvent(auth, "account.password_change", currentUser, currentUser, "Password changed");
   return auth;
 }
 
@@ -211,7 +365,7 @@ function resolveSession(auth, request) {
   if (!token) return { session: null, user: null };
   const tokenHash = hashToken(token);
   const session = auth.sessions.find((item) => item.tokenHash === tokenHash && Date.parse(item.expiresAt) > Date.now());
-  const user = session ? auth.users.find((item) => item.id === session.userId) : null;
+  const user = session ? auth.users.find((item) => item.id === session.userId && canAuthenticate(item)) : null;
   return user ? { session, user } : { session: null, user: null };
 }
 
@@ -232,6 +386,8 @@ function requireManager(auth, request) {
 }
 
 function createSession(auth, userId) {
+  const user = auth.users.find((item) => item.id === userId);
+  assertCanAuthenticate(user);
   const token = randomToken();
   const session = {
     id: uid("sess"),
@@ -242,7 +398,7 @@ function createSession(auth, userId) {
   };
   auth.sessions = auth.sessions.filter((item) => item.userId !== userId || Date.parse(item.expiresAt) > Date.now());
   auth.sessions.push(session);
-  return { auth, session, token, user: auth.users.find((item) => item.id === userId) };
+  return { auth, session, token, user };
 }
 
 function buildSessionCookie(token, request) {
@@ -307,6 +463,71 @@ function passwordRecordForUser(user) {
 
   const legacyPassword = String(user.password || "");
   return legacyPassword ? hashPassword(legacyPassword) : hashPassword(randomToken());
+}
+
+function normalizeUserStatus(status, role) {
+  if (role !== "staff") return "active";
+  const cleaned = clean(status).toLowerCase();
+  return USER_STATUSES.has(cleaned) ? cleaned : "active";
+}
+
+function canAuthenticate(user) {
+  return Boolean(user && normalizeUserStatus(user.status, user.role) === "active");
+}
+
+function assertCanAuthenticate(user) {
+  if (canAuthenticate(user)) return;
+  if (user?.status === "invited") {
+    throwPublicError("Accept your staff invite before signing in.", 403);
+  }
+  if (user?.status === "suspended") {
+    throwPublicError("This staff account is suspended. Contact the manager.", 403);
+  }
+  throwPublicError("Sign in details do not match.", 401);
+}
+
+function staffCount(auth) {
+  return auth.users.filter((user) => user.role === "staff").length;
+}
+
+function sanitizeInvite(staff, inviteToken) {
+  return {
+    email: clean(staff.email).toLowerCase(),
+    name: clean(staff.name),
+    inviteToken,
+    inviteExpiresAt: clean(staff.inviteExpiresAt),
+  };
+}
+
+function normalizeAuditEvents(events = []) {
+  return (Array.isArray(events) ? events : [])
+    .map((event) => ({
+      id: clean(event.id) || uid("audit"),
+      type: clean(event.type) || "account.event",
+      actorUserId: clean(event.actorUserId),
+      actorEmail: clean(event.actorEmail).toLowerCase(),
+      targetUserId: clean(event.targetUserId),
+      targetEmail: clean(event.targetEmail).toLowerCase(),
+      detail: clean(event.detail),
+      createdAt: clean(event.createdAt) || new Date().toISOString(),
+    }))
+    .filter((event) => event.type)
+    .slice(-200);
+}
+
+function appendAuditEvent(auth, type, actor, target, detail) {
+  auth.auditEvents = normalizeAuditEvents(auth.auditEvents);
+  auth.auditEvents.push({
+    id: uid("audit"),
+    type,
+    actorUserId: clean(actor?.id),
+    actorEmail: clean(actor?.email).toLowerCase(),
+    targetUserId: clean(target?.id),
+    targetEmail: clean(target?.email).toLowerCase(),
+    detail: clean(detail),
+    createdAt: new Date().toISOString(),
+  });
+  auth.auditEvents = normalizeAuditEvents(auth.auditEvents);
 }
 
 function verifyPassword(user, password) {
@@ -376,11 +597,15 @@ function uid(prefix) {
 
 module.exports = {
   MIN_PASSWORD_LENGTH,
+  acceptStaffInvite,
   buildClearSessionCookie,
   buildSessionCookie,
+  changePassword,
   createStaff,
+  createStaffInvite,
   deleteStaff,
   normalizeAuthDocument,
+  reactivateStaff,
   requireManager,
   requireSession,
   resolveSession,
@@ -388,5 +613,6 @@ module.exports = {
   signIn,
   signOut,
   signUpManager,
+  suspendStaff,
   updateStaffAccess,
 };

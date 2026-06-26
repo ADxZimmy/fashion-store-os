@@ -4,7 +4,7 @@ Last updated: 2026-06-26
 
 ## Current Focus
 
-GitHub-to-Vercel deployment is wired, `main` is the production branch, and owner-authored GitHub pushes now create Ready production deployments. The Ready Git-connected deployment still needs Supabase env vars, and collaborator-authored pushes remain blocked by Vercel Hobby/team access.
+Phases 009-012 are implemented and verified locally. The next build slice is Phase 013 store workflow completion, while owner-side Vercel/Supabase setup remains required before these changes are production-deployed from GitHub.
 
 ## Completed
 
@@ -54,10 +54,15 @@ GitHub-to-Vercel deployment is wired, `main` is the production branch, and owner
 - Confirmed a Ready Git-connected deployment serves the frontend and `/api/health` reports `storage: "unconfigured"` because Supabase env vars are not set on that project.
 - Checked GitHub before publishing the next planning update; `origin/codex/backend-foundation` was ahead of local by documentation/deployment commits, so local was fast-forwarded before editing.
 - Added the full GSD production-readiness phase sequence through Phase 017 in `.planning/ROADMAP.md`.
+- Implemented Phase 009 release lane with `docs/release-lane.md`, `scripts/release-preflight.js`, and `npm.cmd run release:preflight`.
+- Implemented Phase 010 data hardening with workspace/audit/channel delivery Supabase migration, workspace id validation, service-role key preference, and manager-gated sanitized `GET /api/data` export.
+- Implemented Phase 011 account lifecycle/RBAC hardening with staff invite acceptance, password change, staff suspend/reactivate, session cleanup, audit events, and Settings/onboarding controls.
+- Implemented Phase 012 production channel rollout safeguards with signature-required mode, batch limits, webhook dedupe, delivery events, consent/provider metadata, and non-leaking webhook GET behavior.
+- Updated production persistence, channel integration, env, roadmap, requirements, and phase artifacts for Phases 009-012.
 
 ## In Progress
 
-- Item: None.
+- Item: Phase 013 store workflow completion.
 
 ## Blocked
 
@@ -66,7 +71,7 @@ GitHub-to-Vercel deployment is wired, `main` is the production branch, and owner
 
 ## Next Action
 
-Execute Phase 008: add Supabase env vars to the Git-connected Vercel project and re-run live `/api/health`. Separately choose the Vercel access route for collaborator-authored deploys: upgrade/enable collaboration, move the project to a team/account that can include the commit authors, or keep production commits owner-authored.
+Commit and push the Phase 009-012 implementation to `codex/backend-foundation`, then proceed to Phase 013 store workflow completion. Owner-side production setup still needs Supabase env vars/migrations on the Git-connected Vercel project and an `ADxZimmy` owner release.
 
 ## Verification Snapshot
 
@@ -180,3 +185,15 @@ Execute Phase 008: add Supabase env vars to the Git-connected Vercel project and
   Result: Passed on 2026-06-26; `https://fashion-store-gnm1h1k6x-sanuske2-2147s-projects.vercel.app` returned HTTP 200.
 - Command/check: Live Git-connected `/api/health`
   Result: Failed persistence readiness on 2026-06-26; returned `ok: false`, `storage: "unconfigured"` until Supabase env vars are added.
+- Command/check: Supabase docs/changelog review
+  Result: Passed on 2026-06-26; confirmed explicit grants are required for new tables in the newer Supabase Data API model, so Phase 010 migration includes explicit grants and RLS.
+- Command/check: `npm.cmd run check`
+  Result: Passed on 2026-06-26 after Phases 009-012; 19 JavaScript files checked.
+- Command/check: `npm.cmd run build`
+  Result: Passed on 2026-06-26 after Phases 009-012; 6 public files built into `dist/`.
+- Command/check: Local Phase 009-012 API smoke
+  Result: Passed on 2026-06-26; manager signup, staff invite/accept/change-password/suspend/reactivate, suspended-staff 401, signed webhook accept, duplicate retry, non-leaking webhook GET, consent persistence, delivery events, and sanitized manager export all passed.
+- Command/check: `npm.cmd run release:preflight`
+  Result: Expected fail before commit on 2026-06-26 because the worktree was dirty; repository check passed and owner-author warning displayed.
+- Command/check: Browser UI smoke
+  Result: Skipped on 2026-06-26; `npx playwright` hung and Chrome/Edge were not discoverable on PATH.

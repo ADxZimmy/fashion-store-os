@@ -3,16 +3,9 @@ const DOCUMENT_KEYS = new Set(["state", "auth"]);
 
 function getSupabaseConfig() {
   const supabaseUrl = trimTrailingSlash(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "");
-  const apiKey =
-    normalizeEnv(process.env.SUPABASE_REST_API_KEY) ||
-    normalizeEnv(process.env.SUPABASE_SERVICE_ROLE_KEY) ||
-    normalizeEnv(process.env.SUPABASE_PUBLISHABLE_KEY) ||
-    normalizeEnv(process.env.SUPABASE_ANON_KEY) ||
-    normalizeEnv(process.env.SUPABASE_SERVICE_KEY) ||
-    normalizeEnv(process.env.SUPABASE_SECRET_KEY) ||
-    "";
+  const key = resolveSupabaseKey();
 
-  if (!supabaseUrl || !apiKey) {
+  if (!supabaseUrl || !key.value) {
     const error = new Error("Production storage is not configured");
     error.statusCode = 503;
     throw error;
@@ -33,28 +26,36 @@ function getSupabaseConfig() {
     throw error;
   }
 
-  return { supabaseUrl, apiKey, host: parsedUrl.host };
+  return { supabaseUrl, apiKey: key.value, keySource: key.source, host: parsedUrl.host };
 }
 
 function workspaceId() {
-  return process.env.FASHION_STORE_WORKSPACE_ID || "default";
+  const id = normalizeEnv(process.env.FASHION_STORE_WORKSPACE_ID) || "default";
+  if (!/^[a-z0-9][a-z0-9_-]{0,63}$/i.test(id)) {
+    const error = new Error("Workspace id must be 1-64 letters, numbers, dashes, or underscores");
+    error.statusCode = 503;
+    throw error;
+  }
+  return id;
 }
 
 function getStorageSummary() {
+  const workspace = safeWorkspaceId();
   try {
-    const { host } = getSupabaseConfig();
+    const { host, keySource } = getSupabaseConfig();
     return {
       configured: true,
       host,
+      keySource,
       storage: "supabase",
-      workspace: workspaceId(),
+      workspace,
     };
   } catch (error) {
     return {
       configured: false,
       error: error.message,
       storage: "unconfigured",
-      workspace: workspaceId(),
+      workspace,
     };
   }
 }
@@ -82,6 +83,7 @@ async function getDocument(documentKey) {
 
 async function setDocument(documentKey, document) {
   assertDocumentKey(documentKey);
+  await ensureWorkspaceDocument(documentKey);
   await supabaseRequest(
     "POST",
     `/${TABLE_NAME}?on_conflict=workspace_id,document_key`,
@@ -96,6 +98,26 @@ async function setDocument(documentKey, document) {
       Prefer: "resolution=merge-duplicates,return=minimal",
     },
     [200, 201, 204],
+  );
+}
+
+async function ensureWorkspaceDocument(documentKey) {
+  const workspace = workspaceId();
+  await supabaseRequest(
+    "POST",
+    "/fashion_store_os_workspaces?on_conflict=workspace_id",
+    [
+      {
+        workspace_id: workspace,
+        name: workspace === "default" ? "Default workspace" : workspace,
+        status: "active",
+      },
+    ],
+    {
+      Prefer: "resolution=merge-duplicates,return=minimal",
+    },
+    [200, 201, 204],
+    { optional: true },
   );
 }
 
@@ -117,7 +139,7 @@ async function removeDocuments(documentKeys) {
   );
 }
 
-async function supabaseRequest(method, pathAndQuery, body, extraHeaders = {}, expectedStatuses = [200]) {
+async function supabaseRequest(method, pathAndQuery, body, extraHeaders = {}, expectedStatuses = [200], options = {}) {
   const { supabaseUrl, apiKey } = getSupabaseConfig();
   const endpoint = `${supabaseUrl}/rest/v1${pathAndQuery}`;
   let response;
@@ -143,6 +165,9 @@ async function supabaseRequest(method, pathAndQuery, body, extraHeaders = {}, ex
   }
 
   if (!expectedStatuses.includes(response.status)) {
+    if (options.optional && [401, 403, 404].includes(response.status)) {
+      return null;
+    }
     const error = new Error(await readSupabaseError(response));
     error.statusCode = 502;
     error.publicMessage = "Production storage request failed";
@@ -153,6 +178,36 @@ async function supabaseRequest(method, pathAndQuery, body, extraHeaders = {}, ex
   if (response.status === 204) return null;
   const text = await response.text();
   return text ? JSON.parse(text) : null;
+}
+
+function resolveSupabaseKey() {
+  const candidates = [
+    ["SUPABASE_SERVICE_ROLE_KEY", process.env.SUPABASE_SERVICE_ROLE_KEY],
+    ["SUPABASE_SECRET_KEY", process.env.SUPABASE_SECRET_KEY],
+    ["SUPABASE_SERVICE_KEY", process.env.SUPABASE_SERVICE_KEY],
+    ["SUPABASE_REST_API_KEY", process.env.SUPABASE_REST_API_KEY],
+  ];
+  for (const [source, value] of candidates) {
+    const normalized = normalizeEnv(value);
+    if (normalized) return { source, value: normalized };
+  }
+
+  if (process.env.FASHION_STORE_ALLOW_PUBLIC_SUPABASE_KEY === "1") {
+    const fallback =
+      normalizeEnv(process.env.SUPABASE_PUBLISHABLE_KEY) ||
+      normalizeEnv(process.env.SUPABASE_ANON_KEY);
+    if (fallback) return { source: "PUBLIC_KEY_FALLBACK", value: fallback };
+  }
+
+  return { source: "", value: "" };
+}
+
+function safeWorkspaceId() {
+  try {
+    return workspaceId();
+  } catch (error) {
+    return "invalid";
+  }
 }
 
 async function readSupabaseError(response) {

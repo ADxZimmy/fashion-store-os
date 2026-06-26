@@ -2,11 +2,15 @@ const http = require("http");
 const path = require("path");
 const fs = require("fs/promises");
 const {
+  acceptStaffInvite,
   buildClearSessionCookie,
   buildSessionCookie,
+  changePassword,
   createStaff,
+  createStaffInvite,
   deleteStaff,
   normalizeAuthDocument,
+  reactivateStaff,
   requireManager,
   requireSession,
   resolveSession,
@@ -14,9 +18,11 @@ const {
   signIn,
   signOut,
   signUpManager,
+  suspendStaff,
   updateStaffAccess,
 } = require("./api/_auth");
-const { normalizeWebhookPayload, verifyWebhookChallenge, verifyWebhookSignature } = require("./api/_channel_webhook");
+const { appendWebhookMessages } = require("./api/_channel_intake");
+const { normalizeWebhookPayload, requireWebhookSignatureConfig, verifyWebhookChallenge, verifyWebhookSignature } = require("./api/_channel_webhook");
 const { appendInboundMessage, normalizeChannelMessages } = require("./api/_inbound");
 
 const ROOT_DIR = __dirname;
@@ -46,8 +52,10 @@ const server = http.createServer(async (request, response) => {
   try {
     await routeRequest(request, response);
   } catch (error) {
-    console.error(error);
     const statusCode = error.statusCode || 500;
+    if (statusCode >= 500) {
+      console.error(error);
+    }
     const message = statusCode >= 500 ? "Internal server error" : error.message;
     sendJson(response, statusCode, { error: message });
   }
@@ -73,7 +81,7 @@ async function routeApi(request, response, url) {
     "/api/auth": "GET, OPTIONS",
     "/api/bootstrap": "GET, OPTIONS",
     "/api/channel-webhook": "GET, POST, OPTIONS",
-    "/api/data": "DELETE, OPTIONS",
+    "/api/data": "GET, DELETE, OPTIONS",
     "/api/health": "GET, OPTIONS",
     "/api/inbound": "GET, POST, OPTIONS",
     "/api/session": "GET, POST, OPTIONS",
@@ -144,6 +152,14 @@ async function routeApi(request, response, url) {
         return;
       }
 
+      if (action === "accept-invite") {
+        const result = acceptStaffInvite(auth, body);
+        await writeJsonAtomic(AUTH_FILE, result.auth);
+        response.setHeader("Set-Cookie", buildSessionCookie(result.token, request));
+        await sendSessionPayload(response, request, result.auth, 200, { session: result.session, user: result.user });
+        return;
+      }
+
       if (action === "signout") {
         const nextAuth = signOut(auth, request);
         await writeJsonAtomic(AUTH_FILE, nextAuth);
@@ -158,7 +174,7 @@ async function routeApi(request, response, url) {
         return;
       }
 
-      const { user } = requireSession(auth, request);
+      const { session, user } = requireSession(auth, request);
 
       if (action === "create-staff") {
         const nextAuth = createStaff(auth, user, body);
@@ -167,8 +183,36 @@ async function routeApi(request, response, url) {
         return;
       }
 
+      if (action === "create-staff-invite") {
+        const result = createStaffInvite(auth, user, body);
+        await writeJsonAtomic(AUTH_FILE, result.auth);
+        await sendSessionPayload(response, request, result.auth, 201, null, { invite: result.invite });
+        return;
+      }
+
       if (action === "update-staff-access") {
         const nextAuth = updateStaffAccess(auth, user, body);
+        await writeJsonAtomic(AUTH_FILE, nextAuth);
+        await sendSessionPayload(response, request, nextAuth);
+        return;
+      }
+
+      if (action === "change-password") {
+        const nextAuth = changePassword(auth, user, body, session);
+        await writeJsonAtomic(AUTH_FILE, nextAuth);
+        await sendSessionPayload(response, request, nextAuth);
+        return;
+      }
+
+      if (action === "suspend-staff") {
+        const nextAuth = suspendStaff(auth, user, body);
+        await writeJsonAtomic(AUTH_FILE, nextAuth);
+        await sendSessionPayload(response, request, nextAuth);
+        return;
+      }
+
+      if (action === "reactivate-staff") {
+        const nextAuth = reactivateStaff(auth, user, body);
         await writeJsonAtomic(AUTH_FILE, nextAuth);
         await sendSessionPayload(response, request, nextAuth);
         return;
@@ -197,18 +241,23 @@ async function routeApi(request, response, url) {
       return;
     }
 
-    const result = await readJsonWithExists(STATE_FILE);
     sendJson(response, 200, {
       ok: true,
-      messages: normalizeChannelMessages(result.value?.channelMessages),
-      exists: result.exists,
+      accepts: "POST",
+      verification: "Send hub.challenge and matching verify token to complete provider setup.",
     });
     return;
   }
 
   if (request.method === "POST" && url.pathname === "/api/channel-webhook") {
     const rawBody = await readRawBody(request);
-    verifyWebhookSignature(rawBody, process.env.CHANNEL_WEBHOOK_SECRET || "", request.headers["x-hub-signature-256"] || "");
+    const secret = process.env.CHANNEL_WEBHOOK_SECRET || "";
+    requireWebhookSignatureConfig(secret, process.env.CHANNEL_WEBHOOK_REQUIRE_SIGNATURE === "1");
+    verifyWebhookSignature(
+      rawBody,
+      secret,
+      request.headers["x-hub-signature-256"] || request.headers["x-fashion-signature"] || "",
+    );
 
     let payload;
     try {
@@ -221,23 +270,20 @@ async function routeApi(request, response, url) {
 
     const messages = normalizeWebhookPayload(payload);
     const result = await readJsonWithExists(STATE_FILE);
-    let nextState = result.value || {};
-    const accepted = [];
+    const intake = appendWebhookMessages(result.value || {}, messages, {
+      maxMessages: process.env.CHANNEL_WEBHOOK_MAX_MESSAGES,
+    });
 
-    for (const message of messages) {
-      const next = appendInboundMessage(nextState, message);
-      nextState = next.state;
-      accepted.push(next.message);
+    if (intake.accepted.length || intake.duplicates.length || intake.rejected.length || intake.overflow) {
+      await writeJsonAtomic(STATE_FILE, intake.state);
     }
 
-    if (accepted.length) {
-      await writeJsonAtomic(STATE_FILE, nextState);
-    }
-
-    sendJson(response, accepted.length ? 201 : 202, {
+    sendJson(response, intake.accepted.length ? 201 : 202, {
       ok: true,
-      accepted: accepted.length,
-      messages: accepted,
+      accepted: intake.accepted.length,
+      duplicates: intake.duplicates.length,
+      rejected: intake.rejected.length + intake.overflow,
+      messages: intake.accepted,
     });
     return;
   }
@@ -287,6 +333,22 @@ async function routeApi(request, response, url) {
       auth: sanitizeAuth(auth, resolved.user?.id || ""),
       authenticated: Boolean(resolved.user),
       exists: exists || auth.users.length > 0,
+    });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/data") {
+    const { auth } = await readAuthDocument();
+    const { user } = requireManager(auth, request);
+    const stateResult = await readJsonWithExists(STATE_FILE);
+    sendJson(response, 200, {
+      ok: true,
+      exportedAt: new Date().toISOString(),
+      storage: { storage: "json-file", workspace: "local", configured: true },
+      state: stateResult.value,
+      stateExists: stateResult.exists,
+      auth: sanitizeAuth(auth, user.id),
+      authExists: auth.users.length > 0,
     });
     return;
   }
@@ -378,7 +440,7 @@ async function readAuthDocument() {
   };
 }
 
-async function sendSessionPayload(response, request, auth, statusCode = 200, resolvedOverride = null) {
+async function sendSessionPayload(response, request, auth, statusCode = 200, resolvedOverride = null, extra = {}) {
   const resolved = resolvedOverride || resolveSession(auth, request);
   const stateResult = resolved.user ? await readJsonWithExists(STATE_FILE) : { value: null, exists: false };
   sendJson(response, statusCode, {
@@ -388,6 +450,7 @@ async function sendSessionPayload(response, request, auth, statusCode = 200, res
     state: stateResult.value,
     stateExists: stateResult.exists,
     sessionExpiresAt: resolved.session?.expiresAt || "",
+    ...extra,
   });
 }
 

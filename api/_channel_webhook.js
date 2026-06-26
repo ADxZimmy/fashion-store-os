@@ -27,6 +27,12 @@ function verifyWebhookSignature(rawBody, secret, signatureHeader) {
   return { required: true, verified: true };
 }
 
+function requireWebhookSignatureConfig(secret, required) {
+  if (required && !clean(secret)) {
+    throwWebhookError("Webhook signature secret is not configured.", 503);
+  }
+}
+
 function verifyWebhookChallenge(searchParams, verifyToken) {
   const mode = searchParams.get("hub.mode") || searchParams.get("mode") || "";
   const token = searchParams.get("hub.verify_token") || searchParams.get("verify_token") || "";
@@ -74,6 +80,7 @@ function normalizeDirectMessage(message, provider) {
   return {
     id: clean(message.id),
     channel,
+    providerMessageId: clean(message.providerMessageId || message.providerId || message.id),
     senderName: clean(message.senderName || message.clientName || message.name),
     contact: clean(message.contact || message.phone || message.handle || message.email),
     message: clean(message.message || message.body || message.text),
@@ -83,6 +90,8 @@ function normalizeDirectMessage(message, provider) {
     budget: numberValue(message.budget),
     followUpStatus: clean(message.followUpStatus) || "Needs reply",
     routingStatus: clean(message.routingStatus) || "New",
+    consentStatus: normalizeConsent(message.consentStatus || message.consent),
+    deliveryStatus: "received",
     notes: appendNote(notes, `Webhook source: ${channel}`),
     receivedAt: clean(message.receivedAt) || new Date().toISOString(),
   };
@@ -97,18 +106,21 @@ function normalizeMetaMessages(payload) {
       const text = clean(event.message?.text || event.postback?.title || event.postback?.payload);
       if (!text) continue;
       messages.push({
-        id: clean(event.message?.mid || event.id),
-        channel: "Instagram",
-        senderName: clean(event.sender?.username || event.sender?.id),
+          id: clean(event.message?.mid || event.id),
+          channel: "Instagram",
+          providerMessageId: clean(event.message?.mid || event.id),
+          senderName: clean(event.sender?.username || event.sender?.id),
         contact: clean(event.sender?.id),
         message: text,
         desiredStyle: "",
         occasion: "",
         deadline: "",
         budget: 0,
-        followUpStatus: "Needs reply",
-        routingStatus: "New",
-        notes: appendNote("", `Webhook source: Meta ${objectName || "messaging"}`),
+          followUpStatus: "Needs reply",
+          routingStatus: "New",
+          consentStatus: "Unknown",
+          deliveryStatus: "received",
+          notes: appendNote("", `Webhook source: Meta ${objectName || "messaging"}`),
         receivedAt: timestampToIso(event.timestamp),
       });
     }
@@ -126,6 +138,7 @@ function normalizeMetaMessages(payload) {
         messages.push({
           id: clean(message.id || message.mid),
           channel,
+          providerMessageId: clean(message.id || message.mid),
           senderName: clean(contact.name || message.sender?.username || senderId),
           contact: clean(contact.contact || senderId),
           message: text,
@@ -135,6 +148,8 @@ function normalizeMetaMessages(payload) {
           budget: 0,
           followUpStatus: "Needs reply",
           routingStatus: "New",
+          consentStatus: "Unknown",
+          deliveryStatus: "received",
           notes: appendNote("", `Webhook source: Meta ${change.field || value.messaging_product || objectName || "message"}`),
           receivedAt: timestampToIso(message.timestamp),
         });
@@ -198,6 +213,13 @@ function numberValue(value) {
   return Number.isFinite(number) ? number : 0;
 }
 
+function normalizeConsent(value) {
+  const text = clean(value).toLowerCase();
+  if (["yes", "true", "opted in", "opt-in", "subscribed", "consented"].includes(text)) return "Opted in";
+  if (["no", "false", "opted out", "opt-out", "unsubscribed"].includes(text)) return "Opted out";
+  return "Unknown";
+}
+
 function throwWebhookError(message, statusCode) {
   const error = new Error(message);
   error.statusCode = statusCode;
@@ -210,6 +232,7 @@ function clean(value) {
 
 module.exports = {
   normalizeWebhookPayload,
+  requireWebhookSignatureConfig,
   verifyWebhookChallenge,
   verifyWebhookSignature,
 };

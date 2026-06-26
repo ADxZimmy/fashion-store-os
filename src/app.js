@@ -69,6 +69,8 @@ const inquiryStatuses = ["New", "Contacted", "Quoted", "Confirmed", "Declined", 
 const channelSources = ["WhatsApp", "Instagram", "Website", "Referral", "Walk-in"];
 const channelFollowUpStatuses = ["Needs reply", "Awaiting details", "Quote sent", "Follow-up scheduled", "Closed"];
 const channelRoutingStatuses = ["New", "Routed to Inquiry", "Archived"];
+const channelConsentStatuses = ["Unknown", "Opted in", "Opted out"];
+const staffStatuses = ["active", "invited", "suspended"];
 const productionSteps = [
   "Consultation",
   "Measurement Taken",
@@ -110,6 +112,7 @@ let backendReady = false;
 let storageMode = "loading";
 let storageMessage = "Checking server storage";
 let syncFailureAnnounced = false;
+let lastInviteResult = null;
 
 renderLoading();
 initializeApp();
@@ -204,13 +207,25 @@ function normalizeAuth(nextAuth = {}) {
           email: clean(user.email).toLowerCase(),
           password: String(user.password || ""),
           role: user.role === "staff" ? "staff" : "manager",
+          status: user.role === "staff" ? normalizeChoice(user.status, staffStatuses, "active") : "active",
           access: normalizeAccess(user.access),
           createdAt: user.createdAt || isoDate(0),
+          updatedAt: user.updatedAt || user.createdAt || isoDate(0),
+          invitedAt: clean(user.invitedAt),
+          inviteExpiresAt: clean(user.inviteExpiresAt),
+          inviteAcceptedAt: clean(user.inviteAcceptedAt),
+          suspendedAt: clean(user.suspendedAt),
+          lastSignInAt: clean(user.lastSignInAt),
         }))
         .filter((user) => user.email || nextAuth.serverManaged)
     : [];
   const sessionUserId = users.some((user) => user.id === nextAuth.sessionUserId) ? nextAuth.sessionUserId : "";
-  return { users, sessionUserId, serverManaged: Boolean(nextAuth.serverManaged) };
+  return {
+    users,
+    auditEvents: normalizeAuditEvents(nextAuth.auditEvents),
+    sessionUserId,
+    serverManaged: Boolean(nextAuth.serverManaged),
+  };
 }
 
 function normalizeState(nextState = {}) {
@@ -226,6 +241,7 @@ function normalizeState(nextState = {}) {
     channelMessages: Array.isArray(nextState.channelMessages)
       ? normalizeChannelMessages(nextState.channelMessages)
       : hasChannelMessages || hasProfile ? [] : seed.channelMessages,
+    channelDeliveryEvents: Array.isArray(nextState.channelDeliveryEvents) ? normalizeChannelDeliveryEvents(nextState.channelDeliveryEvents) : [],
     styles: Array.isArray(nextState.styles) ? nextState.styles : seed.styles,
     inventory: Array.isArray(nextState.inventory) ? nextState.inventory : seed.inventory,
     orders: Array.isArray(nextState.orders) ? nextState.orders : seed.orders,
@@ -254,9 +270,41 @@ function normalizeChannelMessage(message = {}) {
     followUpStatus,
     routingStatus,
     notes: clean(message.notes),
+    consentStatus: normalizeChoice(message.consentStatus || message.consent, channelConsentStatuses, "Unknown"),
+    providerMessageId: clean(message.providerMessageId || message.providerId || message.externalId),
+    deliveryStatus: clean(message.deliveryStatus) || "received",
     inquiryId: clean(message.inquiryId),
     receivedAt: clean(message.receivedAt) || isoDate(0),
   };
+}
+
+function normalizeAuditEvents(events = []) {
+  return (Array.isArray(events) ? events : [])
+    .map((event) => ({
+      id: clean(event.id) || uid("audit"),
+      type: clean(event.type) || "account.event",
+      actorEmail: clean(event.actorEmail).toLowerCase(),
+      targetEmail: clean(event.targetEmail).toLowerCase(),
+      detail: clean(event.detail),
+      createdAt: clean(event.createdAt) || isoDate(0),
+    }))
+    .filter((event) => event.type)
+    .slice(-200);
+}
+
+function normalizeChannelDeliveryEvents(events = []) {
+  return (Array.isArray(events) ? events : [])
+    .map((event) => ({
+      id: clean(event.id) || uid("delivery"),
+      status: clean(event.status) || "accepted",
+      detail: clean(event.detail),
+      channel: clean(event.channel),
+      providerMessageId: clean(event.providerMessageId),
+      contact: clean(event.contact),
+      createdAt: clean(event.createdAt) || isoDate(0),
+    }))
+    .filter((event) => event.status)
+    .slice(0, 200);
 }
 
 function normalizeChoice(value, options, fallback) {
@@ -795,12 +843,18 @@ function render() {
 }
 
 function renderOnboarding() {
-  const mode = authMode === "signin" ? "signin" : "signup";
+  const mode = ["signin", "signup", "invite"].includes(authMode) ? authMode : "signin";
   const hasAccounts = auth.users.length > 0;
-  const actionTitle = mode === "signin" ? "Sign in to Studio OS" : "Create manager access";
+  const actionTitle = mode === "signin"
+    ? "Sign in to Studio OS"
+    : mode === "invite"
+      ? "Accept staff invite"
+      : "Create manager access";
   const actionCopy = mode === "signin"
-    ? "Use the manager account or a staff account created by the manager."
-    : "Start with one manager account. Staff access can be assigned later in settings.";
+    ? "Use the manager account or an active staff account created by the manager."
+    : mode === "invite"
+      ? "Use the invite token from the manager to finish staff onboarding and set your password."
+      : "Start with one manager account. Staff access can be assigned later in settings.";
 
   app.innerHTML = `
     <main class="onboarding-page">
@@ -832,6 +886,7 @@ function renderOnboarding() {
       <section class="auth-panel">
         <div class="auth-tabs" role="tablist" aria-label="Authentication options">
           <button class="${mode === "signin" ? "active" : ""}" type="button" data-auth-mode="signin" role="tab" aria-selected="${mode === "signin"}">Sign in</button>
+          <button class="${mode === "invite" ? "active" : ""}" type="button" data-auth-mode="invite" role="tab" aria-selected="${mode === "invite"}">Accept invite</button>
           <button class="${mode === "signup" ? "active" : ""}" type="button" data-auth-mode="signup" role="tab" aria-selected="${mode === "signup"}">Sign up</button>
         </div>
         <div class="panel-header">
@@ -840,11 +895,42 @@ function renderOnboarding() {
             <p>${actionCopy}</p>
           </div>
         </div>
-        ${mode === "signin" ? renderSignInForm(hasAccounts) : renderSignUpForm()}
+        ${mode === "signin" ? renderSignInForm(hasAccounts) : mode === "invite" ? renderInviteForm() : renderSignUpForm()}
       </section>
     </main>
   `;
   wireEvents();
+}
+
+function renderInviteForm() {
+  return `
+    <form id="inviteForm" class="auth-form">
+      <label class="field full">
+        <span>Staff name</span>
+        <input name="name" autocomplete="name" required placeholder="Your name">
+      </label>
+      <label class="field full">
+        <span>Email</span>
+        <input name="email" type="email" autocomplete="email" required placeholder="staff@studio.com">
+      </label>
+      <label class="field full">
+        <span>Invite token</span>
+        <input name="inviteToken" autocomplete="one-time-code" required placeholder="Paste manager invite token">
+      </label>
+      <label class="field">
+        <span>Password</span>
+        <input name="password" type="password" autocomplete="new-password" required minlength="${MIN_PASSWORD_LENGTH}" placeholder="Minimum ${MIN_PASSWORD_LENGTH} characters">
+      </label>
+      <label class="field">
+        <span>Confirm password</span>
+        <input name="confirmPassword" type="password" autocomplete="new-password" required minlength="${MIN_PASSWORD_LENGTH}" placeholder="Repeat password">
+      </label>
+      <div class="button-row full">
+        <button class="btn" type="submit">Accept invite</button>
+        <button class="btn secondary" type="button" data-auth-mode="signin">Back to sign in</button>
+      </div>
+    </form>
+  `;
 }
 
 function renderSignInForm(hasAccounts) {
@@ -1236,6 +1322,12 @@ function renderInquiries() {
               ${channelFollowUpStatuses.map((status) => `<option>${escapeHtml(status)}</option>`).join("")}
             </select>
           </label>
+          <label class="field">
+            <span>Consent</span>
+            <select name="consentStatus">
+              ${channelConsentStatuses.map((status) => `<option>${escapeHtml(status)}</option>`).join("")}
+            </select>
+          </label>
           <label class="field full">
             <span>Raw message</span>
             <textarea name="message" required placeholder="Paste the chat message, DM, web note, or walk-in request"></textarea>
@@ -1522,6 +1614,8 @@ function renderChannelMessageCard(message) {
         ${message.deadline ? `<span class="pill">Due ${formatDate(message.deadline)}</span>` : ""}
         ${message.budget ? `<span class="pill">Budget ${money(message.budget)}</span>` : ""}
         <span class="pill">Received ${formatDate(String(message.receivedAt || "").slice(0, 10))}</span>
+        <span class="pill">${escapeHtml(message.consentStatus || "Unknown")} consent</span>
+        ${message.providerMessageId ? `<span class="pill">Provider ${escapeHtml(message.providerMessageId)}</span>` : ""}
       </div>
       ${message.notes ? `<p class="muted small-text channel-message-note">${escapeHtml(message.notes)}</p>` : ""}
       <div class="channel-actions">
@@ -1992,6 +2086,8 @@ function renderSettings() {
         </form>
       </section>
 
+      ${renderAccountSecurityPanel()}
+
       ${currentUser()?.role === "manager" ? renderTeamAccessPanel() : renderAccessSummaryPanel()}
 
       <section class="panel">
@@ -2022,10 +2118,45 @@ function renderTeamAccessPanel() {
         </div>
         <span class="status">${staff.length}/2 staff</span>
       </div>
-      ${remaining ? renderStaffCreateForm() : `<div class="empty">Staff limit reached. Remove a staff account before adding another.</div>`}
+      ${lastInviteResult ? renderInviteResult(lastInviteResult) : ""}
+      ${remaining ? backendReady && auth.serverManaged ? renderStaffInviteForm() : renderStaffCreateForm() : `<div class="empty">Staff limit reached. Remove a staff account before adding another.</div>`}
       <div class="team-list">
         ${staff.map(renderStaffAccessCard).join("") || emptyState("No staff accounts yet.")}
       </div>
+      ${renderAuditPanel()}
+    </section>
+  `;
+}
+
+function renderAccountSecurityPanel() {
+  const user = currentUser();
+  if (!user) return "";
+  return `
+    <section class="panel">
+      <div class="panel-header">
+        <div>
+          <h2>Account security</h2>
+          <p>Update your password. Other active sessions for this account are signed out after the change.</p>
+        </div>
+        <span class="status">${escapeHtml(statusLabel(user.status))}</span>
+      </div>
+      <form id="passwordForm" class="form-grid">
+        <label class="field">
+          <span>Current password</span>
+          <input name="currentPassword" type="password" autocomplete="current-password" required>
+        </label>
+        <label class="field">
+          <span>New password</span>
+          <input name="password" type="password" autocomplete="new-password" required minlength="${MIN_PASSWORD_LENGTH}">
+        </label>
+        <label class="field">
+          <span>Confirm password</span>
+          <input name="confirmPassword" type="password" autocomplete="new-password" required minlength="${MIN_PASSWORD_LENGTH}">
+        </label>
+        <div class="field">
+          <button class="btn small" type="submit">Change password</button>
+        </div>
+      </form>
     </section>
   `;
 }
@@ -2076,21 +2207,84 @@ function renderStaffCreateForm() {
   `;
 }
 
+function renderStaffInviteForm() {
+  return `
+    <form id="staffInviteForm" class="staff-form">
+      <div class="form-grid">
+        <label class="field">
+          <span>Staff name</span>
+          <input name="name" required autocomplete="name" placeholder="Tailor, admin, or assistant">
+        </label>
+        <label class="field">
+          <span>Email</span>
+          <input name="email" type="email" autocomplete="email" required placeholder="staff@studio.com">
+        </label>
+        <div class="field">
+          <span>Access</span>
+          ${renderAccessChecks(["dashboard", "orders", "clients", "measurements"])}
+        </div>
+      </div>
+      <div class="button-row">
+        <button class="btn small" type="submit">Create staff invite</button>
+      </div>
+    </form>
+  `;
+}
+
+function renderInviteResult(invite) {
+  return `
+    <div class="inline-callout">
+      <div>
+        <strong>Invite token created for ${escapeHtml(invite.email)}</strong>
+        <p class="muted small-text">Share this once with the staff member. It expires ${formatDate(invite.inviteExpiresAt)}.</p>
+      </div>
+      <code>${escapeHtml(invite.inviteToken)}</code>
+    </div>
+  `;
+}
+
 function renderStaffAccessCard(user) {
+  const status = statusLabel(user.status);
   return `
     <article class="team-card">
       <div>
-        <h3>${escapeHtml(user.name)}</h3>
-        <p>${escapeHtml(user.email)}</p>
+        <h3>${escapeHtml(user.name)} <span class="status">${escapeHtml(status)}</span></h3>
+        <p>${escapeHtml(user.email)}${user.lastSignInAt ? ` · Last sign-in ${formatDate(user.lastSignInAt)}` : ""}</p>
+        ${user.inviteExpiresAt ? `<p class="muted small-text">Invite expires ${formatDate(user.inviteExpiresAt)}</p>` : ""}
       </div>
       <form data-staff-access="${escapeHtml(user.id)}">
         ${renderAccessChecks(user.access, `access-${user.id}`)}
         <div class="button-row">
           <button class="btn small secondary" type="submit">Save access</button>
+          ${user.status === "suspended"
+            ? `<button class="btn small secondary" type="button" data-action="reactivate-staff" data-id="${escapeHtml(user.id)}">Reactivate</button>`
+            : `<button class="btn small secondary" type="button" data-action="suspend-staff" data-id="${escapeHtml(user.id)}">Suspend</button>`}
           <button class="btn small danger" type="button" data-action="delete-staff" data-id="${escapeHtml(user.id)}">Remove</button>
         </div>
       </form>
     </article>
+  `;
+}
+
+function renderAuditPanel() {
+  const events = normalizeAuditEvents(auth.auditEvents).slice().reverse().slice(0, 8);
+  return `
+    <div class="audit-panel">
+      <div class="panel-header compact">
+        <div>
+          <h3>Access audit</h3>
+          <p>Recent account and staff permission events.</p>
+        </div>
+      </div>
+      <div class="audit-list">
+        ${events.map((event) => `
+          <div class="audit-row">
+            <span>${escapeHtml(event.detail || event.type)}</span>
+            <span class="muted small-text">${escapeHtml(event.actorEmail || "system")} · ${formatDate(event.createdAt)}</span>
+          </div>
+        `).join("") || emptyState("No access events yet.")}
+      </div>
+    </div>
   `;
 }
 
@@ -2239,7 +2433,7 @@ function wireEvents() {
   app.onclick = (event) => {
     const authModeButton = event.target.closest("[data-auth-mode]");
     if (authModeButton) {
-      authMode = authModeButton.dataset.authMode === "signin" ? "signin" : "signup";
+      authMode = ["signin", "signup", "invite"].includes(authModeButton.dataset.authMode) ? authModeButton.dataset.authMode : "signin";
       render();
       return;
     }
@@ -2287,6 +2481,8 @@ function wireEvents() {
     if (action === "confirm-delete-staff") confirmDeleteStaff(id);
     if (action === "confirm-reset-data") confirmResetLocalData();
     if (action === "sign-out") signOut();
+    if (action === "suspend-staff") updateStaffStatus(id, "suspend-staff");
+    if (action === "reactivate-staff") updateStaffStatus(id, "reactivate-staff");
     if (action === "delete-staff") deleteStaff(id);
     if (action === "reset-demo") resetLocalData();
   };
@@ -2338,9 +2534,12 @@ function wireEvents() {
     const form = event.target;
     if (form.id === "signinForm") handleSignIn(form);
     if (form.id === "signupForm") handleSignUp(form);
+    if (form.id === "inviteForm") handleInviteAccept(form);
     if (form.id === "setupForm") handleProfileSubmit(form, true);
     if (form.id === "settingsForm") handleProfileSubmit(form, false);
     if (form.id === "staffForm") handleStaffSubmit(form);
+    if (form.id === "staffInviteForm") handleStaffInviteSubmit(form);
+    if (form.id === "passwordForm") handlePasswordSubmit(form);
     if (form.dataset.staffAccess) handleStaffAccessSubmit(form);
     if (form.id === "channelMessageForm") handleChannelMessageSubmit(form);
     if (form.id === "inquiryForm") handleInquirySubmit(form);
@@ -2426,6 +2625,29 @@ async function handleSignIn(form) {
   localStorage.setItem(VIEW_KEY, currentView);
   showToast(`Welcome, ${user.name}.`);
   render();
+}
+
+async function handleInviteAccept(form) {
+  const data = new FormData(form);
+  const name = clean(data.get("name"));
+  const email = clean(data.get("email")).toLowerCase();
+  const inviteToken = clean(data.get("inviteToken"));
+  const password = String(data.get("password") || "");
+  const confirmPassword = String(data.get("confirmPassword") || "");
+
+  if (!backendReady) {
+    showToast("Staff invites require server storage. Start the app through the backend first.");
+    return;
+  }
+  if (password.length < MIN_PASSWORD_LENGTH || password !== confirmPassword) {
+    showToast(`Passwords must match and be at least ${MIN_PASSWORD_LENGTH} characters.`);
+    return;
+  }
+
+  await runServerAuthAction("accept-invite", { name, email, inviteToken, password, confirmPassword }, {
+    successMessage: "Invite accepted.",
+    nextView: "first-accessible",
+  });
 }
 
 async function signOut() {
@@ -2577,6 +2799,55 @@ async function handleStaffSubmit(form) {
   render();
 }
 
+async function handleStaffInviteSubmit(form) {
+  if (currentUser()?.role !== "manager") {
+    showToast("Only the manager can create staff invites.");
+    return;
+  }
+  if (!backendReady || !auth.serverManaged) {
+    showToast("Staff invites require server-managed auth.");
+    return;
+  }
+  if (staffUsers().length >= 2) {
+    showToast("Staff limit reached. Remove one staff account before adding another.");
+    return;
+  }
+
+  const data = new FormData(form);
+  const result = await runServerAuthAction("create-staff-invite", {
+    name: clean(data.get("name")),
+    email: clean(data.get("email")).toLowerCase(),
+    access: selectedAccessFrom(form),
+  }, {
+    successMessage: "Staff invite created.",
+  });
+  if (result?.invite) {
+    lastInviteResult = result.invite;
+    render();
+  }
+}
+
+async function handlePasswordSubmit(form) {
+  if (!backendReady || !auth.serverManaged) {
+    showToast("Password changes require server-managed auth.");
+    return;
+  }
+  const data = new FormData(form);
+  const password = String(data.get("password") || "");
+  const confirmPassword = String(data.get("confirmPassword") || "");
+  if (password.length < MIN_PASSWORD_LENGTH || password !== confirmPassword) {
+    showToast(`Passwords must match and be at least ${MIN_PASSWORD_LENGTH} characters.`);
+    return;
+  }
+  await runServerAuthAction("change-password", {
+    currentPassword: String(data.get("currentPassword") || ""),
+    password,
+    confirmPassword,
+  }, {
+    successMessage: "Password changed.",
+  });
+}
+
 async function handleStaffAccessSubmit(form) {
   if (currentUser()?.role !== "manager") {
     showToast("Only the manager can update staff access.");
@@ -2595,6 +2866,28 @@ async function handleStaffAccessSubmit(form) {
   staff.access = selectedAccessFrom(form);
   saveAuth();
   showToast("Staff access updated.");
+  render();
+}
+
+async function updateStaffStatus(id, action) {
+  if (currentUser()?.role !== "manager") {
+    showToast("Only the manager can update staff status.");
+    return;
+  }
+
+  if (backendReady && auth.serverManaged) {
+    await runServerAuthAction(action, { id }, {
+      successMessage: action === "suspend-staff" ? "Staff account suspended." : "Staff account reactivated.",
+    });
+    return;
+  }
+
+  const staff = auth.users.find((user) => user.id === id && user.role === "staff");
+  if (!staff) return;
+  staff.status = action === "suspend-staff" ? "suspended" : "active";
+  staff.updatedAt = isoDate(0);
+  saveAuth();
+  showToast(action === "suspend-staff" ? "Staff account suspended." : "Staff account reactivated.");
   render();
 }
 
@@ -2665,6 +2958,7 @@ function handleChannelMessageSubmit(form) {
     deadline: data.get("deadline"),
     budget: data.get("budget"),
     followUpStatus: data.get("followUpStatus"),
+    consentStatus: data.get("consentStatus"),
     routingStatus: "New",
     notes: data.get("notes"),
     receivedAt: isoDate(0),
@@ -2878,6 +3172,8 @@ function routeChannelMessage(id) {
     notes: channelMessageInquiryNotes(message),
     status: "New",
     sourceMessageId: message.id,
+    consentStatus: message.consentStatus,
+    providerMessageId: message.providerMessageId,
     followUpStatus: message.followUpStatus,
     createdAt: isoDate(0),
   };
@@ -2914,6 +3210,8 @@ function channelMessageInquiryNotes(message) {
     message.message ? `Channel message: ${message.message}` : "",
     message.notes ? `Internal notes: ${message.notes}` : "",
     message.followUpStatus ? `Follow-up: ${message.followUpStatus}` : "",
+    message.consentStatus ? `Consent: ${message.consentStatus}` : "",
+    message.providerMessageId ? `Provider message id: ${message.providerMessageId}` : "",
   ].filter(Boolean).join("\n");
 }
 
@@ -3758,6 +4056,11 @@ function viewLabel(view) {
   return navItems.find(([key]) => key === view)?.[2] || view;
 }
 
+function statusLabel(status) {
+  const normalized = normalizeChoice(status, staffStatuses, "active");
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
 async function runServerAuthAction(action, payload = {}, options = {}) {
   try {
     const response = await fetch(API_SESSION_PATH, {
@@ -3935,7 +4238,8 @@ function isoDate(offsetDays) {
 
 function formatDate(value) {
   if (!value) return "No date";
-  const date = new Date(`${value}T00:00:00`);
+  const text = String(value);
+  const date = new Date(text.includes("T") ? text : `${text}T00:00:00`);
   if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric" }).format(date);
 }

@@ -1,15 +1,20 @@
 const {
+  acceptStaffInvite,
   buildClearSessionCookie,
   buildSessionCookie,
+  changePassword,
   createStaff,
+  createStaffInvite,
   deleteStaff,
   normalizeAuthDocument,
+  reactivateStaff,
   requireSession,
   resolveSession,
   sanitizeAuth,
   signIn,
   signOut,
   signUpManager,
+  suspendStaff,
   updateStaffAccess,
 } = require("./_auth");
 const { handleError, handleOptions, readJsonBody, sendJson, sendMethodNotAllowed } = require("./_response");
@@ -50,6 +55,14 @@ module.exports = async function handler(request, response) {
         return;
       }
 
+      if (action === "accept-invite") {
+        const result = acceptStaffInvite(auth, body);
+        await setDocument("auth", result.auth);
+        response.setHeader("Set-Cookie", buildSessionCookie(result.token, request));
+        await sendSessionPayload(response, request, result.auth, 200, { session: result.session, user: result.user });
+        return;
+      }
+
       if (action === "signout") {
         const nextAuth = signOut(auth, request);
         await setDocument("auth", nextAuth);
@@ -64,7 +77,7 @@ module.exports = async function handler(request, response) {
         return;
       }
 
-      const { user } = requireSession(auth, request);
+      const { session, user } = requireSession(auth, request);
 
       if (action === "create-staff") {
         const nextAuth = createStaff(auth, user, body);
@@ -73,8 +86,36 @@ module.exports = async function handler(request, response) {
         return;
       }
 
+      if (action === "create-staff-invite") {
+        const result = createStaffInvite(auth, user, body);
+        await setDocument("auth", result.auth);
+        await sendSessionPayload(response, request, result.auth, 201, null, { invite: result.invite });
+        return;
+      }
+
       if (action === "update-staff-access") {
         const nextAuth = updateStaffAccess(auth, user, body);
+        await setDocument("auth", nextAuth);
+        await sendSessionPayload(response, request, nextAuth);
+        return;
+      }
+
+      if (action === "change-password") {
+        const nextAuth = changePassword(auth, user, body, session);
+        await setDocument("auth", nextAuth);
+        await sendSessionPayload(response, request, nextAuth);
+        return;
+      }
+
+      if (action === "suspend-staff") {
+        const nextAuth = suspendStaff(auth, user, body);
+        await setDocument("auth", nextAuth);
+        await sendSessionPayload(response, request, nextAuth);
+        return;
+      }
+
+      if (action === "reactivate-staff") {
+        const nextAuth = reactivateStaff(auth, user, body);
         await setDocument("auth", nextAuth);
         await sendSessionPayload(response, request, nextAuth);
         return;
@@ -108,7 +149,7 @@ async function readAuthDocument() {
   };
 }
 
-async function sendSessionPayload(response, request, auth, statusCode = 200, resolvedOverride = null) {
+async function sendSessionPayload(response, request, auth, statusCode = 200, resolvedOverride = null, extra = {}) {
   const resolved = resolvedOverride || resolveSession(auth, request);
   const stateResult = resolved.user ? await getDocument("state") : { value: null, exists: false };
   sendJson(response, statusCode, {
@@ -118,5 +159,6 @@ async function sendSessionPayload(response, request, auth, statusCode = 200, res
     state: stateResult.value,
     stateExists: stateResult.exists,
     sessionExpiresAt: resolved.session?.expiresAt || "",
+    ...extra,
   });
 }

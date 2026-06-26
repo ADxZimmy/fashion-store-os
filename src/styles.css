@@ -298,7 +298,7 @@ p {
 
 .auth-tabs {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin-bottom: 18px;
   padding: 4px;
@@ -308,7 +308,7 @@ p {
 }
 
 .auth-tabs button {
-  min-height: 40px;
+  min-height: 44px;
   border-radius: 6px;
   background: transparent;
   color: var(--muted);
@@ -1260,6 +1260,51 @@ input[type="color"] {
   font-size: 0.86rem;
 }
 
+.inline-callout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  margin: 0 0 16px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+}
+
+.inline-callout code {
+  max-width: min(360px, 100%);
+  overflow-wrap: anywhere;
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: color-mix(in srgb, var(--panel-strong) 85%, black);
+  color: var(--text);
+}
+
+.audit-panel {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.panel-header.compact {
+  margin-bottom: 10px;
+}
+
+.audit-list {
+  display: grid;
+  gap: 8px;
+}
+
+.audit-row {
+  display: grid;
+  gap: 3px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--panel-strong) 70%, transparent);
+}
+
 .staff-form {
   display: grid;
   gap: 14px;
@@ -1276,7 +1321,7 @@ input[type="color"] {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  min-height: 40px;
+  min-height: 44px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: color-mix(in srgb, var(--panel-strong) 76%, transparent);
@@ -1652,6 +1697,10 @@ input[type="color"] {
   .channel-actions .button-row,
   .channel-actions .btn {
     width: 100%;
+  }
+
+  .inline-callout {
+    grid-template-columns: 1fr;
   }
 
   .material-row {
