@@ -52,6 +52,8 @@ GitHub-to-Vercel deployment is wired, `main` is the production branch, and owner
 - Confirmed owner-authored GitHub pushes from `ADxZimmy` create Ready production deployments on the Git-connected Vercel project `sanuske2-2147s-projects/fashion-store-os`.
 - Confirmed collaborator-authored GitHub pushes from `NnazimuzoO` still block with `TEAM_ACCESS_REQUIRED` because Vercel Hobby does not allow adding that user as a team member.
 - Confirmed a Ready Git-connected deployment serves the frontend and `/api/health` reports `storage: "unconfigured"` because Supabase env vars are not set on that project.
+- Checked GitHub before publishing the next planning update; `origin/codex/backend-foundation` was ahead of local by documentation/deployment commits, so local was fast-forwarded before editing.
+- Added the full GSD production-readiness phase sequence through Phase 017 in `.planning/ROADMAP.md`.
 
 ## In Progress
 
@@ -64,7 +66,7 @@ GitHub-to-Vercel deployment is wired, `main` is the production branch, and owner
 
 ## Next Action
 
-Add Supabase env vars to the Git-connected Vercel project and re-run live `/api/health`. Separately choose the Vercel access route for collaborator-authored deploys: upgrade/enable collaboration, move the project to a team/account that can include the commit authors, or keep production commits owner-authored.
+Execute Phase 008: add Supabase env vars to the Git-connected Vercel project and re-run live `/api/health`. Separately choose the Vercel access route for collaborator-authored deploys: upgrade/enable collaboration, move the project to a team/account that can include the commit authors, or keep production commits owner-authored.
 
 ## Verification Snapshot
 
