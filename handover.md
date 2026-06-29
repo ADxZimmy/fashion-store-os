@@ -91,7 +91,7 @@ Team ID: team_SumcS7BfGXgJWdQc7y2iAxSk
 Production branch: main
 Production alias: https://fashion-store-os-sanuske2-2147s-projects.vercel.app
 Public alias: https://fashion-store-os.vercel.app
-Verified Git-triggered activation deploy: https://fashion-store-qgqpttezc-sanuske2-2147s-projects.vercel.app (READY, owner-authored ADxZimmy commit 87b12d9)
+Latest Git-triggered deployment: inspect with `vercel inspect https://fashion-store-os.vercel.app` or `vercel ls fashion-store-os --scope sanuske2-2147s-projects`
 ```
 
 The Git-connected project now has the required Vercel production env vars for Supabase persistence. `/api/health` returns `ok: true`, `storage: "supabase"`, `supabaseHost: "elkpberfbhwbrkawklnk.supabase.co"`, and `workspace: "default"` on the deployment URL, the project alias, and `https://fashion-store-os.vercel.app`.
@@ -268,7 +268,7 @@ Important limitation: this is prototype auth only. Passwords and staff records a
 - Linked the local Supabase CLI to `elkpberfbhwbrkawklnk` and applied all pending migrations, including document storage and the workspace/audit/channel-delivery hardening migration.
 - Set the Git-connected Vercel production env vars for Supabase persistence and webhook safety without storing secret values in the repo.
 - Promoted `codex/backend-foundation` to `main` at commit `87b12d9`.
-- Verified the Ready production deployment at `https://fashion-store-qgqpttezc-sanuske2-2147s-projects.vercel.app`.
+- Verified the Ready production deployment through the Git-connected Vercel project and stable aliases.
 - Verified `/api/health` is green on the deployment URL, `https://fashion-store-os-sanuske2-2147s-projects.vercel.app`, and `https://fashion-store-os.vercel.app`.
 - Ran a live activation smoke: temporary manager signup, state write/read, manager export, cleanup, and final empty bootstrap all passed.
 - Updated `scripts/launch-readiness.js` so the launch gate now says Supabase activation is complete and the remaining gate is live health plus pilot UAT before public cutover.
@@ -365,7 +365,7 @@ Results:
   - `npx supabase db push` applied the pending migrations to `elkpberfbhwbrkawklnk`.
   - Git-connected Vercel production env vars are present; secret values are not stored in repo docs.
   - `origin/main` was fast-forwarded to `87b12d9`.
-  - Vercel production deployment `https://fashion-store-qgqpttezc-sanuske2-2147s-projects.vercel.app` is Ready.
+  - Vercel production deployment from the Git-connected project is Ready.
   - `/api/health` on the deployment URL, project alias, and `https://fashion-store-os.vercel.app` returns Supabase storage on `elkpberfbhwbrkawklnk.supabase.co`.
   - Live activation round-trip passed: temporary manager signup, state write/read, manager export, cleanup, and final empty bootstrap.
   - `git diff --check` passed with only expected CRLF normalization warnings.

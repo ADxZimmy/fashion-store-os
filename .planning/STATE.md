@@ -244,7 +244,7 @@ Run `docs/pilot-uat.md` against the Git-connected Vercel deployment, record issu
 - Command/check: GitHub push to `main`
   Result: Passed on 2026-06-29; `origin/main` fast-forwarded to `87b12d9`.
 - Command/check: Git-connected Vercel production deployment
-  Result: Passed on 2026-06-29; deployment `https://fashion-store-qgqpttezc-sanuske2-2147s-projects.vercel.app` reached Ready.
+  Result: Passed on 2026-06-29; the Git-triggered production deployment reached Ready and the stable aliases were healthy.
 - Command/check: Git-connected `/api/health`
   Result: Passed on 2026-06-29; deployment URL, project alias, and `https://fashion-store-os.vercel.app` all returned Supabase storage on `elkpberfbhwbrkawklnk.supabase.co`.
 - Command/check: Live activation round-trip smoke

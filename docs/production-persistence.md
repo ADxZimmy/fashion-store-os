@@ -10,7 +10,7 @@ Fashion Store OS now has Vercel serverless API routes for production persistence
 - Git-connected production alias: `https://fashion-store-os-sanuske2-2147s-projects.vercel.app`
 - Current public Vercel alias: `https://fashion-store-os.vercel.app`
 - Git-connected project ID: `prj_3oNJjdlNXi5yTKkqenDEzY2jVELi`
-- Verified Git-triggered activation deployment can be inspected with `vercel inspect https://fashion-store-qgqpttezc-sanuske2-2147s-projects.vercel.app`
+- Inspect the current Git-triggered production deployment with `vercel inspect https://fashion-store-os.vercel.app` or `vercel ls fashion-store-os --scope sanuske2-2147s-projects`.
 - Supabase project: `fashion-store`
 - Supabase ref: `elkpberfbhwbrkawklnk`
 - Supabase URL: `https://elkpberfbhwbrkawklnk.supabase.co`
@@ -114,7 +114,7 @@ Latest verification:
 - Old target `duimatbeahwfeghcviju` returned a Supabase 403 for this owner workspace and is retained here only as historical recovery context.
 - `npx supabase db push` applied the document, default-workspace API, and workspace/audit/channel-delivery migrations to `elkpberfbhwbrkawklnk`.
 - Vercel production env vars are present on the Git-connected project; secret values are not stored in the repo.
-- Vercel production deployment is Ready at `https://fashion-store-qgqpttezc-sanuske2-2147s-projects.vercel.app`.
+- Vercel production deployment is Ready on the Git-connected project.
 - Current verified production aliases: `https://fashion-store-os.vercel.app` and `https://fashion-store-os-sanuske2-2147s-projects.vercel.app`.
 - Live `/api/health` returns `ok: true`, `storage: "supabase"`, `supabaseHost: "elkpberfbhwbrkawklnk.supabase.co"`, and `workspace: "default"`.
 - Live activation smoke passed on 2026-06-29: temporary manager signup, state write/read, manager export, cleanup, and final empty bootstrap.
@@ -125,8 +125,8 @@ Latest verification:
 GitHub-triggered deployment is wired to the Git-connected project and `main` is the production branch. Pushes to `main` create Vercel production deployments. A verified owner-authored GitHub deployment with Supabase persistence active is Ready:
 
 ```text
-Deployment URL: https://fashion-store-qgqpttezc-sanuske2-2147s-projects.vercel.app
-State: READY
+Inspect: vercel inspect https://fashion-store-os.vercel.app
+State: READY on latest production deployment
 Author: ADxZimmy
 ```
 
