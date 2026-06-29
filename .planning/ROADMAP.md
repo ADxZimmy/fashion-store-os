@@ -4,13 +4,13 @@
 
 - Phase 017: Production cutover and post-launch support.
   Outcome: Custom domain, final env vars, release tag, handover docs, rollback plan, monitoring watch window, and post-launch issue process are in place.
-  Status: Plan drafted (`.planning/phases/017-production-cutover-post-launch-support/`); blocked on Phase 008 + pilot before cutover.
+  Status: Plan drafted (`.planning/phases/017-production-cutover-post-launch-support/`); Phase 008 prerequisite is complete, and real-store pilot UAT remains before domain cutover.
 
 ## Next
 
-- Phase 008: Git-connected production persistence activation.
-  Outcome: The Git-connected Vercel production project has Supabase env vars, `/api/health` reports Supabase storage, and the live app passes authenticated read/write/reset smoke tests from the GitHub deployment.
-  Status: Owner-side setup pending; step-by-step owner runbook ready at `docs/owner-activation-runbook.md`.
+- Item: Real-store pilot UAT.
+  Outcome: A live store operator completes `docs/pilot-uat.md` against the Git-connected Vercel deployment, records issues, and approves or blocks the public domain cutover.
+  Status: Pending owner/operator execution.
 
 ## Done
 
@@ -35,27 +35,30 @@
 - Phase 007: Real channel integrations.
   Outcome: `/api/channel-webhook` normalizes direct and Meta-style provider payloads into the CRM intake queue with optional challenge/signature verification.
   Status: Complete and deployed.
+- Phase 008: Git-connected production persistence activation.
+  Outcome: The Git-connected Vercel production project has Supabase env vars, `/api/health` reports Supabase storage, and the live app passes authenticated read/write/reset smoke tests from the GitHub deployment.
+  Status: Complete on 2026-06-29; activated against Supabase project `fashion-store` (`elkpberfbhwbrkawklnk`) and verified on the Vercel production aliases.
 - Phase 009: Deployment ownership and release lane.
   Outcome: Production releases from GitHub are documented around the `ADxZimmy` owner lane, preflight checks exist, rollback is documented, and collaborator-authored deploy limits are not a build blocker.
-  Status: Complete locally; pending owner release.
+  Status: Complete and owner release verified.
 - Phase 010: Data model and tenant hardening.
   Outcome: Workspace/audit/channel delivery migrations, workspace id validation, service-role key guidance, and manager-gated sanitized data export were added.
-  Status: Complete locally; pending owner Supabase migration.
+  Status: Complete and owner Supabase migration applied.
 - Phase 011: Account lifecycle and RBAC hardening.
   Outcome: Staff invites, invite acceptance, password change, staff suspend/reactivate, session cleanup, audit history, and Settings controls were added.
-  Status: Complete locally; pending owner release.
+  Status: Complete and deployed.
 - Phase 012: Production channel rollout.
   Outcome: Webhook signature-required mode, dedupe, delivery events, consent metadata, batch limits, and non-leaking GET behavior were added.
-  Status: Complete locally; pending provider credentials and owner release.
+  Status: Complete and deployed; pending provider credentials.
 - Phase 013: Store workflow completion.
   Outcome: Payments, fittings, production activity, manager review, handoff, follow-up, and inventory adjustments were added to the daily store workflow.
-  Status: Complete locally; pending owner release and pilot validation.
+  Status: Complete and deployed; pending pilot validation.
 - Phase 014: Mobile, accessibility, and UX acceptance.
   Outcome: Toast live region, touch targets, reduced motion, mobile drawer regression checks, and `npm.cmd run ux:audit` were added.
   Status: Complete locally.
 - Phase 015: Observability, backup, and security operations.
   Outcome: `/api/readiness`, local readiness parity, operations runbook, and `npm.cmd run ops:security` were added.
-  Status: Complete locally; owner-side backup/restore rehearsal pending.
+  Status: Complete and deployed; owner-side backup/restore rehearsal pending.
 - Phase 016: Pilot UAT and launch readiness.
   Outcome: Pilot UAT script, issue triage, and `npm.cmd run launch:check` were added.
   Status: Complete locally; real-store pilot execution pending.

@@ -19,7 +19,7 @@ Do not spoof `ADxZimmy` as a commit author. Vercel may use the authenticated Git
 3. Push the branch to GitHub for review/handoff.
 4. Run `npm.cmd run release:preflight` before an owner release handoff.
 5. `ADxZimmy` merges or cherry-picks the ready branch into `main` from the owner-authorized account.
-6. `ADxZimmy` adds Supabase production env vars to the Git-connected Vercel project before relying on that deployment.
+6. Confirm the Git-connected Vercel project still has the Supabase production env vars added during the 2026-06-29 owner activation.
 7. Verify `/api/health`, auth/session flow, state write/read, webhook intake, and reset/cleanup after deployment.
 
 ## Owner Release Checklist
@@ -36,6 +36,7 @@ Do not spoof `ADxZimmy` as a commit author. Vercel may use the authenticated Git
   - `CHANNEL_WEBHOOK_SECRET`
   - `CHANNEL_WEBHOOK_REQUIRE_SIGNATURE`
   - `CHANNEL_WEBHOOK_MAX_MESSAGES`
+- `/api/health` reports `storage: "supabase"` on `https://fashion-store-os.vercel.app` and the Git-connected project alias.
 - `npm.cmd run release:preflight` reports a clean worktree and warns if the latest commit is not owner-authored.
 
 ## Rollback

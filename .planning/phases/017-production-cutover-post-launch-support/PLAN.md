@@ -15,18 +15,18 @@ Included:
 
 Excluded:
 
-- Phase 008 work itself (adding Supabase env vars to the Git-connected project) — prerequisite, tracked separately.
-- The actual domain purchase, DNS record changes, and final env var entry — owner-side (`ADxZimmy`) actions executed from the runbook.
+- The already-completed Phase 008 activation work (Supabase env vars, migrations, and production health gate).
+- The actual domain purchase, DNS record changes, and any final provider env var entry — owner-side (`ADxZimmy`) actions executed from the runbook.
 - Post-pilot feature enhancements — deferred to the "Later" roadmap item.
 
 ## Steps
 
-1. Confirm prerequisites: Phase 008 done (`/api/health` → `storage: "supabase"` on the Git-connected deployment) and pilot UAT in `docs/pilot-uat.md` passed. If not, stop here — repo-side drafting (steps 2-5) may proceed but the cutover (steps 6-8) is blocked.
+1. Confirm prerequisites: Phase 008 remains green (`/api/health` → `storage: "supabase"` on the Git-connected deployment) and pilot UAT in `docs/pilot-uat.md` passed. If pilot has not passed, stop here — repo-side drafting (steps 2-5) may proceed but the cutover (steps 6-8) is blocked.
 2. Author `docs/cutover.md`: ordered cutover checklist (preflight → tag → domain → verify → watch), explicitly marking owner-only steps and the `/api/health` gate before DNS.
 3. Add a "Post-Launch Support" section (watch-window cadence against `/api/health` + `/api/readiness`, Vercel/Supabase log scan, and an issue intake/triage path) — extend `docs/operations-runbook.md` rather than duplicate it.
 4. Update `handover.md` with placeholders for the final domain, release tag, and the support process so the owner fills concrete values at cutover; update `.planning/ROADMAP.md` and `.planning/STATE.md` to move Phase 017 to in-progress and reflect the operate phase.
 5. Run local gates (`npm run launch:check`, `npm run release:preflight`) and prepare the branch for the owner.
-6. Owner (`ADxZimmy`): complete Phase 008 env vars, deploy `main`, and confirm `/api/health` is green on the Git-connected deployment.
+6. Owner (`ADxZimmy`): confirm the current `main` deployment is Ready and `/api/health` is green on the Git-connected deployment.
 7. Owner: create and push the annotated release tag from the deployed commit; add the custom domain in Vercel and point DNS only after the health gate passes.
 8. Post-cutover: run the pilot scenarios as a production smoke test, start the watch window, and record results in this phase's VERIFICATION.md / UAT.md.
 

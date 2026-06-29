@@ -8,12 +8,13 @@ Fashion Store OS now has Vercel serverless API routes for production persistence
 - Previously verified live URL: `https://fashion-store-os-navy.vercel.app`
 - Git-connected Vercel project in this workspace: `sanuske2-2147s-projects/fashion-store-os`
 - Git-connected production alias: `https://fashion-store-os-sanuske2-2147s-projects.vercel.app`
+- Current public Vercel alias: `https://fashion-store-os.vercel.app`
 - Git-connected project ID: `prj_3oNJjdlNXi5yTKkqenDEzY2jVELi`
-- Verified Git-triggered deploy from setup can be inspected with `vercel inspect https://fashion-store-gnm1h1k6x-sanuske2-2147s-projects.vercel.app`
-- Supabase project: `Fashion Store OS`
-- Supabase ref: `duimatbeahwfeghcviju`
-- Supabase URL: `https://duimatbeahwfeghcviju.supabase.co`
-- Region: `us-east-1`
+- Verified Git-triggered activation deployment can be inspected with `vercel inspect https://fashion-store-qgqpttezc-sanuske2-2147s-projects.vercel.app`
+- Supabase project: `fashion-store`
+- Supabase ref: `elkpberfbhwbrkawklnk`
+- Supabase URL: `https://elkpberfbhwbrkawklnk.supabase.co`
+- Region: `eu-west-3`
 
 ## Runtime Shape
 
@@ -55,20 +56,25 @@ It creates:
 
 RLS is enabled. The newer migration follows Supabase's 2026 explicit-grants direction: new production tables grant access to `service_role` and revoke `anon` / `authenticated`. The original document-table grant remains for compatibility with already-running deployments until they switch to a server-only key.
 
-Recovery note: on 2026-06-25 the Supabase project was found `INACTIVE`, restored, and the committed migrations were reapplied. If the API host returns DNS failures or Cloudflare upstream errors again, check the project status before changing application code.
+Recovery note: on 2026-06-25 the earlier Supabase project `duimatbeahwfeghcviju` was found `INACTIVE`, restored, and the committed migrations were reapplied for the older deployment lane. On 2026-06-29 that ref returned a 403 privilege error from this owner workspace, so the Git-connected production lane was activated against `elkpberfbhwbrkawklnk`. If the API host returns DNS failures or Cloudflare upstream errors again, check the active project's status before changing application code.
 
 ## Vercel Environment Variables
 
-These are required on any Vercel production project that serves the serverless APIs. They are set on the previously verified production deployment, but the Git-connected `sanuske2-2147s-projects/fashion-store-os` project currently has no environment variables (`vercel env ls` returned none on 2026-06-26):
+These are required on any Vercel production project that serves the serverless APIs. On 2026-06-29 the Git-connected `sanuske2-2147s-projects/fashion-store-os` project was updated with the required production env vars for Supabase persistence:
 
 ```text
 SUPABASE_URL
 SUPABASE_SERVICE_ROLE_KEY
 FASHION_STORE_WORKSPACE_ID
-CHANNEL_WEBHOOK_VERIFY_TOKEN
-CHANNEL_WEBHOOK_SECRET
 CHANNEL_WEBHOOK_REQUIRE_SIGNATURE
 CHANNEL_WEBHOOK_MAX_MESSAGES
+```
+
+Provider-specific webhook secrets are optional until a real WhatsApp/Instagram/provider app is connected:
+
+```text
+CHANNEL_WEBHOOK_VERIFY_TOKEN
+CHANNEL_WEBHOOK_SECRET
 ```
 
 `FASHION_STORE_WORKSPACE_ID` can stay `default` until the app has a multi-workspace model.
@@ -84,8 +90,9 @@ Use `SUPABASE_SERVICE_ROLE_KEY` for the Vercel/server runtime. Keep it server-si
 Useful verification commands:
 
 ```powershell
-Invoke-RestMethod https://fashion-store-os-navy.vercel.app/api/health
-Invoke-RestMethod https://fashion-store-os-navy.vercel.app/api/bootstrap
+Invoke-RestMethod https://fashion-store-os.vercel.app/api/health
+Invoke-RestMethod https://fashion-store-os.vercel.app/api/bootstrap
+Invoke-RestMethod https://fashion-store-os-sanuske2-2147s-projects.vercel.app/api/health
 ```
 
 Expected:
@@ -102,32 +109,27 @@ If storage is unreachable, `/api/health` still returns HTTP 200 with `ok: false`
 
 Latest verification:
 
-- Supabase project is active and healthy after the 2026-06-25 restore.
-- Both migrations have been reapplied to the restored project.
-- Supabase security and performance advisors reported no lints after recovery.
-- Vercel production deployment is Ready.
-- Current verified production alias: `https://fashion-store-os-navy.vercel.app`.
-- Live `/api/health` returns `ok: true`, `storage: "supabase"`, `supabaseHost: "duimatbeahwfeghcviju.supabase.co"`, and `workspace: "default"`.
-- Live API write/read/delete test passed through the production URL on 2026-06-25.
-- Live `/api/inbound` post/read/bootstrap/cleanup test passed on 2026-06-25 after confirming the workspace was empty.
-- Live session signup, protected state write, webhook append, authenticated bootstrap read, and reset cleanup passed on 2026-06-25 after the next-three-phase production deployment.
-- Live Reports browser smoke reached the Reports workspace and confirmed no desktop horizontal overflow on 2026-06-25.
-- Supabase document table was clean after smoke-test cleanup.
-- Vercel production runtime error/fatal log scan found no entries after smoke testing.
+- Supabase CLI owner auth succeeded on 2026-06-29.
+- Active owner Supabase project is `fashion-store` (`elkpberfbhwbrkawklnk`) in `eu-west-3`.
+- Old target `duimatbeahwfeghcviju` returned a Supabase 403 for this owner workspace and is retained here only as historical recovery context.
+- `npx supabase db push` applied the document, default-workspace API, and workspace/audit/channel-delivery migrations to `elkpberfbhwbrkawklnk`.
+- Vercel production env vars are present on the Git-connected project; secret values are not stored in the repo.
+- Vercel production deployment is Ready at `https://fashion-store-qgqpttezc-sanuske2-2147s-projects.vercel.app`.
+- Current verified production aliases: `https://fashion-store-os.vercel.app` and `https://fashion-store-os-sanuske2-2147s-projects.vercel.app`.
+- Live `/api/health` returns `ok: true`, `storage: "supabase"`, `supabaseHost: "elkpberfbhwbrkawklnk.supabase.co"`, and `workspace: "default"`.
+- Live activation smoke passed on 2026-06-29: temporary manager signup, state write/read, manager export, cleanup, and final empty bootstrap.
+- Supabase document state/auth records were clean after smoke-test cleanup.
 
 ## Deployment Caveat
 
-GitHub-triggered deployment is now wired to the Git-connected project and `main` is the production branch. Pushes to `main` create Vercel production deployments. A verified owner-authored GitHub deployment is Ready:
+GitHub-triggered deployment is wired to the Git-connected project and `main` is the production branch. Pushes to `main` create Vercel production deployments. A verified owner-authored GitHub deployment with Supabase persistence active is Ready:
 
 ```text
-Deployment: dpl_GKDe4822iJSPiRTHJWzYgzV79mRH
-URL: https://fashion-store-gnm1h1k6x-sanuske2-2147s-projects.vercel.app
+Deployment URL: https://fashion-store-qgqpttezc-sanuske2-2147s-projects.vercel.app
 State: READY
 Author: ADxZimmy
 ```
 
-The Ready deployment serves the frontend, but `/api/health` returns `ok: false` with `storage: "unconfigured"` because the Git-connected project has no Supabase environment variables yet.
-
 Collaborator-authored GitHub deploys remain blocked. The Vercel API maps `NnazimuzoO` to Vercel user `nnazimuzoo`, but `nnazimuzoo` is not a confirmed member of the Vercel team/project. Attempting to invite `nnazimuzoo@nitechsoftware.com.ng` failed because the project team is on Vercel Hobby, which does not permit team members. Resolve this by upgrading/enabling collaboration, moving the project to an account/team that can include the commit authors, or making production Git commits from a Vercel owner/member account with contributing access.
 
-After the Supabase env vars are added to the Git-connected project, re-run `/api/health` before retiring the older local/CLI deployment.
+Before retiring the older local/CLI deployment, run the pilot UAT script against the Git-connected deployment and keep `/api/health` green on the final public alias.

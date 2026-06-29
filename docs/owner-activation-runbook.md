@@ -4,6 +4,8 @@ Audience: `ADxZimmy` (Vercel/Supabase/GitHub owner). Goal: make the **Git-connec
 
 Time: ~15-20 minutes. You need owner access to the Vercel project, the Supabase project, and the GitHub repo. Do all of this from your own owner account — do not ask a collaborator to run it (their pushes/deploys are blocked by `TEAM_ACCESS_REQUIRED` on Hobby).
 
+Status: completed on 2026-06-29. The old target `duimatbeahwfeghcviju` returned a Supabase 403 for this owner account, so the Git-connected production lane was activated against the accessible owner project `fashion-store` (`elkpberfbhwbrkawklnk`).
+
 ## Targets
 
 | Thing | Value |
@@ -11,9 +13,10 @@ Time: ~15-20 minutes. You need owner access to the Vercel project, the Supabase 
 | Git-connected Vercel project | `sanuske2-2147s-projects/fashion-store-os` |
 | Vercel project ID | `prj_3oNJjdlNXi5yTKkqenDEzY2jVELi` |
 | Production branch | `main` |
-| Supabase project | `Fashion Store OS` |
-| Supabase ref | `duimatbeahwfeghcviju` |
-| Supabase URL | `https://duimatbeahwfeghcviju.supabase.co` |
+| Supabase project | `fashion-store` |
+| Supabase ref | `elkpberfbhwbrkawklnk` |
+| Supabase URL | `https://elkpberfbhwbrkawklnk.supabase.co` |
+| Supabase region | `eu-west-3` |
 
 > Verify the Supabase project is **Active** before starting (it has gone `INACTIVE` before — see `docs/production-persistence.md`). Supabase dashboard → project should show "Active / Healthy".
 
@@ -30,7 +33,7 @@ supabase/migrations/20260626191000_harden_workspaces_audit_and_channel_events.sq
 Pick one path:
 
 - **Dashboard (no CLI):** Supabase → SQL Editor → paste each file's contents in order → Run. Then Database → Tables and confirm `fashion_store_os_documents`, `fashion_store_os_workspaces`, `fashion_store_os_audit_events`, and `fashion_store_os_channel_delivery_events` exist with RLS enabled.
-- **CLI:** `supabase link --project-ref duimatbeahwfeghcviju` then `supabase db push`.
+- **CLI:** `npx supabase link --project-ref elkpberfbhwbrkawklnk --yes` then `npx supabase db push`.
 
 ## Step 2 — Get the Supabase service-role key
 
@@ -42,7 +45,7 @@ These are the variables the serverless API reads. Set them on the **`sanuske2-21
 
 | Variable | Value | Required |
 | --- | --- | --- |
-| `SUPABASE_URL` | `https://duimatbeahwfeghcviju.supabase.co` | Yes |
+| `SUPABASE_URL` | `https://elkpberfbhwbrkawklnk.supabase.co` | Yes |
 | `SUPABASE_SERVICE_ROLE_KEY` | the service_role secret from Step 2 | Yes |
 | `FASHION_STORE_WORKSPACE_ID` | `default` | Yes |
 | `CHANNEL_WEBHOOK_REQUIRE_SIGNATURE` | `1` | Recommended (fail closed) |
@@ -85,7 +88,7 @@ Invoke-RestMethod https://fashion-store-os-sanuske2-2147s-projects.vercel.app/ap
 Expected:
 
 ```json
-{ "ok": true, "storage": "supabase", "supabaseHost": "duimatbeahwfeghcviju.supabase.co", "workspace": "default" }
+{ "ok": true, "storage": "supabase", "supabaseHost": "elkpberfbhwbrkawklnk.supabase.co", "workspace": "default" }
 ```
 
 Then confirm a real round-trip: open the live URL, complete manager signup + workspace setup, refresh, and confirm the workspace persists. Open it in a second browser to confirm it is server-backed, not local.
@@ -97,4 +100,4 @@ Troubleshooting:
 
 ## Done — handoff back to Phase 017
 
-When `/api/health` is green on the Git-connected deployment, Phase 008 is complete. Update `.planning/ROADMAP.md` (Phase 008 → Done) and `.planning/STATE.md`, then proceed to the Phase 017 cutover (`docs/cutover.md` once authored): tag the release, add the custom domain, and point DNS **only after** this health check passes.
+When `/api/health` is green on the Git-connected deployment, Phase 008 is complete. This was verified on 2026-06-29 on the deployment URL, the project alias, and `https://fashion-store-os.vercel.app`; a temporary manager/signup state round-trip and cleanup also passed. Proceed to real-store pilot UAT, then Phase 017: tag the release, add the custom domain, and point DNS **only after** this health check passes on the final target.

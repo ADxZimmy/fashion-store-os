@@ -1,6 +1,6 @@
 # Fashion Store OS Handover
 
-Last updated: 2026-06-26
+Last updated: 2026-06-29
 Current repo: `F:\Fashion Store OS`
 
 ## Project Summary
@@ -54,31 +54,31 @@ Static mode keeps using browser storage because the backend API is unavailable.
 Current Vercel production URL:
 
 ```text
-https://fashion-store-os-navy.vercel.app
+https://fashion-store-os.vercel.app
 ```
 
 Deployment target:
 
 ```text
-nnazimuzoos-projects/fashion-store-os
+sanuske2-2147s-projects/fashion-store-os
 ```
 
 Check the current Vercel deployment ID:
 
 ```powershell
-vercel inspect https://fashion-store-os-navy.vercel.app
+vercel inspect https://fashion-store-os.vercel.app
 ```
 
 Supabase production project:
 
 ```text
-Fashion Store OS
-Project ref: duimatbeahwfeghcviju
-URL: https://duimatbeahwfeghcviju.supabase.co
-Region: us-east-1
+fashion-store
+Project ref: elkpberfbhwbrkawklnk
+URL: https://elkpberfbhwbrkawklnk.supabase.co
+Region: eu-west-3
 ```
 
-Important: GitHub is now the intended deployment source. Branch `main` has been promoted from `codex/backend-foundation`, and the Vercel Git integration for `sanuske2-2147s-projects/fashion-store-os` fires production deployments when `main` is pushed. A GitHub-authored owner commit from `ADxZimmy` deployed successfully to production on 2026-06-26. Collaborator-authored commits by `NnazimuzoO` / Vercel user `nnazimuzoo` still block before build with Vercel `TEAM_ACCESS_REQUIRED` because that user is not a member of the Vercel team/project. The team is on the Hobby plan, and `vercel teams invite nnazimuzoo@nitechsoftware.com.ng --scope sanuske2-2147s-projects` failed because Hobby teams do not permit team members. Resolve collaborator deploys by upgrading/enabling collaboration, moving the project under an account that can include the commit authors, or ensuring production pushes are authored by a Vercel owner/member with contributing access.
+Important: GitHub is now the intended deployment source. Branch `main` has been promoted from `codex/backend-foundation`, and the Vercel Git integration for `sanuske2-2147s-projects/fashion-store-os` fires production deployments when `main` is pushed. A GitHub-authored owner commit from `ADxZimmy` deployed successfully to production with Supabase persistence active on 2026-06-29. Collaborator-authored commits by `NnazimuzoO` / Vercel user `nnazimuzoo` still block before build with Vercel `TEAM_ACCESS_REQUIRED` because that user is not a member of the Vercel team/project. The team is on the Hobby plan, and `vercel teams invite nnazimuzoo@nitechsoftware.com.ng --scope sanuske2-2147s-projects` failed because Hobby teams do not permit team members. Resolve collaborator deploys by upgrading/enabling collaboration, moving the project under an account that can include the commit authors, or ensuring production pushes are authored by a Vercel owner/member with contributing access.
 
 The Vercel deployment publishes the static frontend from `dist/` and serverless API routes from `api/`. Live production persistence is backed by Supabase through Vercel env vars. See `docs/production-persistence.md`.
 
@@ -90,10 +90,11 @@ Project ID: prj_3oNJjdlNXi5yTKkqenDEzY2jVELi
 Team ID: team_SumcS7BfGXgJWdQc7y2iAxSk
 Production branch: main
 Production alias: https://fashion-store-os-sanuske2-2147s-projects.vercel.app
-Verified Git-triggered deploy: dpl_GKDe4822iJSPiRTHJWzYgzV79mRH (READY, owner-authored ADxZimmy commit 0d45ac7)
+Public alias: https://fashion-store-os.vercel.app
+Verified Git-triggered activation deploy: https://fashion-store-qgqpttezc-sanuske2-2147s-projects.vercel.app (READY, owner-authored ADxZimmy commit 87b12d9)
 ```
 
-The Git-connected project currently has no Vercel env vars (`vercel env ls` returned none on 2026-06-26). The Ready Git deployment serves the frontend, but `/api/health` returns `ok: false` and `storage: "unconfigured"` until `SUPABASE_URL`, `SUPABASE_REST_API_KEY`, `FASHION_STORE_WORKSPACE_ID`, and optional channel webhook secrets are added.
+The Git-connected project now has the required Vercel production env vars for Supabase persistence. `/api/health` returns `ok: true`, `storage: "supabase"`, `supabaseHost: "elkpberfbhwbrkawklnk.supabase.co"`, and `workspace: "default"` on the deployment URL, the project alias, and `https://fashion-store-os.vercel.app`.
 
 ## Current Git State
 
@@ -102,11 +103,11 @@ Current branch: `codex/backend-foundation`
 Recent shipped code commits:
 
 ```text
-80bb19a Add CRM channel intake workflow
-bbb4581 Recover production bootstrap persistence
-fea3615 Add mobile navigation drawer
-8faf59d Avoid stale deployment identifiers in docs
-b10c2d3 Update deployment handover details
+87b12d9 Install Supabase CLI for owner activation
+e12f23b Fix launch gate spawn and draft cutover handoff
+0c96d30 Update phase handoff state after push
+bcb5f64 Implement store workflow and launch readiness phases
+40d8e0e Implement production readiness phases 009-012
 ```
 
 Deployment and persistence setup files added in this slice:
@@ -258,6 +259,20 @@ Important limitation: this is prototype auth only. Passwords and staff records a
 - Deployed the CRM channel intake build from commit `80bb19a`.
 - Verified local endpoint behavior, local mobile/desktop browser flow, live `/api/inbound`, live asset presence, Supabase cleanup, and Vercel runtime logs.
 
+### Owner Activation / Git-Connected Supabase Persistence
+
+- Installed Supabase CLI `2.108.0` as a local dev dependency and verified `npm.cmd run check` plus `npm.cmd run launch:check`.
+- Completed owner Vercel login and Supabase login on 2026-06-29.
+- Confirmed the old runbook target `duimatbeahwfeghcviju` returned a Supabase 403 for this owner account, so it should be treated as historical context for the older deployment lane.
+- Activated the accessible owner Supabase project `fashion-store` (`elkpberfbhwbrkawklnk`, `eu-west-3`) for the Git-connected Vercel production lane.
+- Linked the local Supabase CLI to `elkpberfbhwbrkawklnk` and applied all pending migrations, including document storage and the workspace/audit/channel-delivery hardening migration.
+- Set the Git-connected Vercel production env vars for Supabase persistence and webhook safety without storing secret values in the repo.
+- Promoted `codex/backend-foundation` to `main` at commit `87b12d9`.
+- Verified the Ready production deployment at `https://fashion-store-qgqpttezc-sanuske2-2147s-projects.vercel.app`.
+- Verified `/api/health` is green on the deployment URL, `https://fashion-store-os-sanuske2-2147s-projects.vercel.app`, and `https://fashion-store-os.vercel.app`.
+- Ran a live activation smoke: temporary manager signup, state write/read, manager export, cleanup, and final empty bootstrap all passed.
+- Updated `scripts/launch-readiness.js` so the launch gate now says Supabase activation is complete and the remaining gate is live health plus pilot UAT before public cutover.
+
 ## Current LocalStorage Keys
 
 The app currently uses these browser storage keys:
@@ -285,12 +300,16 @@ Latest checks:
 
 ```powershell
 npm.cmd run check
-npm.cmd run build
-node scripts/check.js
-vercel deploy --yes --logs
-vercel deploy <temp-staging-path> --prod --yes --no-wait --project fashion-store-os --scope nnazimuzoos-projects
-vercel inspect https://fashion-store-os-navy.vercel.app
-rg -n "window\.prompt|window\.confirm|alert\(|confirm\(|prompt\(" src\app.js src\styles.css index.html
+npm.cmd run launch:check
+npx supabase --version
+npx supabase projects list --output json
+npx supabase link --project-ref elkpberfbhwbrkawklnk --yes
+npx supabase db push
+vercel env ls
+git push origin HEAD:main
+Invoke-RestMethod https://fashion-store-os.vercel.app/api/health
+Invoke-RestMethod https://fashion-store-os-sanuske2-2147s-projects.vercel.app/api/health
+git diff --check
 ```
 
 Results:
@@ -304,7 +323,7 @@ Results:
   - Business setup opens the dashboard with Server Storage status.
   - Backend `/api/bootstrap` receives state/auth records.
   - Reset workspace data clears backend and browser records back to first launch.
-- Vercel production deployment confirmed:
+- Earlier Vercel production deployment confirmed:
   - URL: `https://fashion-store-os-navy.vercel.app`
   - Status: Ready
   - HTML `/`, JS `/src/app.js`, and CSS `/src/styles.css` return 200.
@@ -313,7 +332,7 @@ Results:
   - `npm.cmd run check` validates 11 JavaScript files.
   - `npm.cmd run build` generates the static deployment bundle.
   - Handler smoke test without Supabase env returns clear unconfigured storage responses.
-- Supabase production persistence confirmed:
+- Earlier Supabase production persistence confirmed for the older deployment lane:
   - Dedicated project `duimatbeahwfeghcviju` created and healthy.
   - Migrations recorded: `create_fashion_store_os_documents`, `allow_default_workspace_document_api_access`.
   - RLS enabled and policy scoped to `workspace_id = 'default'` and `document_key in ('state', 'auth')`.
@@ -337,6 +356,20 @@ Results:
   - Live `/api/inbound` POST appeared in `/api/inbound` and `/api/bootstrap`, then cleanup returned state/auth to absent.
   - Live `src/app.js` contains the channel intake queue and route action code.
   - Vercel runtime error/fatal logs were clean after live smoke testing.
+- Git-connected owner activation checks confirmed:
+  - `npm.cmd run check` passed after the 2026-06-29 fast-forward and Supabase CLI install.
+  - `npm.cmd run launch:check` passed after the 2026-06-29 Supabase CLI install.
+  - Supabase CLI `2.108.0` is installed locally and available through `npx supabase`.
+  - Owner Supabase login can list project `fashion-store` (`elkpberfbhwbrkawklnk`) in `eu-west-3`.
+  - Old target `duimatbeahwfeghcviju` returned a Supabase 403 for API-key/link attempts from this owner workspace.
+  - `npx supabase db push` applied the pending migrations to `elkpberfbhwbrkawklnk`.
+  - Git-connected Vercel production env vars are present; secret values are not stored in repo docs.
+  - `origin/main` was fast-forwarded to `87b12d9`.
+  - Vercel production deployment `https://fashion-store-qgqpttezc-sanuske2-2147s-projects.vercel.app` is Ready.
+  - `/api/health` on the deployment URL, project alias, and `https://fashion-store-os.vercel.app` returns Supabase storage on `elkpberfbhwbrkawklnk.supabase.co`.
+  - Live activation round-trip passed: temporary manager signup, state write/read, manager export, cleanup, and final empty bootstrap.
+  - `git diff --check` passed with only expected CRLF normalization warnings.
+  - `npm.cmd run launch:check` passed after the readiness message update and now points to pilot UAT/cutover instead of pending Supabase activation.
 
 ## UI/UX Expectations
 
@@ -362,48 +395,42 @@ Key design constraints from the owner:
 
 Suggested next work slices:
 
-1. Production auth hardening
-   - Replace plaintext prototype passwords.
-   - Decide whether to use Supabase Auth or a different server-side auth/session model.
-   - Move staff permissions server-side and define workspace authorization rules.
+1. Real-store pilot UAT
+   - Run `docs/pilot-uat.md` against `https://fashion-store-os.vercel.app`.
+   - Record any issues before the public domain cutover.
+   - Keep the activation smoke cleanup pattern so test state/auth records are removed after UAT.
 
-2. GitHub-triggered Vercel deployments
-   - `main` is now the production branch for the Git-connected Vercel project.
+2. Phase 017 production cutover
+   - Author/finalize the cutover runbook, post-launch watch window, issue intake process, and release tag.
+   - Confirm `/api/health` is still green before any custom-domain or DNS change.
+   - Point the final domain only after pilot approval and the fresh health gate pass.
+
+3. Vercel ownership decision
    - Owner-authored GitHub commits from `ADxZimmy` deploy successfully to production.
-   - Add Supabase env vars to the Git-connected project before treating it as the live persistence target.
-   - Decide whether to upgrade/move the Vercel project so collaborator-authored commits can deploy without `TEAM_ACCESS_REQUIRED`.
+   - Collaborator-authored deploys still fail on the Hobby plan with `TEAM_ACCESS_REQUIRED`.
+   - Decide whether to upgrade/move the Vercel project so collaborator-authored commits can deploy without owner intervention.
 
-3. Real channel integrations
+4. Real channel integrations
    - Wire WhatsApp Business API or Instagram Graph API into `/api/inbound`.
-   - Add webhook signature verification and platform delivery/error logging.
+   - Add provider verify tokens and HMAC secrets in Vercel, not in the repo.
 
-4. Responsive QA pass
+5. Responsive QA pass
    - Check mobile, tablet, laptop, and desktop widths.
    - Verify sidebar hover/collapse behavior at each width.
    - Confirm no text overlap or broken cards.
 
-5. Auth and role hardening
-   - Decide whether this remains local-only or moves to a backend.
-   - Replace plaintext localStorage passwords before any real use.
-   - Add stronger role names and permissions if more staff levels are needed.
-
-6. Data workflows
-   - Add import/export for studio data.
-   - Add backup/restore flow.
-   - Add richer order history and activity timeline.
-
-7. Form validation and empty states
+6. Form validation and empty states
    - Tighten validation for orders, measurements, inventory, and staff creation.
    - Add helpful empty states for a fresh workspace with no seed data.
 
-8. Accessibility and keyboard pass
+7. Accessibility and keyboard pass
    - Verify keyboard navigation.
    - Verify modal focus flow.
    - Check labels, contrast, focus states, and Escape behavior.
 
-9. Test strategy
+8. Test strategy
    - Add lightweight automated checks if the project remains static.
-   - At minimum, keep using `node --check src\app.js` and native-dialog scans after JS changes.
+   - At minimum, keep using `npm.cmd run launch:check` and live `/api/health` checks before releases.
 
 ## Handover Update Protocol
 
@@ -435,11 +462,11 @@ Commit:
 
 ## Open Questions
 
-- Should the app eventually use a backend or remain local-first?
 - Should staff access be limited to 2 permanently, or is that only for the current prototype?
 - Should Mo'ora Afrika branding assets be replaced with final production files later?
-- Should the onboarding flow include workspace setup before the dashboard opens?
 - Vercel deployments should be driven by GitHub integration; owner-authored pushes now work, while collaborator-authored pushes need a Vercel access/plan decision.
+- What custom domain should be used for Phase 017 cutover, and who owns the DNS zone?
+- Which real provider app should connect first: WhatsApp Business API, Instagram Graph API, or a simpler inbound webhook bridge?
 
 ## Known Risks
 
@@ -450,7 +477,7 @@ Commit:
 - No automated browser regression suite exists yet.
 - Static HTML/CSS/JS is simple and fast, but larger features may need modularization.
 - GitHub-triggered production deployments are wired and fire on `main`, but the current Git-connected project blocks collaborator-authored deploys with `TEAM_ACCESS_REQUIRED` on the Hobby plan.
-- Supabase projects can become inactive; `/api/health` now detects upstream storage failure, but live persistence still depends on the project staying active.
+- Supabase projects can become inactive; `/api/health` now detects upstream storage failure, but live persistence still depends on `elkpberfbhwbrkawklnk` staying active.
 - Prototype auth is still not production-secure even after durable persistence; a real auth/session model is a separate hardening phase.
 
 ## GSD Hybrid Skill Transfer

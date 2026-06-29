@@ -13,13 +13,13 @@ Fashion designers, tailoring studios, garment makers, and small fashion teams th
 - Runtime: Node-backed local web app with static HTML, CSS, and JavaScript frontend.
 - Framework: Dependency-free Node `http` server for this backend foundation slice.
 - Data: JSON files under `data/` when served through `node server.js`; Supabase document storage behind Vercel serverless API routes in production; browser localStorage remains the fallback when no backend API is available.
-- Deployment: Local development runs with `node server.js` or `npm start` at `http://localhost:4179`; production is deployed on Vercel at `https://fashion-store-os-navy.vercel.app`.
+- Deployment: Local development runs with `node server.js` or `npm start` at `http://localhost:4179`; Git-connected production is deployed on Vercel at `https://fashion-store-os.vercel.app`.
 
 ## Constraints
 
 - The prompt references an existing Pastry County Kitchen OS, but this workspace only contains docs/assets.
 - Keep the product generic; Mo'orafrika direction informs the workflow, but the app must not hardcode that brand.
-- Avoid package installation unless a later phase needs it; current backend uses only Node built-ins.
+- Avoid package installation unless a phase needs it; the app backend uses Node built-ins, and Supabase CLI is installed as a local dev dependency for owner activation.
 - Production API health must prove storage reachability, not just env-var presence.
 
 ## Working Agreements

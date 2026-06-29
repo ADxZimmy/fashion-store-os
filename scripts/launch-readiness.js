@@ -31,7 +31,7 @@ if (failed) {
 } else {
   console.log("");
   console.log("PASS Launch readiness checks completed locally.");
-  console.log("Owner-side production release still requires ADxZimmy to deploy the Git-connected Vercel project with Supabase env vars.");
+  console.log("Production Supabase activation is complete; re-check live /api/health and pilot UAT before public cutover.");
 }
 
 function runNpm(args) {

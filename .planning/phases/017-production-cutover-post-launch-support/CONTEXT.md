@@ -6,7 +6,7 @@ Cut Fashion Store OS over to a stable public production target and stand up the 
 
 ## Dependency
 
-This phase cannot reach "live" until Phase 008 (Git-connected production persistence activation) is complete. Phase 008 puts Supabase env vars on the Git-connected Vercel project so `/api/health` reports `storage: "supabase"`. Cutting over a domain to a deployment whose `/api/health` is `unconfigured` would point real users at a store that cannot persist. Phase 017 repo work (release tag, rollback doc, watch-window checklist, issue process) can be drafted in parallel, but the domain/DNS switch is the last step and waits on 008.
+Phase 008 (Git-connected production persistence activation) is complete as of 2026-06-29: `/api/health` reports `storage: "supabase"` against Supabase project `elkpberfbhwbrkawklnk`. Phase 017 now waits on real-store pilot sign-off and owner-side domain/DNS actions. The domain/DNS switch remains the last step and must still be gated on a fresh green `/api/health` check on the final public target.
 
 ## Relevant Files
 
@@ -38,8 +38,8 @@ This phase cannot reach "live" until Phase 008 (Git-connected production persist
 
 ## Risks
 
-- Risk: Domain is pointed at the Git-connected deployment before Phase 008 env vars are set, so the live store cannot persist.
-  Mitigation: Gate the DNS switch on a green `/api/health` (`storage: "supabase"`) check; make it the explicit last step in the plan.
+- Risk: Domain is pointed at the Git-connected deployment without a fresh health check or pilot sign-off.
+  Mitigation: Gate the DNS switch on pilot approval and a green `/api/health` (`storage: "supabase"`) check; make it the explicit last step in the plan.
 - Risk: Collaborator-authored pushes still fail with `TEAM_ACCESS_REQUIRED`, so an emergency fix cannot be deployed by a non-owner.
   Mitigation: Document the owner-only deploy path and a rollback that any owner can trigger from the Vercel dashboard; record the Vercel plan decision as an open item.
 - Risk: No live monitoring, so a post-launch outage goes unnoticed.

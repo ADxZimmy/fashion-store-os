@@ -4,7 +4,7 @@ Last updated: 2026-06-29
 
 ## Current Focus
 
-Phases 001-016 implemented and verified locally. Phase 017 (cutover) plan is drafted. The critical path is now owner-side: activate Git-connected Supabase persistence (Phase 008, runbook ready) and run the real-store pilot before public cutover.
+Phases 001-016 are implemented, the Phase 008 Git-connected Supabase activation is complete, and Phase 017 (cutover) is drafted. The critical path is now real-store pilot UAT, then the final domain/tag/watch-window cutover.
 
 ## Completed
 
@@ -51,7 +51,7 @@ Phases 001-016 implemented and verified locally. Phase 017 (cutover) plan is dra
 - Promoted `codex/backend-foundation` to `main` for GitHub-triggered Vercel production deployments.
 - Confirmed owner-authored GitHub pushes from `ADxZimmy` create Ready production deployments on the Git-connected Vercel project `sanuske2-2147s-projects/fashion-store-os`.
 - Confirmed collaborator-authored GitHub pushes from `NnazimuzoO` still block with `TEAM_ACCESS_REQUIRED` because Vercel Hobby does not allow adding that user as a team member.
-- Confirmed a Ready Git-connected deployment serves the frontend and `/api/health` reports `storage: "unconfigured"` because Supabase env vars are not set on that project.
+- Confirmed the pre-activation Git-connected deployment served the frontend but reported `storage: "unconfigured"` until owner env vars were set.
 - Checked GitHub before publishing the next planning update; `origin/codex/backend-foundation` was ahead of local by documentation/deployment commits, so local was fast-forwarded before editing.
 - Added the full GSD production-readiness phase sequence through Phase 017 in `.planning/ROADMAP.md`.
 - Implemented Phase 009 release lane with `docs/release-lane.md`, `scripts/release-preflight.js`, and `npm.cmd run release:preflight`.
@@ -69,22 +69,29 @@ Phases 001-016 implemented and verified locally. Phase 017 (cutover) plan is dra
 - Fast-forwarded local `codex/backend-foundation` to `origin/codex/backend-foundation` at `e12f23b` after scanning GitHub on 2026-06-29.
 - Installed Supabase CLI `2.108.0` as a local dev dependency so owner activation can use `npx supabase`.
 - Verified `npm.cmd run check` and `npm.cmd run launch:check` still pass after the fast-forward and CLI install.
+- Completed owner-side Supabase and Vercel CLI authentication on 2026-06-29.
+- Confirmed the old Supabase target `duimatbeahwfeghcviju` is not accessible from the owner account in this workspace; Supabase returned a 403 privilege error for API keys/link attempts.
+- Activated the owner-accessible Supabase project `fashion-store` (`elkpberfbhwbrkawklnk`, `eu-west-3`) for the Git-connected production lane.
+- Linked the local Supabase CLI to `elkpberfbhwbrkawklnk` and applied all pending migrations: document storage, default-workspace API access, and workspace/audit/channel-delivery hardening.
+- Set the Git-connected Vercel production env vars for Supabase persistence and webhook safety on `sanuske2-2147s-projects/fashion-store-os` without recording secret values in the repo.
+- Promoted `codex/backend-foundation` to `main` at `87b12d9`, producing a Ready Git-connected Vercel production deployment.
+- Verified `/api/health` returns `ok: true`, `storage: "supabase"`, `supabaseHost: "elkpberfbhwbrkawklnk.supabase.co"`, and `workspace: "default"` on the deployment URL, project alias, and `fashion-store-os.vercel.app`.
+- Ran a live activation round-trip smoke: temporary manager signup, state write/read, manager export, cleanup, and final empty bootstrap all passed.
+- Updated `scripts/launch-readiness.js` so `npm.cmd run launch:check` now reports that Supabase activation is complete and the remaining gate is live health plus pilot UAT before public cutover.
 
 ## In Progress
 
-- Item: Owner-side production persistence activation and pilot execution.
+- Item: Real-store pilot UAT and Phase 017 public cutover preparation.
 
 ## Blocked
 
 - Collaborator-authored Vercel production deploys are blocked with `TEAM_ACCESS_REQUIRED` because commit author `NnazimuzoO` / Vercel user `nnazimuzoo` does not have contributing access to `sanuske2-2147s-projects/fashion-store-os`. The attempted invite to `nnazimuzoo@nitechsoftware.com.ng` failed because Vercel Hobby teams do not permit team members.
-- Production persistence on the Git-connected Ready deployment is not active yet because the project has no Supabase environment variables.
 - Real-store pilot execution is not complete yet; Phase 016 artifacts and local launch checks are ready for the pilot.
-- Supabase owner auth is not available in this workspace yet: `npx supabase projects list` fails with `Access token not provided`.
-- Vercel CLI owner auth is not available in this workspace yet: `vercel env add` and `vercel whoami` fail with `No existing credentials found`.
+- Public custom-domain cutover is not complete yet; Phase 017 remains gated on pilot sign-off and owner domain/DNS actions.
 
 ## Next Action
 
-Have `ADxZimmy` finish `docs/owner-activation-runbook.md` (Phase 008) from an authenticated owner shell: run `npx supabase login` or set `SUPABASE_ACCESS_TOKEN`, apply Supabase migrations, set production env vars on the Git-connected Vercel project after `vercel login` or with a token, redeploy, and confirm `/api/health` reports `storage: "supabase"`. Then run the pilot UAT script and proceed to the Phase 017 cutover.
+Run `docs/pilot-uat.md` against the Git-connected Vercel deployment, record issues, and only then proceed with Phase 017: final cutover docs, annotated release tag, custom domain/DNS, and the post-launch watch window.
 
 ## Verification Snapshot
 
@@ -121,7 +128,7 @@ Have `ADxZimmy` finish `docs/owner-activation-runbook.md` (Phase 008) from an au
 - Command/check: `npm.cmd run check`
   Result: Passed after production API routes were added; 11 JavaScript files checked.
 - Command/check: Production API unconfigured smoke test
-  Result: Passed; `/api/health` reports storage unconfigured and `/api/bootstrap` returns a clear 503 until Supabase env vars are set.
+  Result: Passed; in an intentionally env-less handler test, `/api/health` reported storage unconfigured and `/api/bootstrap` returned a clear 503.
 - Command/check: Supabase project creation
   Result: Passed; `Fashion Store OS` project `duimatbeahwfeghcviju` is active and healthy in `us-east-1`.
 - Command/check: Supabase migrations
@@ -197,7 +204,7 @@ Have `ADxZimmy` finish `docs/owner-activation-runbook.md` (Phase 008) from an au
 - Command/check: Live Git-connected `/`
   Result: Passed on 2026-06-26; `https://fashion-store-gnm1h1k6x-sanuske2-2147s-projects.vercel.app` returned HTTP 200.
 - Command/check: Live Git-connected `/api/health`
-  Result: Failed persistence readiness on 2026-06-26; returned `ok: false`, `storage: "unconfigured"` until Supabase env vars are added.
+  Result: Failed persistence readiness on 2026-06-26 before activation; returned `ok: false`, `storage: "unconfigured"`. Supabase env vars were added and verified on 2026-06-29.
 - Command/check: Supabase docs/changelog review
   Result: Passed on 2026-06-26; confirmed explicit grants are required for new tables in the newer Supabase Data API model, so Phase 010 migration includes explicit grants and RLS.
 - Command/check: `npm.cmd run check`
@@ -225,10 +232,28 @@ Have `ADxZimmy` finish `docs/owner-activation-runbook.md` (Phase 008) from an au
 - Command/check: `npx supabase --version`
   Result: Passed on 2026-06-29; local CLI reports `2.108.0`.
 - Command/check: `npx supabase projects list --output json`
-  Result: Blocked on 2026-06-29; Supabase CLI reports `Access token not provided`.
-- Command/check: `vercel env add SUPABASE_URL production --value ... --yes`
-  Result: Blocked on 2026-06-29; Vercel CLI reports `No existing credentials found`.
+  Result: Passed on 2026-06-29 after owner login; active owner project is `fashion-store` (`elkpberfbhwbrkawklnk`) in `eu-west-3`.
+- Command/check: old Supabase target access (`duimatbeahwfeghcviju`)
+  Result: Failed as expected on 2026-06-29; Supabase returned 403, so the Git-connected lane now uses the accessible owner project `elkpberfbhwbrkawklnk`.
+- Command/check: `npx supabase link --project-ref elkpberfbhwbrkawklnk --yes`
+  Result: Passed on 2026-06-29.
+- Command/check: `npx supabase db push`
+  Result: Passed on 2026-06-29; applied the document, default-workspace API, and workspace/audit/channel-delivery migrations.
+- Command/check: Vercel production env vars
+  Result: Passed on 2026-06-29; required Supabase/workspace/webhook-safety variables are present on `sanuske2-2147s-projects/fashion-store-os` without repo-stored secret values.
+- Command/check: GitHub push to `main`
+  Result: Passed on 2026-06-29; `origin/main` fast-forwarded to `87b12d9`.
+- Command/check: Git-connected Vercel production deployment
+  Result: Passed on 2026-06-29; deployment `https://fashion-store-qgqpttezc-sanuske2-2147s-projects.vercel.app` reached Ready.
 - Command/check: Git-connected `/api/health`
-  Result: Still blocked on 2026-06-29; live endpoint returns `ok: false`, `storage: "unconfigured"`.
+  Result: Passed on 2026-06-29; deployment URL, project alias, and `https://fashion-store-os.vercel.app` all returned Supabase storage on `elkpberfbhwbrkawklnk.supabase.co`.
+- Command/check: Live activation round-trip smoke
+  Result: Passed on 2026-06-29; temporary manager signup, state write/read, manager export, cleanup, and final empty bootstrap all succeeded.
 - Command/check: `npm.cmd run launch:check`
   Result: Passed on 2026-06-29 after Supabase CLI install; syntax, UX, security, and build gates all green.
+- Command/check: `npm.cmd run check`
+  Result: Passed on 2026-06-29 after activation docs and launch-readiness message updates; 23 JavaScript files checked.
+- Command/check: `git diff --check`
+  Result: Passed on 2026-06-29; no whitespace errors, only expected CRLF normalization warnings.
+- Command/check: `npm.cmd run launch:check`
+  Result: Passed on 2026-06-29 after updating the readiness message; final note now says production Supabase activation is complete and to re-check live health plus pilot UAT before public cutover.

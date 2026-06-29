@@ -14,8 +14,8 @@ Status: Pending. Phase 017 is drafted; cutover not yet executed. Record results 
 ## Manual Checks
 
 - Check: `/api/health` on the Git-connected deployment reports `storage: "supabase"` (Phase 008 prerequisite).
-  Result: Pending owner setup.
-  Notes: Hard gate before any DNS change.
+  Result: Passed on 2026-06-29.
+  Notes: Deployment URL, project alias, and `https://fashion-store-os.vercel.app` returned Supabase storage on `elkpberfbhwbrkawklnk.supabase.co`. Re-run immediately before any DNS change.
 - Check: Annotated release tag points at the deployed commit.
   Result: Pending.
 - Check: Live domain serves the app and pilot smoke scenarios pass.
