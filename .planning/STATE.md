@@ -4,7 +4,7 @@ Last updated: 2026-06-29
 
 ## Current Focus
 
-Phases 001-016 are implemented, the Phase 008 Git-connected Supabase activation is complete, and Phase 017 (cutover) is drafted. The critical path is now real-store pilot UAT, then the final domain/tag/watch-window cutover.
+Phases 001-016 are implemented, the Phase 008 Git-connected Supabase activation is complete, Phase 017 (cutover) is drafted, and pre-pilot MVP hardening (clean-slate signup, no backend wording in UI, server-authoritative sign-in) is done. The critical path is now real-store pilot UAT, then the final domain/tag/watch-window cutover.
 
 ## Completed
 
@@ -78,6 +78,8 @@ Phases 001-016 are implemented, the Phase 008 Git-connected Supabase activation 
 - Verified `/api/health` returns `ok: true`, `storage: "supabase"`, `supabaseHost: "elkpberfbhwbrkawklnk.supabase.co"`, and `workspace: "default"` on the deployment URL, project alias, and `fashion-store-os.vercel.app`.
 - Ran a live activation round-trip smoke: temporary manager signup, state write/read, manager export, cleanup, and final empty bootstrap all passed.
 - Updated `scripts/launch-readiness.js` so `npm.cmd run launch:check` now reports that Supabase activation is complete and the remaining gate is live health plus pilot UAT before public cutover.
+- Pre-pilot MVP hardening in `src/app.js`: new workspaces start as a true clean slate (empty `createSeedState()`; demo content preserved as dev-only `createDemoState()`/`loadStudioDemo()`), removed backend/storage wording from the UI in favor of neutral "All changes saved"/"Saved on this device", and made the client trust the server `authenticated` flag (clears stale local session pointer; `persistLocalAuth` no longer stores the session at rest) so a device without a valid session cookie always lands on sign-in.
+- Verified the hardening: `node --check`, full `launch:check` (syntax/UX/security/build), and a live server smoke (fresh bootstrap returns empty state; signup→authed bootstrap with cookie vs `authenticated:false` without cookie; reset cleanup).
 
 ## In Progress
 
@@ -257,3 +259,6 @@ Run `docs/pilot-uat.md` against the Git-connected Vercel deployment, record issu
   Result: Passed on 2026-06-29; no whitespace errors, only expected CRLF normalization warnings.
 - Command/check: `npm.cmd run launch:check`
   Result: Passed on 2026-06-29 after updating the readiness message; final note now says production Supabase activation is complete and to re-check live health plus pilot UAT before public cutover.
+- Command/check: Pre-pilot MVP hardening verification (`node --check src\\app.js`, `npm run launch:check`, local server smoke).
+  Result: Passed on 2026-06-29; syntax/UX/security/build green, fresh bootstrap returned empty state, signup issued a session and authed bootstrap returned `authenticated:true`, cookieless bootstrap returned `authenticated:false`, and reset cleanup returned the workspace to empty.
+  Note: A fresh-signup empty-dashboard browser render was not verified headlessly; confirm via pilot UAT Scenario 1 on the live URL.

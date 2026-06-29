@@ -137,6 +137,13 @@ Do not overwrite user changes. If there are uncommitted changes you did not make
 
 ## Completed Work
 
+### Pre-Pilot MVP Hardening (2026-06-29)
+
+- Clean-slate signup: `createSeedState()` in `src/app.js` now returns empty collections, so new workspaces start with no clients/orders/inventory/styles. The demo studio content was preserved as dev-only `createDemoState()` / `loadStudioDemo()` (exposed on `window` only on localhost/file), never shown to testers.
+- Removed backend/storage wording from the UI. The status indicator now shows neutral "All changes saved" / "Saved on this device" / "Getting your workspace ready"; the line naming `node server.js` and other "backend/browser storage" copy were replaced with owner-facing language.
+- Made sign-in server-authoritative: the client reads the bootstrap `authenticated` flag, clears any stale local session pointer when not authenticated, and `persistLocalAuth()` no longer stores the session at rest in server mode. A device without a valid HttpOnly session cookie always lands on the sign-in screen.
+- Verified with `node --check`, full `launch:check`, and a live server smoke (empty fresh bootstrap; signup→authed bootstrap with cookie vs `authenticated:false` without; reset cleanup). Not verified headlessly: the fresh-signup empty-dashboard browser render — confirm via pilot UAT Scenario 1.
+
 ### Studio OS Foundation
 
 - Created a Mo'ora Afrika Fashion House / Studio OS prototype.

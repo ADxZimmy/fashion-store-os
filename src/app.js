@@ -117,7 +117,7 @@ let mobileNavOpen = false;
 let toastTimer;
 let backendReady = false;
 let storageMode = "loading";
-let storageMessage = "Checking server storage";
+let storageMessage = "Getting your workspace ready";
 let syncFailureAnnounced = false;
 let lastInviteResult = null;
 
@@ -129,18 +129,25 @@ async function initializeApp() {
 
   if (snapshot) {
     const localStateExists = Boolean(localStorage.getItem(STORAGE_KEY));
-    const localAuthExists = Boolean(localStorage.getItem(AUTH_KEY));
 
-    state = snapshot.stateLocked ? createSeedState() : normalizeState(snapshot.state || loadState());
+    // The server session (HttpOnly cookie) is the single source of truth for
+    // auth. A stale local session pointer must never keep the app "signed in".
+    const authenticated = Boolean(snapshot.authenticated);
+    state = snapshot.stateLocked || !authenticated
+      ? createSeedState()
+      : normalizeState(snapshot.state || loadState());
     auth = normalizeAuth(snapshot.auth || loadAuth());
-    if (snapshot.stateLocked) {
+    if (!authenticated) {
+      auth.sessionUserId = "";
+    }
+    if (snapshot.stateLocked || !authenticated) {
       localStorage.removeItem(STORAGE_KEY);
     } else {
       persistLocalState();
     }
     persistLocalAuth();
 
-    if (!snapshot.stateExists && localStateExists) {
+    if (authenticated && !snapshot.stateExists && localStateExists) {
       void saveBackendData(API_STATE_PATH, state);
     }
   }
@@ -148,13 +155,16 @@ async function initializeApp() {
   authMode = auth.users.length ? "signin" : "signup";
   selectedClientId = state.clients[0]?.id || "";
   draftOrderStyleId = state.styles[0]?.id || "";
+  if (isDevHost()) {
+    window.loadStudioDemo = loadStudioDemo;
+  }
   render();
 }
 
 async function loadBackendSnapshot() {
   if (window.location.protocol === "file:") {
     storageMode = "local";
-    storageMessage = "Browser storage";
+    storageMessage = "Saved on this device";
     return null;
   }
 
@@ -169,14 +179,14 @@ async function loadBackendSnapshot() {
     const snapshot = await response.json();
     backendReady = true;
     storageMode = "server";
-    storageMessage = "Server storage";
+    storageMessage = "All changes saved";
     syncFailureAnnounced = false;
     return snapshot;
   } catch (error) {
     console.warn("Fashion Store OS backend unavailable. Using local browser storage.", error);
     backendReady = false;
     storageMode = "local";
-    storageMessage = "Browser storage fallback";
+    storageMessage = "Saved on this device";
     return null;
   }
 }
@@ -499,6 +509,24 @@ function normalizeProfile(profile, fallback = createDefaultProfile()) {
 }
 
 function createSeedState() {
+  return {
+    profile: null,
+    clients: [],
+    inquiries: [],
+    channelMessages: [],
+    channelDeliveryEvents: [],
+    styles: [],
+    inventory: [],
+    inventoryAdjustments: [],
+    orders: [],
+    usageRecords: [],
+  };
+}
+
+// Demo studio content kept for LOCAL DEVELOPMENT ONLY. Real tenants start empty
+// via createSeedState() above; this is never loaded automatically. A developer
+// can call createDemoState() / loadStudioDemo() from the browser console.
+function createDemoState() {
   return {
     profile: null,
     clients: [
@@ -918,7 +946,7 @@ function renderLoading() {
         <div>
           <p class="eyebrow">Fashion Studio OS</p>
           <h1>Preparing your studio workspace.</h1>
-          <p class="lead">Checking server storage and loading the latest studio records.</p>
+          <p class="lead">Loading your latest studio records.</p>
         </div>
         <div class="boot-progress" aria-hidden="true"><span></span></div>
       </section>
@@ -1425,11 +1453,10 @@ function renderModal() {
   }
 
   if (modalState.type === "reset-data") {
-    const storeLabel = backendReady ? "server workspace and browser backup" : "browser storage";
     return renderConfirmModal({
       title: "Reset workspace data",
-      eyebrow: backendReady ? "Server storage" : "Local browser storage",
-      message: `This clears Studio OS records, sign-in records, and staff accounts from ${storeLabel}.`,
+      eyebrow: "Workspace data",
+      message: "This permanently clears all workspace records, sign-in records, and staff accounts. This cannot be undone.",
       confirmAction: "confirm-reset-data",
       confirmLabel: "Reset data",
       tone: "danger",
@@ -1500,7 +1527,7 @@ function renderSetup() {
         <div class="panel-header">
           <div>
             <h2>Business setup</h2>
-            <p>This is saved to the backend when available, with browser storage as a fallback.</p>
+            <p>Set up your studio. Your details are saved automatically.</p>
           </div>
         </div>
         ${renderProfileFields(defaultTheme)}
@@ -2504,7 +2531,7 @@ function renderSettings() {
         <div class="panel-header">
           <div>
             <h2>Workspace data</h2>
-            <p>Records sync to the backend when the app is served through node server.js; browser storage remains the fallback.</p>
+            <p>Your records are saved automatically as you work.</p>
           </div>
           <span class="status">${escapeHtml(storageMessage)}</span>
         </div>
@@ -3061,7 +3088,7 @@ async function handleInviteAccept(form) {
   const confirmPassword = String(data.get("confirmPassword") || "");
 
   if (!backendReady) {
-    showToast("Staff invites require server storage. Start the app through the backend first.");
+    showToast("Staff invites are only available when you're signed in online.");
     return;
   }
   if (password.length < MIN_PASSWORD_LENGTH || password !== confirmPassword) {
@@ -4173,7 +4200,6 @@ function resetLocalData() {
 
 async function confirmResetLocalData() {
   closeModal(false);
-  const wasBackendReady = backendReady;
   if (backendReady) {
     try {
       const response = await fetch(API_DATA_PATH, { method: "DELETE", headers: { Accept: "application/json" } });
@@ -4184,7 +4210,7 @@ async function confirmResetLocalData() {
       console.warn("Could not reset backend data. Clearing browser storage only.", error);
       backendReady = false;
       storageMode = "local";
-      storageMessage = "Browser storage fallback";
+      storageMessage = "Saved on this device";
     }
   }
   localStorage.removeItem(STORAGE_KEY);
@@ -4197,7 +4223,7 @@ async function confirmResetLocalData() {
   currentView = "dashboard";
   selectedClientId = state.clients[0]?.id || "";
   draftOrderStyleId = state.styles[0]?.id || "";
-  showToast(wasBackendReady && backendReady ? "Workspace data reset." : "Browser data reset.");
+  showToast("Workspace data reset.");
   render();
 }
 
@@ -4950,7 +4976,7 @@ async function runServerAuthAction(action, payload = {}, options = {}) {
 function applyServerSessionResult(result = {}, options = {}) {
   backendReady = true;
   storageMode = "server";
-  storageMessage = "Server storage";
+  storageMessage = "All changes saved";
   syncFailureAnnounced = false;
 
   if (result.auth) {
@@ -4989,6 +5015,22 @@ function saveState() {
   void saveBackendData(API_STATE_PATH, state);
 }
 
+// Local-dev convenience: load the sample studio from the console. Never wired
+// into the tester-facing UI; real workspaces stay empty until the owner adds data.
+function loadStudioDemo() {
+  state = normalizeState(createDemoState());
+  selectedClientId = state.clients[0]?.id || "";
+  draftOrderStyleId = state.styles[0]?.id || "";
+  saveState();
+  render();
+  showToast("Sample studio data loaded (dev only).");
+}
+
+function isDevHost() {
+  const host = window.location.hostname;
+  return window.location.protocol === "file:" || host === "localhost" || host === "127.0.0.1";
+}
+
 function saveAuth() {
   persistLocalAuth();
 }
@@ -4998,7 +5040,13 @@ function persistLocalState() {
 }
 
 function persistLocalAuth() {
-  localStorage.setItem(AUTH_KEY, JSON.stringify(auth));
+  // In server mode the session lives in the HttpOnly cookie, not the browser.
+  // Never persist the session pointer at rest, so a reload can't resurrect a
+  // signed-in shell without a valid server session.
+  const safeAuth = backendReady || auth.serverManaged
+    ? { ...auth, sessionUserId: "" }
+    : auth;
+  localStorage.setItem(AUTH_KEY, JSON.stringify(safeAuth));
 }
 
 async function saveBackendData(path, value) {
@@ -5016,16 +5064,16 @@ async function saveBackendData(path, value) {
       throw new Error(`Sync failed with ${response.status}`);
     }
     storageMode = "server";
-    storageMessage = "Server storage";
+    storageMessage = "All changes saved";
     syncFailureAnnounced = false;
   } catch (error) {
     console.warn("Could not sync Studio OS data to backend. Continuing with browser storage.", error);
     backendReady = false;
     storageMode = "local";
-    storageMessage = "Browser storage fallback";
+    storageMessage = "Saved on this device";
     if (!syncFailureAnnounced) {
       syncFailureAnnounced = true;
-      showToast("Server sync failed. Browser storage is still active.");
+      showToast("Couldn't save your last change online. It's kept on this device.");
       render();
     }
   }
