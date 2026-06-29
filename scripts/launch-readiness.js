@@ -39,5 +39,9 @@ function runNpm(args) {
     execFileSync(process.execPath, [npmCli, ...args], { cwd: rootDir, stdio: "inherit" });
     return;
   }
-  execFileSync(npmCommand, args, { cwd: rootDir, stdio: "inherit" });
+  // On Windows the npm launcher is `npm.cmd`; current Node refuses to spawn a
+  // `.cmd` file without `shell: true` (throws EINVAL). Enable the shell there so
+  // `node scripts/launch-readiness.js` works from any shell, not just PowerShell.
+  const useShell = process.platform === "win32";
+  execFileSync(npmCommand, args, { cwd: rootDir, stdio: "inherit", shell: useShell });
 }

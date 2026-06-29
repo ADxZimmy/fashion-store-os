@@ -4,13 +4,13 @@
 
 - Phase 017: Production cutover and post-launch support.
   Outcome: Custom domain, final env vars, release tag, handover docs, rollback plan, monitoring watch window, and post-launch issue process are in place.
-  Status: Planned.
+  Status: Plan drafted (`.planning/phases/017-production-cutover-post-launch-support/`); blocked on Phase 008 + pilot before cutover.
 
 ## Next
 
 - Phase 008: Git-connected production persistence activation.
   Outcome: The Git-connected Vercel production project has Supabase env vars, `/api/health` reports Supabase storage, and the live app passes authenticated read/write/reset smoke tests from the GitHub deployment.
-  Status: Owner-side setup pending.
+  Status: Owner-side setup pending; step-by-step owner runbook ready at `docs/owner-activation-runbook.md`.
 
 ## Done
 

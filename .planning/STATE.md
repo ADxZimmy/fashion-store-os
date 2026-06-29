@@ -1,10 +1,10 @@
 # State
 
-Last updated: 2026-06-26
+Last updated: 2026-06-29
 
 ## Current Focus
 
-Phases 013-016 are implemented and verified locally. Owner-side Vercel/Supabase setup and a real-store pilot remain required before public production cutover.
+Phases 001-016 implemented and verified locally. Phase 017 (cutover) plan is drafted. The critical path is now owner-side: activate Git-connected Supabase persistence (Phase 008, runbook ready) and run the real-store pilot before public cutover.
 
 ## Completed
 
@@ -63,6 +63,9 @@ Phases 013-016 are implemented and verified locally. Owner-side Vercel/Supabase 
 - Implemented Phase 014 mobile/accessibility UX acceptance with toast live-region hardening, touch target/reduced-motion/overscroll CSS fixes, and `npm.cmd run ux:audit`.
 - Implemented Phase 015 observability/backup/security operations with `/api/readiness`, local readiness parity, `docs/operations-runbook.md`, and `npm.cmd run ops:security`.
 - Implemented Phase 016 pilot UAT and launch readiness with `docs/pilot-uat.md` and `npm.cmd run launch:check`.
+- Fixed `scripts/launch-readiness.js` to spawn `npm.cmd` with `shell: true` on Windows so `npm run launch:check` passes from any shell (was failing `spawnSync EINVAL` outside PowerShell).
+- Drafted Phase 017 cutover artifacts (CONTEXT/PLAN/VERIFICATION/UAT) gating the DNS switch on a green `/api/health`.
+- Authored `docs/owner-activation-runbook.md`, an exact owner runbook to activate Git-connected Supabase persistence (Phase 008).
 
 ## In Progress
 
@@ -76,7 +79,7 @@ Phases 013-016 are implemented and verified locally. Owner-side Vercel/Supabase 
 
 ## Next Action
 
-Have `ADxZimmy` perform the Git-connected owner release from the pushed `codex/backend-foundation` work after adding Supabase env vars/migrations to the production Vercel project, then run the pilot UAT script.
+Have `ADxZimmy` execute `docs/owner-activation-runbook.md` (Phase 008): apply Supabase migrations, set production env vars on the Git-connected Vercel project, redeploy, and confirm `/api/health` reports `storage: "supabase"`. Then run the pilot UAT script and proceed to the Phase 017 cutover.
 
 ## Verification Snapshot
 
@@ -212,3 +215,5 @@ Have `ADxZimmy` perform the Git-connected owner release from the pushed `codex/b
   Result: Passed on 2026-06-26; syntax, UX audit, security audit, and production build all passed locally.
 - Command/check: Local `/api/health` and `/api/readiness` smoke
   Result: Passed on 2026-06-26; local backend returned `storage: "json-file"` and readiness `mode: "local"`.
+- Command/check: `node scripts/launch-readiness.js` (umbrella `npm run launch:check`)
+  Result: Passed on 2026-06-29 from Bash after the `shell: true` fix; previously failed `spawnSync npm.cmd EINVAL` outside PowerShell. Syntax, UX, security, and build gates all green.
