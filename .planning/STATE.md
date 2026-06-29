@@ -66,6 +66,9 @@ Phases 001-016 implemented and verified locally. Phase 017 (cutover) plan is dra
 - Fixed `scripts/launch-readiness.js` to spawn `npm.cmd` with `shell: true` on Windows so `npm run launch:check` passes from any shell (was failing `spawnSync EINVAL` outside PowerShell).
 - Drafted Phase 017 cutover artifacts (CONTEXT/PLAN/VERIFICATION/UAT) gating the DNS switch on a green `/api/health`.
 - Authored `docs/owner-activation-runbook.md`, an exact owner runbook to activate Git-connected Supabase persistence (Phase 008).
+- Fast-forwarded local `codex/backend-foundation` to `origin/codex/backend-foundation` at `e12f23b` after scanning GitHub on 2026-06-29.
+- Installed Supabase CLI `2.108.0` as a local dev dependency so owner activation can use `npx supabase`.
+- Verified `npm.cmd run check` and `npm.cmd run launch:check` still pass after the fast-forward and CLI install.
 
 ## In Progress
 
@@ -76,10 +79,12 @@ Phases 001-016 implemented and verified locally. Phase 017 (cutover) plan is dra
 - Collaborator-authored Vercel production deploys are blocked with `TEAM_ACCESS_REQUIRED` because commit author `NnazimuzoO` / Vercel user `nnazimuzoo` does not have contributing access to `sanuske2-2147s-projects/fashion-store-os`. The attempted invite to `nnazimuzoo@nitechsoftware.com.ng` failed because Vercel Hobby teams do not permit team members.
 - Production persistence on the Git-connected Ready deployment is not active yet because the project has no Supabase environment variables.
 - Real-store pilot execution is not complete yet; Phase 016 artifacts and local launch checks are ready for the pilot.
+- Supabase owner auth is not available in this workspace yet: `npx supabase projects list` fails with `Access token not provided`.
+- Vercel CLI owner auth is not available in this workspace yet: `vercel env add` and `vercel whoami` fail with `No existing credentials found`.
 
 ## Next Action
 
-Have `ADxZimmy` execute `docs/owner-activation-runbook.md` (Phase 008): apply Supabase migrations, set production env vars on the Git-connected Vercel project, redeploy, and confirm `/api/health` reports `storage: "supabase"`. Then run the pilot UAT script and proceed to the Phase 017 cutover.
+Have `ADxZimmy` finish `docs/owner-activation-runbook.md` (Phase 008) from an authenticated owner shell: run `npx supabase login` or set `SUPABASE_ACCESS_TOKEN`, apply Supabase migrations, set production env vars on the Git-connected Vercel project after `vercel login` or with a token, redeploy, and confirm `/api/health` reports `storage: "supabase"`. Then run the pilot UAT script and proceed to the Phase 017 cutover.
 
 ## Verification Snapshot
 
@@ -217,3 +222,13 @@ Have `ADxZimmy` execute `docs/owner-activation-runbook.md` (Phase 008): apply Su
   Result: Passed on 2026-06-26; local backend returned `storage: "json-file"` and readiness `mode: "local"`.
 - Command/check: `node scripts/launch-readiness.js` (umbrella `npm run launch:check`)
   Result: Passed on 2026-06-29 from Bash after the `shell: true` fix; previously failed `spawnSync npm.cmd EINVAL` outside PowerShell. Syntax, UX, security, and build gates all green.
+- Command/check: `npx supabase --version`
+  Result: Passed on 2026-06-29; local CLI reports `2.108.0`.
+- Command/check: `npx supabase projects list --output json`
+  Result: Blocked on 2026-06-29; Supabase CLI reports `Access token not provided`.
+- Command/check: `vercel env add SUPABASE_URL production --value ... --yes`
+  Result: Blocked on 2026-06-29; Vercel CLI reports `No existing credentials found`.
+- Command/check: Git-connected `/api/health`
+  Result: Still blocked on 2026-06-29; live endpoint returns `ok: false`, `storage: "unconfigured"`.
+- Command/check: `npm.cmd run launch:check`
+  Result: Passed on 2026-06-29 after Supabase CLI install; syntax, UX, security, and build gates all green.
