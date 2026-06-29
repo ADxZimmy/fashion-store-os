@@ -1,6 +1,6 @@
 const { handleError, handleOptions, sendJson, sendMethodNotAllowed } = require("./_response");
 const { normalizeAuthDocument, requireManager, sanitizeAuth } = require("./_auth");
-const { getDocument, getStorageSummary, removeDocuments, setDocument } = require("./_store");
+const { getStorageSummary, storeForRequest } = require("./_store");
 
 module.exports = async function handler(request, response) {
   const methods = ["GET", "DELETE", "OPTIONS"];
@@ -11,15 +11,16 @@ module.exports = async function handler(request, response) {
   }
 
   try {
-    const authResult = await getDocument("auth");
+    const store = storeForRequest(request);
+    const authResult = await store.getDocument("auth");
     const normalized = normalizeAuthDocument(authResult.value || {});
     if (authResult.exists && normalized.changed) {
-      await setDocument("auth", normalized.auth);
+      await store.setDocument("auth", normalized.auth);
     }
     const { user } = requireManager(normalized.auth, request);
 
     if (request.method === "GET") {
-      const stateResult = await getDocument("state");
+      const stateResult = await store.getDocument("state");
       sendJson(response, 200, {
         ok: true,
         exportedAt: new Date().toISOString(),
@@ -32,7 +33,7 @@ module.exports = async function handler(request, response) {
       return;
     }
 
-    await removeDocuments(["state", "auth"]);
+    await store.removeDocuments(["state", "auth"]);
     sendJson(response, 200, { ok: true });
   } catch (error) {
     handleError(response, error);

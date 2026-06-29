@@ -1,6 +1,6 @@
 const { handleError, handleOptions, sendJson, sendMethodNotAllowed } = require("./_response");
 const { normalizeAuthDocument, resolveSession, sanitizeAuth } = require("./_auth");
-const { getDocument, setDocument } = require("./_store");
+const { storeForRequest } = require("./_store");
 
 module.exports = async function handler(request, response) {
   const methods = ["GET", "OPTIONS"];
@@ -11,13 +11,14 @@ module.exports = async function handler(request, response) {
   }
 
   try {
+    const store = storeForRequest(request);
     const [stateResult, authResult] = await Promise.all([
-      getDocument("state"),
-      getDocument("auth"),
+      store.getDocument("state"),
+      store.getDocument("auth"),
     ]);
     const normalized = normalizeAuthDocument(authResult.value || {});
     if (authResult.exists && normalized.changed) {
-      await setDocument("auth", normalized.auth);
+      await store.setDocument("auth", normalized.auth);
     }
     const resolved = resolveSession(normalized.auth, request);
     const canReadState = !normalized.auth.users.length || Boolean(resolved.user);

@@ -1,5 +1,6 @@
 const TABLE_NAME = "fashion_store_os_documents";
 const DOCUMENT_KEYS = new Set(["state", "auth"]);
+const WORKSPACE_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
 
 function getSupabaseConfig() {
   const supabaseUrl = trimTrailingSlash(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "");
@@ -29,9 +30,11 @@ function getSupabaseConfig() {
   return { supabaseUrl, apiKey: key.value, keySource: key.source, host: parsedUrl.host };
 }
 
-function workspaceId() {
+// The configured fallback workspace (env). Used for legacy/server-side calls and
+// inbound provider webhooks that cannot carry a per-device workspace header.
+function defaultWorkspaceId() {
   const id = normalizeEnv(process.env.FASHION_STORE_WORKSPACE_ID) || "default";
-  if (!/^[a-z0-9][a-z0-9_-]{0,63}$/i.test(id)) {
+  if (!WORKSPACE_ID_PATTERN.test(id)) {
     const error = new Error("Workspace id must be 1-64 letters, numbers, dashes, or underscores");
     error.statusCode = 503;
     throw error;
@@ -39,8 +42,41 @@ function workspaceId() {
   return id;
 }
 
+// Validate a client-supplied workspace id (400 on bad input, not 503).
+function validateWorkspaceId(id) {
+  const value = normalizeEnv(id);
+  if (!WORKSPACE_ID_PATTERN.test(value)) {
+    const error = new Error("Workspace id is invalid");
+    error.statusCode = 400;
+    throw error;
+  }
+  return value;
+}
+
+// Per-device tenancy: the browser generates a random workspace id and sends it
+// as the x-workspace-id header, so each device gets an isolated workspace. Falls
+// back to the configured default when no header is present.
+function resolveWorkspaceId(request) {
+  const headers = request && request.headers ? request.headers : {};
+  const raw = headers["x-workspace-id"] || headers["X-Workspace-Id"];
+  const value = normalizeEnv(Array.isArray(raw) ? raw[0] : raw);
+  return value ? validateWorkspaceId(value) : defaultWorkspaceId();
+}
+
+// Bind the resolved workspace to every storage call so a handler can never
+// accidentally read or write another tenant's documents.
+function storeForRequest(request) {
+  const workspace = resolveWorkspaceId(request);
+  return {
+    workspace,
+    getDocument: (documentKey) => getDocument(documentKey, workspace),
+    setDocument: (documentKey, document) => setDocument(documentKey, document, workspace),
+    removeDocuments: (documentKeys) => removeDocuments(documentKeys, workspace),
+  };
+}
+
 function getStorageSummary() {
-  const workspace = safeWorkspaceId();
+  const workspace = safeDefaultWorkspaceId();
   try {
     const { host, keySource } = getSupabaseConfig();
     return {
@@ -60,19 +96,19 @@ function getStorageSummary() {
   }
 }
 
-async function probeStorage() {
+async function probeStorage(workspace = defaultWorkspaceId()) {
   await supabaseRequest(
     "GET",
-    `/${TABLE_NAME}?workspace_id=eq.${encodeURIComponent(workspaceId())}&select=workspace_id&limit=1`,
+    `/${TABLE_NAME}?workspace_id=eq.${encodeURIComponent(workspace)}&select=workspace_id&limit=1`,
   );
   return getStorageSummary();
 }
 
-async function getDocument(documentKey) {
+async function getDocument(documentKey, workspace = defaultWorkspaceId()) {
   assertDocumentKey(documentKey);
   const rows = await supabaseRequest(
     "GET",
-    `/${TABLE_NAME}?workspace_id=eq.${encodeURIComponent(workspaceId())}&document_key=eq.${encodeURIComponent(documentKey)}&select=document&limit=1`,
+    `/${TABLE_NAME}?workspace_id=eq.${encodeURIComponent(workspace)}&document_key=eq.${encodeURIComponent(documentKey)}&select=document&limit=1`,
   );
   const row = Array.isArray(rows) ? rows[0] : null;
   return {
@@ -81,15 +117,15 @@ async function getDocument(documentKey) {
   };
 }
 
-async function setDocument(documentKey, document) {
+async function setDocument(documentKey, document, workspace = defaultWorkspaceId()) {
   assertDocumentKey(documentKey);
-  await ensureWorkspaceDocument(documentKey);
+  await ensureWorkspaceDocument(workspace);
   await supabaseRequest(
     "POST",
     `/${TABLE_NAME}?on_conflict=workspace_id,document_key`,
     [
       {
-        workspace_id: workspaceId(),
+        workspace_id: workspace,
         document_key: documentKey,
         document,
       },
@@ -101,8 +137,7 @@ async function setDocument(documentKey, document) {
   );
 }
 
-async function ensureWorkspaceDocument(documentKey) {
-  const workspace = workspaceId();
+async function ensureWorkspaceDocument(workspace) {
   await supabaseRequest(
     "POST",
     "/fashion_store_os_workspaces?on_conflict=workspace_id",
@@ -121,7 +156,7 @@ async function ensureWorkspaceDocument(documentKey) {
   );
 }
 
-async function removeDocuments(documentKeys) {
+async function removeDocuments(documentKeys, workspace = defaultWorkspaceId()) {
   const keys = documentKeys.map((documentKey) => {
     assertDocumentKey(documentKey);
     return documentKey;
@@ -132,7 +167,7 @@ async function removeDocuments(documentKeys) {
   const quotedKeys = keys.map((key) => `"${key.replace(/"/g, '\\"')}"`).join(",");
   await supabaseRequest(
     "DELETE",
-    `/${TABLE_NAME}?workspace_id=eq.${encodeURIComponent(workspaceId())}&document_key=in.(${quotedKeys})`,
+    `/${TABLE_NAME}?workspace_id=eq.${encodeURIComponent(workspace)}&document_key=in.(${quotedKeys})`,
     undefined,
     { Prefer: "return=minimal" },
     [200, 202, 204],
@@ -202,9 +237,9 @@ function resolveSupabaseKey() {
   return { source: "", value: "" };
 }
 
-function safeWorkspaceId() {
+function safeDefaultWorkspaceId() {
   try {
-    return workspaceId();
+    return defaultWorkspaceId();
   } catch (error) {
     return "invalid";
   }
@@ -241,5 +276,7 @@ module.exports = {
   getStorageSummary,
   probeStorage,
   removeDocuments,
+  resolveWorkspaceId,
   setDocument,
+  storeForRequest,
 };

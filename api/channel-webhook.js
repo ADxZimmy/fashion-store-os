@@ -1,7 +1,7 @@
 const { appendWebhookMessages } = require("./_channel_intake");
 const { normalizeWebhookPayload, requireWebhookSignatureConfig, verifyWebhookChallenge, verifyWebhookSignature } = require("./_channel_webhook");
 const { handleError, handleOptions, readRawBody, sendJson, sendMethodNotAllowed } = require("./_response");
-const { getDocument, setDocument } = require("./_store");
+const { storeForRequest } = require("./_store");
 
 module.exports = async function handler(request, response) {
   const methods = ["GET", "POST", "OPTIONS"];
@@ -47,13 +47,14 @@ module.exports = async function handler(request, response) {
       }
 
       const messages = normalizeWebhookPayload(payload);
-      const result = await getDocument("state");
+      const store = storeForRequest(request);
+      const result = await store.getDocument("state");
       const intake = appendWebhookMessages(result.value || {}, messages, {
         maxMessages: process.env.CHANNEL_WEBHOOK_MAX_MESSAGES,
       });
 
       if (intake.accepted.length || intake.duplicates.length || intake.rejected.length || intake.overflow) {
-        await setDocument("state", intake.state);
+        await store.setDocument("state", intake.state);
       }
 
       sendJson(response, intake.accepted.length ? 201 : 202, {

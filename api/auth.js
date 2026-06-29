@@ -1,6 +1,6 @@
 const { normalizeAuthDocument, resolveSession, sanitizeAuth } = require("./_auth");
 const { handleError, handleOptions, sendJson, sendMethodNotAllowed } = require("./_response");
-const { getDocument, setDocument } = require("./_store");
+const { storeForRequest } = require("./_store");
 
 module.exports = async function handler(request, response) {
   const methods = ["GET", "OPTIONS"];
@@ -8,10 +8,11 @@ module.exports = async function handler(request, response) {
 
   try {
     if (request.method === "GET") {
-      const result = await getDocument("auth");
+      const store = storeForRequest(request);
+      const result = await store.getDocument("auth");
       const normalized = normalizeAuthDocument(result.value || {});
       if (result.exists && normalized.changed) {
-        await setDocument("auth", normalized.auth);
+        await store.setDocument("auth", normalized.auth);
       }
       const resolved = resolveSession(normalized.auth, request);
       sendJson(response, 200, {

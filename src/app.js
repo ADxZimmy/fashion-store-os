@@ -1,11 +1,14 @@
 ﻿const STORAGE_KEY = "fashion-studio-os-state-v1";
 const VIEW_KEY = "fashion-studio-os-view-v1";
 const AUTH_KEY = "fashion-studio-os-auth-v1";
+const WORKSPACE_KEY = "fashion-studio-os-workspace-v1";
 const API_BOOTSTRAP_PATH = "/api/bootstrap";
 const API_STATE_PATH = "/api/state";
 const API_SESSION_PATH = "/api/session";
 const API_DATA_PATH = "/api/data";
 const MIN_PASSWORD_LENGTH = 8;
+const TEAM_LIMIT = 25;
+let deviceWorkspaceId = "";
 
 const app = document.getElementById("app");
 const toast = document.getElementById("toast");
@@ -161,6 +164,48 @@ async function initializeApp() {
   render();
 }
 
+// Per-device tenancy: each browser keeps its own random workspace id and sends
+// it on every API call (x-workspace-id), so each device gets an isolated cloud
+// workspace and devices never share data.
+function getWorkspaceId() {
+  if (deviceWorkspaceId) return deviceWorkspaceId;
+  try {
+    const existing = localStorage.getItem(WORKSPACE_KEY);
+    if (existing && /^[a-z0-9][a-z0-9_-]{0,63}$/i.test(existing)) {
+      deviceWorkspaceId = existing;
+      return deviceWorkspaceId;
+    }
+  } catch (error) {
+    // localStorage unavailable; fall back to a volatile per-session id
+  }
+  deviceWorkspaceId = generateWorkspaceId();
+  try {
+    localStorage.setItem(WORKSPACE_KEY, deviceWorkspaceId);
+  } catch (error) {
+    // ignore persistence failure; the volatile id still isolates this session
+  }
+  return deviceWorkspaceId;
+}
+
+function generateWorkspaceId() {
+  try {
+    if (window.crypto && typeof window.crypto.randomUUID === "function") {
+      return `ws-${window.crypto.randomUUID()}`;
+    }
+  } catch (error) {
+    // fall through to a Math.random id
+  }
+  let random = "";
+  while (random.length < 32) {
+    random += Math.random().toString(36).slice(2);
+  }
+  return `ws-${random.slice(0, 40)}`;
+}
+
+function apiHeaders(extra = {}) {
+  return { Accept: "application/json", "x-workspace-id": getWorkspaceId(), ...extra };
+}
+
 async function loadBackendSnapshot() {
   if (window.location.protocol === "file:") {
     storageMode = "local";
@@ -170,7 +215,7 @@ async function loadBackendSnapshot() {
 
   try {
     const response = await fetch(API_BOOTSTRAP_PATH, {
-      headers: { Accept: "application/json" },
+      headers: apiHeaders(),
       credentials: "same-origin",
     });
     if (!response.ok) {
@@ -1158,7 +1203,7 @@ function renderSignUpForm() {
         <span>Confirm password</span>
         <input name="confirmPassword" type="password" autocomplete="new-password" required minlength="${MIN_PASSWORD_LENGTH}" placeholder="Repeat password">
       </label>
-      <div class="auth-note full">The first account is the manager and can create up to two staff accounts in Settings.</div>
+      <div class="auth-note full">The first account is the manager. Managers can add more managers and staff for this workspace in Settings.</div>
       <div class="button-row full">
         <button class="btn" type="submit">Create access</button>
         <button class="btn secondary" type="button" data-auth-mode="signin">I already have access</button>
@@ -2544,21 +2589,21 @@ function renderSettings() {
 }
 
 function renderTeamAccessPanel() {
-  const staff = staffUsers();
-  const remaining = Math.max(0, 2 - staff.length);
+  const members = teamMembers();
+  const remaining = Math.max(0, TEAM_LIMIT - auth.users.length);
   return `
     <section class="panel">
       <div class="panel-header">
         <div>
-          <h2>Staff access</h2>
-          <p>Create up to two staff accounts and assign the sections each person can use.</p>
+          <h2>Team access</h2>
+          <p>Add managers and staff for this workspace and assign the sections each person can use.</p>
         </div>
-        <span class="status">${staff.length}/2 staff</span>
+        <span class="status">${auth.users.length}/${TEAM_LIMIT} users</span>
       </div>
       ${lastInviteResult ? renderInviteResult(lastInviteResult) : ""}
-      ${remaining ? backendReady && auth.serverManaged ? renderStaffInviteForm() : renderStaffCreateForm() : `<div class="empty">Staff limit reached. Remove a staff account before adding another.</div>`}
+      ${remaining ? backendReady && auth.serverManaged ? renderStaffInviteForm() : renderStaffCreateForm() : `<div class="empty">User limit reached. Remove an account before adding another.</div>`}
       <div class="team-list">
-        ${staff.map(renderStaffAccessCard).join("") || emptyState("No staff accounts yet.")}
+        ${members.map(renderStaffAccessCard).join("") || emptyState("No other team members yet.")}
       </div>
       ${renderAuditPanel()}
     </section>
@@ -2621,24 +2666,31 @@ function renderStaffCreateForm() {
     <form id="staffForm" class="staff-form">
       <div class="form-grid">
         <label class="field">
-          <span>Staff name</span>
-          <input name="name" required placeholder="Tailor, admin, or assistant">
+          <span>Member name</span>
+          <input name="name" required placeholder="Tailor, admin, or co-manager">
         </label>
         <label class="field">
           <span>Email</span>
-          <input name="email" type="email" required placeholder="staff@studio.com">
+          <input name="email" type="email" required placeholder="member@studio.com">
+        </label>
+        <label class="field">
+          <span>Role</span>
+          <select name="role">
+            <option value="staff">Staff (limited access)</option>
+            <option value="manager">Manager (full access)</option>
+          </select>
         </label>
         <label class="field">
           <span>Password</span>
           <input name="password" type="password" required minlength="${MIN_PASSWORD_LENGTH}" placeholder="Minimum ${MIN_PASSWORD_LENGTH} characters">
         </label>
         <div class="field">
-          <span>Access</span>
+          <span>Access (staff only)</span>
           ${renderAccessChecks(["dashboard", "orders", "clients", "measurements"])}
         </div>
       </div>
       <div class="button-row">
-        <button class="btn small" type="submit">Create staff account</button>
+        <button class="btn small" type="submit">Create account</button>
       </div>
     </form>
   `;
@@ -2649,20 +2701,27 @@ function renderStaffInviteForm() {
     <form id="staffInviteForm" class="staff-form">
       <div class="form-grid">
         <label class="field">
-          <span>Staff name</span>
-          <input name="name" required autocomplete="name" placeholder="Tailor, admin, or assistant">
+          <span>Member name</span>
+          <input name="name" required autocomplete="name" placeholder="Tailor, admin, or co-manager">
         </label>
         <label class="field">
           <span>Email</span>
-          <input name="email" type="email" autocomplete="email" required placeholder="staff@studio.com">
+          <input name="email" type="email" autocomplete="email" required placeholder="member@studio.com">
+        </label>
+        <label class="field">
+          <span>Role</span>
+          <select name="role">
+            <option value="staff">Staff (limited access)</option>
+            <option value="manager">Manager (full access)</option>
+          </select>
         </label>
         <div class="field">
-          <span>Access</span>
+          <span>Access (staff only)</span>
           ${renderAccessChecks(["dashboard", "orders", "clients", "measurements"])}
         </div>
       </div>
       <div class="button-row">
-        <button class="btn small" type="submit">Create staff invite</button>
+        <button class="btn small" type="submit">Create invite</button>
       </div>
     </form>
   `;
@@ -2682,6 +2741,21 @@ function renderInviteResult(invite) {
 
 function renderStaffAccessCard(user) {
   const status = statusLabel(user.status);
+  const roleBadge = user.role === "manager" ? `<span class="status">Manager</span>` : "";
+
+  if (user.role === "manager") {
+    return `
+      <article class="team-card">
+        <div>
+          <h3>${escapeHtml(user.name)} ${roleBadge} <span class="status">${escapeHtml(status)}</span></h3>
+          <p>${escapeHtml(user.email)}${user.lastSignInAt ? ` · Last sign-in ${formatDate(user.lastSignInAt)}` : ""}</p>
+          ${user.inviteExpiresAt ? `<p class="muted small-text">Invite expires ${formatDate(user.inviteExpiresAt)}</p>` : ""}
+          <p class="muted small-text">Managers have full access. To remove a manager, reset the workspace.</p>
+        </div>
+      </article>
+    `;
+  }
+
   return `
     <article class="team-card">
       <div>
@@ -3207,27 +3281,28 @@ function applyNeutralBrand() {
 
 async function handleStaffSubmit(form) {
   if (currentUser()?.role !== "manager") {
-    showToast("Only the manager can create staff accounts.");
+    showToast("Only a manager can create accounts.");
     return;
   }
-  if (staffUsers().length >= 2) {
-    showToast("Staff limit reached. Remove one staff account before adding another.");
+  if (auth.users.length >= TEAM_LIMIT) {
+    showToast("User limit reached. Remove an account before adding another.");
     return;
   }
 
   const data = new FormData(form);
+  const role = data.get("role") === "manager" ? "manager" : "staff";
   const name = clean(data.get("name"));
   const email = clean(data.get("email")).toLowerCase();
   const password = String(data.get("password") || "");
 
   if (password.length < MIN_PASSWORD_LENGTH) {
-    showToast(`Staff password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
+    showToast(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
     return;
   }
 
   if (backendReady && auth.serverManaged) {
-    await runServerAuthAction("create-staff", { name, email, password, access: selectedAccessFrom(form) }, {
-      successMessage: "Staff account created.",
+    await runServerAuthAction("create-staff", { name, email, password, role, access: selectedAccessFrom(form) }, {
+      successMessage: `${role === "manager" ? "Manager" : "Staff"} account created.`,
     });
     return;
   }
@@ -3238,16 +3313,16 @@ async function handleStaffSubmit(form) {
   }
 
   auth.users.push({
-    id: uid("staff"),
+    id: uid(role),
     name,
     email,
     password,
-    role: "staff",
-    access: selectedAccessFrom(form),
+    role,
+    access: role === "manager" ? fullAccess() : selectedAccessFrom(form),
     createdAt: isoDate(0),
   });
   saveAuth();
-  showToast("Staff account created.");
+  showToast(`${role === "manager" ? "Manager" : "Staff"} account created.`);
   render();
 }
 
@@ -3257,21 +3332,23 @@ async function handleStaffInviteSubmit(form) {
     return;
   }
   if (!backendReady || !auth.serverManaged) {
-    showToast("Staff invites require server-managed auth.");
+    showToast("Invites require being signed in online.");
     return;
   }
-  if (staffUsers().length >= 2) {
-    showToast("Staff limit reached. Remove one staff account before adding another.");
+  if (auth.users.length >= TEAM_LIMIT) {
+    showToast("User limit reached. Remove an account before adding another.");
     return;
   }
 
   const data = new FormData(form);
+  const role = data.get("role") === "manager" ? "manager" : "staff";
   const result = await runServerAuthAction("create-staff-invite", {
     name: clean(data.get("name")),
     email: clean(data.get("email")).toLowerCase(),
+    role,
     access: selectedAccessFrom(form),
   }, {
-    successMessage: "Staff invite created.",
+    successMessage: `${role === "manager" ? "Manager" : "Staff"} invite created.`,
   });
   if (result?.invite) {
     lastInviteResult = result.invite;
@@ -4202,7 +4279,7 @@ async function confirmResetLocalData() {
   closeModal(false);
   if (backendReady) {
     try {
-      const response = await fetch(API_DATA_PATH, { method: "DELETE", headers: { Accept: "application/json" } });
+      const response = await fetch(API_DATA_PATH, { method: "DELETE", headers: apiHeaders(), credentials: "same-origin" });
       if (!response.ok) {
         throw new Error(`Reset failed with ${response.status}`);
       }
@@ -4935,6 +5012,11 @@ function staffUsers() {
   return auth.users.filter((user) => user.role === "staff");
 }
 
+function teamMembers() {
+  const meId = currentUser()?.id;
+  return auth.users.filter((user) => user.id !== meId);
+}
+
 function viewLabel(view) {
   return navItems.find(([key]) => key === view)?.[2] || view;
 }
@@ -4948,10 +5030,7 @@ async function runServerAuthAction(action, payload = {}, options = {}) {
   try {
     const response = await fetch(API_SESSION_PATH, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
+      headers: apiHeaders({ "Content-Type": "application/json" }),
       credentials: "same-origin",
       body: JSON.stringify({ action, ...payload }),
     });
@@ -5054,10 +5133,8 @@ async function saveBackendData(path, value) {
   try {
     const response = await fetch(path, {
       method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
+      headers: apiHeaders({ "Content-Type": "application/json" }),
+      credentials: "same-origin",
       body: JSON.stringify(value),
     });
     if (!response.ok) {

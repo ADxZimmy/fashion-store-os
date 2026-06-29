@@ -1,21 +1,22 @@
 const { appendInboundMessage, normalizeChannelMessages } = require("./_inbound");
 const { normalizeAuthDocument, requireSession } = require("./_auth");
 const { handleError, handleOptions, readJsonBody, sendJson, sendMethodNotAllowed } = require("./_response");
-const { getDocument, setDocument } = require("./_store");
+const { storeForRequest } = require("./_store");
 
 module.exports = async function handler(request, response) {
   const methods = ["GET", "POST", "OPTIONS"];
   if (handleOptions(request, response, methods)) return;
 
   try {
-    const authResult = await getDocument("auth");
+    const store = storeForRequest(request);
+    const authResult = await store.getDocument("auth");
     const normalized = normalizeAuthDocument(authResult.value || {});
     if (authResult.exists && normalized.changed) {
-      await setDocument("auth", normalized.auth);
+      await store.setDocument("auth", normalized.auth);
     }
     requireSession(normalized.auth, request);
 
-    const result = await getDocument("state");
+    const result = await store.getDocument("state");
     const state = result.value || {};
 
     if (request.method === "GET") {
@@ -28,7 +29,7 @@ module.exports = async function handler(request, response) {
 
     if (request.method === "POST") {
       const next = appendInboundMessage(state, await readJsonBody(request));
-      await setDocument("state", next.state);
+      await store.setDocument("state", next.state);
       sendJson(response, 201, { ok: true, message: next.message });
       return;
     }

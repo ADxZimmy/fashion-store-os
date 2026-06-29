@@ -6,7 +6,7 @@ const PASSWORD_ITERATIONS = 120000;
 const PASSWORD_KEY_LENGTH = 32;
 const PASSWORD_DIGEST = "sha256";
 const MIN_PASSWORD_LENGTH = 8;
-const STAFF_LIMIT = 2;
+const USER_LIMIT = 25;
 const INVITE_TTL_SECONDS = 60 * 60 * 24 * 3;
 const USER_STATUSES = new Set(["active", "invited", "suspended"]);
 const VIEW_KEYS = [
@@ -188,10 +188,11 @@ function signOut(auth, request) {
 
 function createStaff(auth, currentUser, payload = {}) {
   assertManager(currentUser);
-  if (staffCount(auth) >= STAFF_LIMIT) {
-    throwPublicError("Staff limit reached. Remove one staff account before adding another.", 409);
+  if (auth.users.length >= USER_LIMIT) {
+    throwPublicError("User limit reached. Remove an account before adding another.", 409);
   }
 
+  const role = payload.role === "manager" ? "manager" : "staff";
   const name = clean(payload.name);
   const email = clean(payload.email).toLowerCase();
   const password = String(payload.password || "");
@@ -204,26 +205,27 @@ function createStaff(auth, currentUser, payload = {}) {
   }
 
   auth.users.push({
-    id: uid("staff"),
+    id: uid(role),
     name: name || email,
     email,
-    role: "staff",
+    role,
     status: "active",
-    access: normalizeAccess(payload.access, ["dashboard"]),
+    access: role === "manager" ? fullAccess() : normalizeAccess(payload.access, ["dashboard"]),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     ...hashPassword(password),
   });
-  appendAuditEvent(auth, "staff.create", currentUser, auth.users[auth.users.length - 1], "Staff account created");
+  appendAuditEvent(auth, role === "manager" ? "manager.create" : "staff.create", currentUser, auth.users[auth.users.length - 1], `${role === "manager" ? "Manager" : "Staff"} account created`);
   return auth;
 }
 
 function createStaffInvite(auth, currentUser, payload = {}) {
   assertManager(currentUser);
-  if (staffCount(auth) >= STAFF_LIMIT) {
-    throwPublicError("Staff limit reached. Remove one staff account before adding another.", 409);
+  if (auth.users.length >= USER_LIMIT) {
+    throwPublicError("User limit reached. Remove an account before adding another.", 409);
   }
 
+  const role = payload.role === "manager" ? "manager" : "staff";
   const name = clean(payload.name);
   const email = clean(payload.email).toLowerCase();
   assertEmail(email);
@@ -234,13 +236,13 @@ function createStaffInvite(auth, currentUser, payload = {}) {
 
   const inviteToken = randomToken(24);
   const now = new Date().toISOString();
-  const staff = {
-    id: uid("staff"),
+  const member = {
+    id: uid(role),
     name: name || email,
     email,
-    role: "staff",
+    role,
     status: "invited",
-    access: normalizeAccess(payload.access, ["dashboard"]),
+    access: role === "manager" ? fullAccess() : normalizeAccess(payload.access, ["dashboard"]),
     createdAt: now,
     updatedAt: now,
     invitedAt: now,
@@ -248,9 +250,9 @@ function createStaffInvite(auth, currentUser, payload = {}) {
     inviteTokenHash: hashToken(inviteToken),
     ...passwordRecordForUser({}),
   };
-  auth.users.push(staff);
-  appendAuditEvent(auth, "staff.invite", currentUser, staff, "Staff invite created");
-  return { auth, invite: sanitizeInvite(staff, inviteToken) };
+  auth.users.push(member);
+  appendAuditEvent(auth, "staff.invite", currentUser, member, `${role === "manager" ? "Manager" : "Staff"} invite created`);
+  return { auth, invite: sanitizeInvite(member, inviteToken) };
 }
 
 function acceptStaffInvite(auth, payload = {}) {
@@ -263,7 +265,7 @@ function acceptStaffInvite(auth, payload = {}) {
   assertEmail(email);
   assertPassword(password, confirmPassword);
 
-  const staff = auth.users.find((user) => user.email === email && user.role === "staff");
+  const staff = auth.users.find((user) => user.email === email);
   if (!staff || staff.status !== "invited" || !staff.inviteTokenHash) {
     throwPublicError("Invite details do not match.", 401);
   }
