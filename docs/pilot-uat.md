@@ -1,14 +1,18 @@
 # Fashion Store OS Pilot UAT
 
-Last updated: 2026-06-26
+Last updated: 2026-06-29
 
 ## Pilot Goal
 
 Validate that a real fashion store can use Fashion Store OS for one full operating cycle before public launch.
 
+## Workspace Model
+
+Fashion Store OS is multi-tenant per device. Each browser/device generates its own isolated workspace (an `x-workspace-id` it keeps in local storage), so multiple testers can run the app at the same time without sharing or colliding. **One browser = one studio.** A workspace can have multiple managers and up to 25 users. Clearing browser storage (or a fresh incognito window) starts a new empty workspace — the old data stays in the cloud but becomes unreachable from that browser — so testers should not clear site data mid-pilot.
+
 ## Pilot Roles
 
-- Manager: owns setup, staff access, manager review, reports, export, and launch sign-off.
+- Manager: owns setup, team access, manager review, reports, export, and launch sign-off. A workspace can have more than one manager.
 - Staff: handles CRM intake, measurements, orders, fittings, production updates, and inventory changes.
 - Owner release operator: `ADxZimmy` handles the Git-connected Vercel release and production env vars.
 
@@ -32,7 +36,8 @@ Steps:
 Pass:
 
 - Dashboard opens with the saved business identity.
-- Storage chip reports server storage in production.
+- The save indicator shows "All changes saved" (no backend/storage wording).
+- This device's workspace is independent of any other tester's device.
 - No hardcoded old brand appears in runtime UI.
 
 ## Scenario 2: CRM Intake To Inquiry
@@ -92,15 +97,16 @@ Pass:
 Steps:
 
 1. Review Reports after creating CRM and order activity.
-2. Invite a staff user.
-3. Sign in as staff and confirm limited navigation.
-4. Suspend/reactivate staff as manager.
+2. In Team access, add a user — try both a Staff role (limited access) and a Manager role (full access).
+3. Sign in as the staff user and confirm limited navigation; sign in as the second manager and confirm full access.
+4. Suspend/reactivate the staff user as a manager.
 
 Pass:
 
 - Reports show current conversion, revenue, stock, production, and learning signals.
-- Staff sees only assigned sections.
+- Staff sees only assigned sections; a second manager has full access.
 - Suspended staff cannot continue access.
+- Adding multiple users/managers is allowed up to the 25-user workspace limit.
 
 ## Scenario 6: Recovery And Export
 

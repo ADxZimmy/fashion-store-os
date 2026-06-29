@@ -12,6 +12,10 @@ Fashion Store OS can keep moving even while the Git-connected Vercel project is 
 
 Production commits for this repo are authored under the owner's own account `ADxZimmy` so the Git-connected Vercel project deploys automatically. The Vercel block keys off the commit author, so commits authored by the collaborator account (`NnazimuzoO`) are rejected with `TEAM_ACCESS_REQUIRED` even when the push succeeds. This workspace's git author is set (repo-local) to `ADxZimmy`; both `ADxZimmy` and `NnazimuzoO` are accounts owned by the same operator, so this is a legitimate identity choice, not third-party authorship spoofing. Pushes go to `main` (and the working branch) on every change.
 
+## Workspace Model
+
+The app is multi-tenant per device. Each browser generates a random workspace id and sends it as the `x-workspace-id` header; the API scopes every read/write to that workspace, so each device/tester is isolated. `FASHION_STORE_WORKSPACE_ID` is now only the **fallback default** workspace used when no header is present (e.g. provider webhooks and `/api/health` diagnostics) — it is not the workspace real users land in. A workspace supports multiple managers and up to 25 users.
+
 ## Development Flow
 
 1. Build and test locally with the current Supabase-backed development setup.
@@ -31,7 +35,7 @@ Production commits for this repo are authored under the owner's own account `ADx
 - Vercel production env vars are present:
   - `SUPABASE_URL`
   - `SUPABASE_SERVICE_ROLE_KEY`
-  - `FASHION_STORE_WORKSPACE_ID`
+  - `FASHION_STORE_WORKSPACE_ID` (fallback default only — real workspaces are per-device via the `x-workspace-id` header)
   - `CHANNEL_WEBHOOK_VERIFY_TOKEN`
   - `CHANNEL_WEBHOOK_SECRET`
   - `CHANNEL_WEBHOOK_REQUIRE_SIGNATURE`

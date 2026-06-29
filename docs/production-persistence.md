@@ -77,7 +77,7 @@ CHANNEL_WEBHOOK_VERIFY_TOKEN
 CHANNEL_WEBHOOK_SECRET
 ```
 
-`FASHION_STORE_WORKSPACE_ID` can stay `default` until the app has a multi-workspace model.
+The app is now multi-tenant per device: each browser generates a random workspace id and sends it as the `x-workspace-id` header, and `api/_store.js` scopes every read/write to that workspace via `storeForRequest(request)`. `FASHION_STORE_WORKSPACE_ID` is the **fallback default** workspace used only when no header is present (`/api/health` diagnostics and provider webhooks); keep it `default`. The `fashion_store_os_documents` table has no `workspace_id` CHECK constraint, so the service-role key writes arbitrary per-device ids; the RLS policy scoped to `workspace_id = 'default'` only applies to the disabled public-key fallback, which the production lane does not use.
 
 `CHANNEL_WEBHOOK_VERIFY_TOKEN` and `CHANNEL_WEBHOOK_SECRET` are optional for local testing but should be set for production webhook subscriptions. The verify token is used for provider challenge checks. The secret verifies `x-hub-signature-256` or `x-fashion-signature` HMAC SHA-256 signatures over the raw request body. Set `CHANNEL_WEBHOOK_REQUIRE_SIGNATURE=1` in production so a missing signing secret fails closed. `CHANNEL_WEBHOOK_MAX_MESSAGES` defaults to `25` and caps one webhook batch.
 

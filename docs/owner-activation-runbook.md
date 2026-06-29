@@ -47,13 +47,15 @@ These are the variables the serverless API reads. Set them on the **`sanuske2-21
 | --- | --- | --- |
 | `SUPABASE_URL` | `https://elkpberfbhwbrkawklnk.supabase.co` | Yes |
 | `SUPABASE_SERVICE_ROLE_KEY` | the service_role secret from Step 2 | Yes |
-| `FASHION_STORE_WORKSPACE_ID` | `default` | Yes |
+| `FASHION_STORE_WORKSPACE_ID` | `default` | Yes (fallback only) |
 | `CHANNEL_WEBHOOK_REQUIRE_SIGNATURE` | `1` | Recommended (fail closed) |
 | `CHANNEL_WEBHOOK_SECRET` | your webhook HMAC secret | If using webhooks |
 | `CHANNEL_WEBHOOK_VERIFY_TOKEN` | your provider challenge token | If using webhooks |
 | `CHANNEL_WEBHOOK_MAX_MESSAGES` | `25` (default if omitted) | Optional |
 
 Do **not** set `FASHION_STORE_ALLOW_PUBLIC_SUPABASE_KEY` — the production lane must use the server-side service-role key, not a public key.
+
+> Note: the app is multi-tenant per device. Each browser generates its own workspace id and sends it as the `x-workspace-id` header; the API scopes data to that workspace. `FASHION_STORE_WORKSPACE_ID` is only the fallback default (used for `/api/health` and provider webhooks), not the workspace real users land in. No per-tenant configuration is required.
 
 Pick one path:
 
