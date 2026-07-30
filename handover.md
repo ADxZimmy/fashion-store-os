@@ -98,7 +98,9 @@ The Git-connected project now has the required Vercel production env vars for Su
 
 ## Current Git State
 
-Current branch: `codex/backend-foundation`
+Current branch: `main` — the repo's only branch, and the production branch for the Git-connected Vercel project.
+
+On 2026-07-30 the repo was consolidated to a single branch. `master` (32 commits behind, unreferenced by any deploy config) and `codex/backend-foundation` (identical to `main` at `a911466`) were both deleted locally and on GitHub. Neither held commits that were not already in `main`. Commit directly to `main` and push; see `docs/release-lane.md`.
 
 Recent shipped code commits:
 

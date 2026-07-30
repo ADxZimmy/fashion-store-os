@@ -77,7 +77,7 @@ Confirm with `vercel env ls` (should no longer be empty).
 
 Env var changes do **not** apply to existing deployments. Trigger a fresh production build:
 
-- **Simplest:** push an owner-authored commit to `main` (the branch is promoted from `codex/backend-foundation`). Vercel auto-deploys.
+- **Simplest:** push an owner-authored commit to `main` (the repo's only branch). Vercel auto-deploys.
 - **Or CLI:** `vercel --prod --scope sanuske2-2147s-projects`.
 - **Or dashboard:** Deployments → latest → Redeploy.
 

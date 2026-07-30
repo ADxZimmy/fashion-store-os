@@ -5,12 +5,13 @@ Fashion Store OS can keep moving even while the Git-connected Vercel project is 
 ## Current Constraint
 
 - GitHub repository owner: `ADxZimmy`.
-- Working branch: `codex/backend-foundation`.
-- Production branch on the Git-connected Vercel project: `main`.
+- Single branch: `main`. It is the working branch, the GitHub default branch, and the production branch on the Git-connected Vercel project.
 - Owner-authored pushes from `ADxZimmy` create Ready Vercel deployments.
 - Collaborator-authored pushes can fail with `TEAM_ACCESS_REQUIRED` on the Vercel Hobby project.
 
-Production commits for this repo are authored under the owner's own account `ADxZimmy` so the Git-connected Vercel project deploys automatically. The Vercel block keys off the commit author, so commits authored by the collaborator account (`NnazimuzoO`) are rejected with `TEAM_ACCESS_REQUIRED` even when the push succeeds. This workspace's git author is set (repo-local) to `ADxZimmy`; both `ADxZimmy` and `NnazimuzoO` are accounts owned by the same operator, so this is a legitimate identity choice, not third-party authorship spoofing. Pushes go to `main` (and the working branch) on every change.
+The repo ran a two-branch lane (`codex/backend-foundation` → `main`) until 2026-07-30. Both `codex/backend-foundation` and `master` were deleted once `main` matched them, so `main` is now the only branch. Because every push to `main` deploys to production, `npm.cmd run release:preflight` is the gate that used to be provided by the staging branch — run it before pushing, not after.
+
+Production commits for this repo are authored under the owner's own account `ADxZimmy` so the Git-connected Vercel project deploys automatically. The Vercel block keys off the commit author, so commits authored by the collaborator account (`NnazimuzoO`) are rejected with `TEAM_ACCESS_REQUIRED` even when the push succeeds. This workspace's git author is set (repo-local) to `ADxZimmy`; both `ADxZimmy` and `NnazimuzoO` are accounts owned by the same operator, so this is a legitimate identity choice, not third-party authorship spoofing. Every push goes to `main`.
 
 ## Workspace Model
 
@@ -19,12 +20,13 @@ The app is multi-tenant per device. Each browser generates a random workspace id
 ## Development Flow
 
 1. Build and test locally with the current Supabase-backed development setup.
-2. Commit normal work to `codex/backend-foundation`.
-3. Push the branch to GitHub for review/handoff.
-4. Run `npm.cmd run release:preflight` before an owner release handoff.
-5. `ADxZimmy` merges or cherry-picks the ready branch into `main` from the owner-authorized account.
-6. Confirm the Git-connected Vercel project still has the Supabase production env vars added during the 2026-06-29 owner activation.
-7. Verify `/api/health`, auth/session flow, state write/read, webhook intake, and reset/cleanup after deployment.
+2. Commit normal work to `main`, authored as `ADxZimmy`.
+3. Run `npm.cmd run release:preflight` **before** pushing. The push is the release.
+4. Push `main` to GitHub; the Git-connected Vercel project builds and promotes it to production automatically.
+5. Confirm the Git-connected Vercel project still has the Supabase production env vars added during the 2026-06-29 owner activation.
+6. Verify `/api/health`, auth/session flow, state write/read, webhook intake, and reset/cleanup after deployment.
+
+For work that is not ready to deploy, cut a short-lived branch, then fast-forward it into `main` when preflight passes and delete it. Do not leave long-running branches around — `main` is the trunk.
 
 ## Owner Release Checklist
 
