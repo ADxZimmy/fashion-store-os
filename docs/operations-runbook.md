@@ -15,6 +15,10 @@ Last updated: 2026-06-26
 
 - `/api/health` checks whether the storage layer is reachable.
 - `/api/readiness` checks whether production prerequisites are present without exposing secrets.
+- `/api/keepalive` is the daily Vercel Cron target. It runs the same storage probe as `/api/health`, but returns `503` instead of `200` when the probe fails.
+
+Note that `/api/readiness` reports configuration, not connectivity. It returns `ok: true` whenever the env vars are present, even if the database behind them is unreachable — on 2026-07-30 readiness was green while `/api/health` reported `supabase-unreachable`. Always read `/api/health` (or the cron result) for liveness.
+
 - A production-ready response should show:
   - production storage configured,
   - server-side Supabase key preferred,
@@ -28,7 +32,8 @@ Use Vercel's project dashboard after each owner release:
 
 - Check Deployment status is Ready.
 - Review Runtime Logs for 5xx errors after smoke tests.
-- Check Function activity for `/api/bootstrap`, `/api/state`, `/api/session`, `/api/channel-webhook`, `/api/data`, `/api/health`, and `/api/readiness`.
+- Check Function activity for `/api/bootstrap`, `/api/state`, `/api/session`, `/api/channel-webhook`, `/api/data`, `/api/health`, `/api/keepalive`, and `/api/readiness`.
+- Check the Cron Jobs tab. A failed `/api/keepalive` invocation means production storage is unreachable — treat it as an incident, not a cron glitch.
 - Keep in mind that log retention depends on the Vercel plan; Vercel documents Runtime Logs and Observability at:
   - https://vercel.com/docs/logs/runtime
   - https://vercel.com/docs/observability
@@ -56,6 +61,21 @@ Supabase security requirements:
 - Prefer server-side keys in Vercel API routes; public key fallback is for temporary diagnostics only.
 - Supabase API/RLS guidance:
   - https://supabase.com/docs/guides/api/securing-your-api
+
+### Keeping The Project Warm
+
+Supabase free-tier projects pause after roughly 7 days without activity, and a paused project stops resolving in DNS — the app then reports `storage: "supabase-unreachable"` even though every Vercel env var is still correct. This is what happened between the 2026-06-29 activation and 2026-07-30, when the project sat idle waiting on pilot UAT.
+
+A daily Vercel Cron calls `/api/keepalive`, which issues a real Supabase query and resets the pause timer:
+
+```json
+"crons": [{ "path": "/api/keepalive", "schedule": "0 6 * * *" }]
+```
+
+- Daily is deliberate. The Vercel Hobby plan permits one invocation per day per job, which still leaves ~7x margin against the pause window.
+- Set `CRON_SECRET` in Vercel project env vars to restrict the route. Vercel sends it automatically as `Authorization: Bearer $CRON_SECRET` on cron invocations. If `CRON_SECRET` is unset the route stays open, matching `/api/health`.
+- The cron only prevents *idle* pauses. It does not revive an already-paused or deleted project, and it does not substitute for the plan's backup guidance below.
+- Vercel Cron docs: https://vercel.com/docs/cron-jobs
 
 ## Backups And Restore Rehearsal
 

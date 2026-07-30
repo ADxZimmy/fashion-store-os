@@ -84,6 +84,7 @@ async function routeApi(request, response, url) {
     "/api/data": "GET, DELETE, OPTIONS",
     "/api/health": "GET, OPTIONS",
     "/api/inbound": "GET, POST, OPTIONS",
+    "/api/keepalive": "GET, OPTIONS",
     "/api/readiness": "GET, OPTIONS",
     "/api/session": "GET, POST, OPTIONS",
     "/api/state": "GET, PUT, OPTIONS",
@@ -97,6 +98,18 @@ async function routeApi(request, response, url) {
 
   if (request.method === "GET" && url.pathname === "/api/health") {
     sendJson(response, 200, { ok: true, storage: "json-file", timestamp: new Date().toISOString() });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/keepalive") {
+    // Local storage is a json file and never pauses, so there is nothing to keep
+    // warm. Answer for route parity with the deployed Vercel cron target.
+    sendJson(response, 200, {
+      ok: true,
+      storage: "json-file",
+      workspace: process.env.FASHION_STORE_WORKSPACE_ID || "default",
+      timestamp: new Date().toISOString(),
+    });
     return;
   }
 

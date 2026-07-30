@@ -1,6 +1,12 @@
 {
   "buildCommand": "node scripts/build.js",
   "outputDirectory": "dist",
+  "crons": [
+    {
+      "path": "/api/keepalive",
+      "schedule": "0 6 * * *"
+    }
+  ],
   "headers": [
     {
       "source": "/(.*)",
