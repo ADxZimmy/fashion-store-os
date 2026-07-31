@@ -1,10 +1,14 @@
 # State
 
-Last updated: 2026-06-29
+Last updated: 2026-07-31
 
 ## Current Focus
 
-Phases 001-016 are implemented, the Phase 008 Git-connected Supabase activation is complete, Phase 017 (cutover) is drafted, and pre-pilot MVP hardening (clean-slate signup, no backend wording in UI, server-authoritative sign-in) is done. The critical path is now real-store pilot UAT, then the final domain/tag/watch-window cutover.
+Phases 001-016 are implemented and Phase 017 is repo-side complete: `docs/cutover.md` holds the ordered cutover checklist, and `docs/operations-runbook.md` holds the post-launch watch window, issue intake, and triage. The critical path is now owner-only execution — confirm the Ready deployment, push the annotated `v1.0.0` tag, add the Vercel domain, pass the `/api/health` gate, then point DNS.
+
+Real-store pilot UAT was waived by owner decision on 2026-07-31 rather than executed. Its scenarios are reused as the post-cutover smoke set. The production write path is therefore unvalidated by a real operator.
+
+The repo is single-branch: `main` is the working, default, and production branch. Every push to `main` is a production release.
 
 ## Completed
 
@@ -82,20 +86,27 @@ Phases 001-016 are implemented, the Phase 008 Git-connected Supabase activation 
 - Verified the hardening: `node --check`, full `launch:check` (syntax/UX/security/build), and a live server smoke (fresh bootstrap returns empty state; signup→authed bootstrap with cookie vs `authenticated:false` without cookie; reset cleanup).
 - Pivoted to multi-tenant per-device workspaces (same secure Supabase stack): the browser generates a random workspace id (`x-workspace-id` header), `api/_store.js` resolves it per request via `storeForRequest(request)`, and all handlers (bootstrap/session/state/auth/data/inbound/channel-webhook) are scoped to it. Each device/tester now gets an isolated workspace instead of one shared `default` tenant. Validated via unit test of `resolveWorkspaceId` and confirmed the documents table has no workspace_id CHECK constraint (service-role key writes arbitrary ids).
 - Lifted the single-manager + 2-staff caps: a workspace now allows multiple managers and up to `USER_LIMIT` (25) users. Managers can create/invite additional manager- or staff-role accounts (role selector added to the Team access panel); invited managers can accept invites. Suspend/remove stays scoped to staff for safety (remove a manager by resetting the workspace).
+- Consolidated the repo to a single branch on 2026-07-30: deleted `master` (32 commits behind, unreferenced by any deploy config) and `codex/backend-foundation` (identical to `main`). `main` is now the working, default, and production branch, and `docs/release-lane.md` moves `release:preflight` to run before the push because every push is now a release.
+- Added `/api/keepalive` and a daily Vercel Cron (`0 6 * * *`) after the Supabase project paused from ~31 days idle and production returned `storage: "supabase-unreachable"`. The route runs a real Supabase query to reset the pause timer and returns 503 (not 200 like `/api/health`) when the probe fails, so an outage surfaces as a failed cron invocation. Gated by `CRON_SECRET` when set.
+- Phase 017 repo-side: authored `docs/cutover.md` (ordered preflight → tag → domain → health gate → DNS → verify → watch checklist with owner-only steps marked) and added Post-Launch Support to `docs/operations-runbook.md` (14-day watch window, issue intake fields, sev-1..4 triage). Recorded the readiness blind spot — `/api/readiness` reports configuration, not connectivity, and stayed green through the outage.
 
 ## In Progress
 
-- Item: Real-store pilot UAT and Phase 017 public cutover preparation.
+- Item: Phase 017 owner-side cutover execution (`docs/cutover.md` steps 1-7).
 
 ## Blocked
 
 - Collaborator-authored Vercel production deploys are blocked with `TEAM_ACCESS_REQUIRED` because commit author `NnazimuzoO` / Vercel user `nnazimuzoo` does not have contributing access to `sanuske2-2147s-projects/fashion-store-os`. The attempted invite to `nnazimuzoo@nitechsoftware.com.ng` failed because Vercel Hobby teams do not permit team members.
-- Real-store pilot execution is not complete yet; Phase 016 artifacts and local launch checks are ready for the pilot.
-- Public custom-domain cutover is not complete yet; Phase 017 remains gated on pilot sign-off and owner domain/DNS actions.
+- Public custom-domain cutover requires owner domain/DNS actions and cannot be executed from a collaborator session.
+- `CRON_SECRET` is unset and `/api/keepalive` cron registration is unconfirmed; both need the owner Vercel account.
+
+## Waived
+
+- Real-store pilot UAT was waived by owner decision on 2026-07-31 rather than executed. `docs/pilot-uat.md` scenarios are reused as the post-cutover smoke set in `docs/cutover.md` Step 6. Consequence: the production write path has not been validated by a real operator since the Supabase restore — reads were verified on 2026-07-31, writes were not.
 
 ## Next Action
 
-Run `docs/pilot-uat.md` against the Git-connected Vercel deployment, record issues, and only then proceed with Phase 017: final cutover docs, annotated release tag, custom domain/DNS, and the post-launch watch window.
+Owner (`ADxZimmy`): work `docs/cutover.md` steps 1-7 — confirm the Ready deployment, push the annotated `v1.0.0` tag, add the Vercel domain, pass the `/api/health` gate, point DNS, verify on the final domain, and open the watch window. Set `CRON_SECRET` and confirm cron registration while in the Vercel dashboard.
 
 ## Verification Snapshot
 
@@ -264,3 +275,14 @@ Run `docs/pilot-uat.md` against the Git-connected Vercel deployment, record issu
 - Command/check: Pre-pilot MVP hardening verification (`node --check src\\app.js`, `npm run launch:check`, local server smoke).
   Result: Passed on 2026-06-29; syntax/UX/security/build green, fresh bootstrap returned empty state, signup issued a session and authed bootstrap returned `authenticated:true`, cookieless bootstrap returned `authenticated:false`, and reset cleanup returned the workspace to empty.
   Note: A fresh-signup empty-dashboard browser render was not verified headlessly; confirm via pilot UAT Scenario 1 on the live URL.
+- Command/check: Live `/api/health` on the Git-connected deployment
+  Result: Failed on 2026-07-30; returned `ok: false`, `storage: "supabase-unreachable"`. `elkpberfbhwbrkawklnk.supabase.co` did not resolve against a public DNS resolver — the free-tier Supabase project had paused after ~31 days idle. Vercel env vars were unchanged and correct throughout.
+- Command/check: `/api/keepalive` failure path on the deployed route
+  Result: Passed on 2026-07-30; returned HTTP 503 with `supabase-unreachable` while the database was down, confirming a dead database surfaces as a failed cron invocation instead of `/api/health`'s silent 200.
+- Command/check: `/api/keepalive` handler auth matrix (mocked req/res)
+  Result: Passed on 2026-07-30; open with no `CRON_SECRET`, 401 on missing/wrong/wrong-length bearer with no `timingSafeEqual` crash, proceeds on correct bearer, 405 on POST.
+- Command/check: Live `/api/health`, `/api/readiness`, `/api/keepalive`, `/api/bootstrap` after Supabase restore
+  Result: Passed on 2026-07-31; DNS resolved again, health `ok: true` with `storage: "supabase"` on both aliases, readiness all 6 checks green, keepalive HTTP 200, and bootstrap on an isolated workspace returned a clean empty state. The successful `SELECT` confirms the schema survived — this was a pause/restore, not a delete/recreate, so no migration re-run was needed.
+  Note: Read path only. The production write path was not exercised after the restore; `docs/cutover.md` Step 6 covers it post-cutover.
+- Command/check: `npm.cmd run launch:check` and `npm.cmd run release:preflight` for Phase 017 repo-side
+  Result: Passed on 2026-07-31; syntax/UX/security/build green, clean worktree, owner-authored latest commit.

@@ -4,13 +4,17 @@
 
 - Phase 017: Production cutover and post-launch support.
   Outcome: Custom domain, final env vars, release tag, handover docs, rollback plan, monitoring watch window, and post-launch issue process are in place.
-  Status: Plan drafted (`.planning/phases/017-production-cutover-post-launch-support/`); Phase 008 prerequisite is complete, and real-store pilot UAT remains before domain cutover.
+  Status: Repo-side complete on 2026-07-31 — `docs/cutover.md` authored, post-launch watch window and issue intake added to `docs/operations-runbook.md`, handover/roadmap/state updated. Remaining steps are owner-only: Ready-deployment confirmation, annotated release tag, Vercel domain, `/api/health` gate, then DNS.
 
 ## Next
 
+- Item: Owner-side cutover execution.
+  Outcome: `ADxZimmy` works `docs/cutover.md` steps 1-7, ending with a live public domain and an open watch window.
+  Status: Pending owner execution. Also pending owner-side: set `CRON_SECRET`, confirm the `/api/keepalive` cron is registered.
+
 - Item: Real-store pilot UAT.
-  Outcome: A live store operator completes `docs/pilot-uat.md` against the Git-connected Vercel deployment, records issues, and approves or blocks the public domain cutover.
-  Status: Pending owner/operator execution.
+  Outcome: A live store operator completes `docs/pilot-uat.md` and records issues.
+  Status: **Waived by owner decision on 2026-07-31** to proceed directly to cutover. Not executed. The scenarios are reused as the post-cutover smoke set in `docs/cutover.md` Step 6, which means they run after the domain is live rather than gating it. The production write path remains unvalidated by a real operator.
 
 ## Done
 
@@ -61,7 +65,7 @@
   Status: Complete and deployed; owner-side backup/restore rehearsal pending.
 - Phase 016: Pilot UAT and launch readiness.
   Outcome: Pilot UAT script, issue triage, and `npm.cmd run launch:check` were added.
-  Status: Complete locally; real-store pilot execution pending.
+  Status: Complete locally; real-store pilot execution waived on 2026-07-31.
 
 ## Later
 

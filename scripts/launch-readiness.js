@@ -31,7 +31,7 @@ if (failed) {
 } else {
   console.log("");
   console.log("PASS Launch readiness checks completed locally.");
-  console.log("Production Supabase activation is complete; re-check live /api/health and pilot UAT before public cutover.");
+  console.log("Local gates only. Pilot UAT was waived on 2026-07-31, so re-check live /api/health and follow docs/cutover.md before any DNS change.");
 }
 
 function runNpm(args) {

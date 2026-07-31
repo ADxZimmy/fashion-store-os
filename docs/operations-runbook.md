@@ -121,6 +121,51 @@ Before real provider traffic:
 - Send a valid signed test event.
 - Confirm unsigned events fail.
 
+## Post-Launch Support
+
+Cutover procedure is in `docs/cutover.md`. This section covers the period after it.
+
+### Watch Window
+
+Run for **14 days** after cutover. The daily keepalive cron does the liveness polling; these checks are what a human adds on top of it.
+
+| When | Check |
+| --- | --- |
+| Day 0, first 2 hours | `/api/health`, `/api/readiness`, and `/api/keepalive` on the live domain every ~30 min. Vercel Runtime Logs scanned for 5xx. |
+| Day 0-2, daily | Vercel Cron Jobs tab: the `/api/keepalive` run must show success. Vercel Runtime Logs for 5xx. Supabase project status. |
+| Day 3-14, every other day | Same daily set, plus a Scenario 1 signup/persistence spot-check from a fresh browser. |
+| Exit | No unresolved sev-1/sev-2 issues, and 7 consecutive successful cron runs. |
+
+```powershell
+Invoke-RestMethod https://YOUR-DOMAIN/api/health
+Invoke-RestMethod https://YOUR-DOMAIN/api/readiness
+Invoke-RestMethod https://YOUR-DOMAIN/api/keepalive
+```
+
+A failed `/api/keepalive` cron run is the earliest reliable outage signal available — it is the only check that goes red on unreachable storage without a human looking. Do not dismiss it as a cron glitch.
+
+Two known blind spots in this setup:
+
+- `/api/readiness` reports configuration, not connectivity. It stays green during a storage outage.
+- Nothing pages anyone. The cron records failure in the Vercel dashboard; someone still has to look. Until an alerting path exists, the daily dashboard check *is* the alerting path.
+
+### Issue Intake
+
+Record every pilot or post-launch issue with: date, reporter, device/browser, workspace id (from the `x-workspace-id` the browser holds), route or screen, expected vs actual, and reproduction steps.
+
+Do not paste customer records, service keys, or passwords into issue notes or `.planning/`. Reference the workspace id instead.
+
+### Triage
+
+| Severity | Meaning | Response |
+| --- | --- | --- |
+| Sev-1 | Production down, data loss, auth bypass, or storage unreachable | Work the Incident Checklist immediately. Roll back if not resolved quickly. |
+| Sev-2 | A core workflow (signup, order, measurement, inventory) is blocked with no workaround | Fix on `main` and deploy within the watch window. |
+| Sev-3 | Degraded or confusing behavior with a workaround | Batch into the next release. |
+| Sev-4 | Cosmetic or enhancement | Add to the post-launch backlog. |
+
+Fixes follow the normal lane in `docs/release-lane.md`: commit to `main` as `ADxZimmy`, run `npm.cmd run release:preflight`, push. Every push to `main` is a production release — there is no staging branch.
+
 ## Incident Checklist
 
 1. Capture the deployment URL, commit, timestamp, and failing route.

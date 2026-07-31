@@ -96,6 +96,23 @@ Latest Git-triggered deployment: inspect with `vercel inspect https://fashion-st
 
 The Git-connected project now has the required Vercel production env vars for Supabase persistence. `/api/health` returns `ok: true`, `storage: "supabase"`, `supabaseHost: "elkpberfbhwbrkawklnk.supabase.co"`, and `workspace: "default"` on the deployment URL, the project alias, and `https://fashion-store-os.vercel.app`.
 
+## Cutover Status
+
+Procedure: `docs/cutover.md`. Post-launch support: the Post-Launch Support section of `docs/operations-runbook.md`.
+
+Fill these in at cutover:
+
+```text
+Cutover date: PENDING
+Deployed commit: PENDING
+Release tag: PENDING (annotated, v1.0.0-style, from the deployed commit)
+Public domain: PENDING
+/api/health on final domain: PENDING
+Watch window start / end: PENDING
+```
+
+Availability note: the Supabase project paused after ~31 days idle and production returned `storage: "supabase-unreachable"` from roughly 2026-06-29 until it was restored on 2026-07-31. A daily Vercel Cron on `/api/keepalive` now issues a real query to prevent a repeat idle pause. `CRON_SECRET` is not yet set, and cron registration is unconfirmed — both are owner-side.
+
 ## Current Git State
 
 Current branch: `main` — the repo's only branch, and the production branch for the Git-connected Vercel project.
@@ -404,15 +421,15 @@ Key design constraints from the owner:
 
 Suggested next work slices:
 
-1. Real-store pilot UAT
-   - Run `docs/pilot-uat.md` against `https://fashion-store-os.vercel.app`.
-   - Record any issues before the public domain cutover.
-   - Keep the activation smoke cleanup pattern so test state/auth records are removed after UAT.
+1. Phase 017 production cutover — owner-side steps
+   - Repo-side work is done: `docs/cutover.md` holds the ordered checklist and `docs/operations-runbook.md` holds the post-launch watch window and issue intake.
+   - Remaining steps are owner-only: confirm the Ready deployment, push the annotated `v1.0.0` tag, add the domain in Vercel, pass the `/api/health` gate, then point DNS.
+   - Also owner-side: set `CRON_SECRET` in Vercel, and confirm the `/api/keepalive` cron is registered under Settings → Cron Jobs.
 
-2. Phase 017 production cutover
-   - Author/finalize the cutover runbook, post-launch watch window, issue intake process, and release tag.
-   - Confirm `/api/health` is still green before any custom-domain or DNS change.
-   - Point the final domain only after pilot approval and the fresh health gate pass.
+2. Real-store pilot UAT — waived, not done
+   - The owner elected on 2026-07-31 to skip pilot UAT and proceed to cutover.
+   - `docs/pilot-uat.md` is unexecuted. Its scenarios are reused as the post-cutover smoke set in `docs/cutover.md` Step 6.
+   - Consequence to carry: the production **write** path has not been validated by a real operator since the Supabase restore. Reads were verified on 2026-07-31; writes were not.
 
 3. Vercel ownership decision
    - Owner-authored GitHub commits from `ADxZimmy` deploy successfully to production.
