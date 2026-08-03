@@ -264,7 +264,8 @@ function createStaffInvite(auth, currentUser, payload = {}) {
   };
   auth.users.push(member);
   appendAuditEvent(auth, "staff.invite", currentUser, member, `${role === "manager" ? "Manager" : "Staff"} invite created`);
-  return { auth, invite: sanitizeInvite(member, inviteToken) };
+  // The caller attaches the workspace code; this module has no storage access.
+  return { auth, invite: sanitizeInvite(member, inviteToken), inviteToken };
 }
 
 function acceptStaffInvite(auth, payload = {}) {
@@ -602,11 +603,16 @@ function staffCount(auth) {
   return auth.users.filter((user) => user.role === "staff").length;
 }
 
-function sanitizeInvite(staff, inviteToken) {
+function sanitizeInvite(staff, inviteToken, workspaceCode = "") {
   return {
     email: clean(staff.email).toLowerCase(),
     name: clean(staff.name),
     inviteToken,
+    // One value the manager hands over. Without the workspace half, the invite
+    // can only be accepted on the manager's own browser -- the invitee's device
+    // is in its own empty workspace where this user does not exist.
+    inviteCode: workspaceCode ? `${workspaceCode}.${inviteToken}` : inviteToken,
+    workspaceCode,
     inviteExpiresAt: clean(staff.inviteExpiresAt),
   };
 }
@@ -725,6 +731,7 @@ module.exports = {
   resetUserPassword,
   resolveSession,
   sanitizeAuth,
+  sanitizeInvite,
   signIn,
   signOut,
   signUpManager,

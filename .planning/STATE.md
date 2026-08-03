@@ -97,9 +97,14 @@ The repo is single-branch: `main` is the working, default, and production branch
 - Item: Phase 017 post-launch watch window (14 days from 2026-08-03), per the Post-Launch Support section of `docs/operations-runbook.md`.
 - Item: Production write-path verification via the `docs/cutover.md` Step 6 browser smoke set (manager signup → business setup → refresh → persistence; second browser for workspace isolation). Owner-side. The first attempt on 2026-08-03 was blocked by the account lockout below and has not been completed.
 - Item: Phase 018 production verification — the recovery round trip is now Step 6 of `docs/production-smoke.md` and runs with the write-path smoke. The owner last-resort procedure is documented but not rehearsed.
-- Item: Phase 019 (multi-device workspace access) is planned but not started; see `.planning/phases/019-multi-device-workspace-access/`. It carries the cross-device invite fix listed under Known Defects.
+- Item: Apply the Phase 019 migration to production. `npx supabase db push` creates `fashion_store_os_workspace_codes`. Owner action. Until then the invite path degrades to a same-device invite and `/api/workspace-code` returns a storage error, so the fix is inert in production.
 
 ## Known Defects
+
+- ~~Staff invites cannot be accepted from the invitee's own device.~~ **Fixed in Phase 019 on 2026-08-03**, pending the production migration. Invites now carry a workspace code, and acceptance resolves the issuing workspace instead of the invitee's own. The failure was confirmed on the pre-change build before the fix landed.
+- ~~A workspace is reachable only from the browser that created it.~~ **Fixed in Phase 019 on 2026-08-03**, pending the production migration. A manager issues a 30-minute single-use workspace code from Settings and redeems it on the other device.
+
+Historical detail retained below.
 
 - Staff invites cannot be accepted from the invitee's own device. `acceptStaffInvite` resolves the workspace from the `x-workspace-id` header and then looks for the invited user inside it, so a staff member opening the app on their own browser lands in a fresh empty workspace where the invite does not exist and gets "Invite details do not match." An invite is only redeemable on the browser that created it, which defeats its purpose. Same root cause affects Phase 018 manager-issued recovery codes, which are also handed to another person. Fix planned in Phase 019.
 - A workspace is reachable only from the browser that created it. Found on 2026-08-03 when an operator changed machines; the only workaround was reading `fashion-studio-os-workspace-v1` from `localStorage` on the first machine and pasting it into the second. Planned in Phase 019.

@@ -94,6 +94,20 @@ Minimum production routine:
 
 Do not place database dumps, customer records, service keys, or recovery passwords in this repository or `.planning/`.
 
+## Opening A Workspace On Another Device
+
+A workspace lives in the browser that created it — the device stores a random `x-workspace-id` and sends it with every request. To reach the same workspace from a second device:
+
+1. On a device already signed in, a manager opens Settings → Account security → **Open on another device** and creates a workspace code.
+2. On the second device, choose **Have a workspace code** on the sign-in screen and enter it.
+3. Sign in normally. The code points the browser at the workspace; it does not sign anyone in.
+
+Codes last 30 minutes and work once. Issue a new one per device.
+
+Staff do not need a workspace code separately — an invite already carries one, so a staff member can accept from their own device. If someone was invited before 2026-08-03, re-issue the invite; older invites are token-only and can only be accepted on the manager's browser.
+
+If a device joins a workspace while holding data of its own, the app warns first and shows the outgoing workspace id. Record that id before confirming — nothing will point at that workspace afterwards.
+
 ## Account Recovery
 
 Users have two self-service paths before this becomes an owner problem:

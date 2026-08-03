@@ -18,12 +18,23 @@ const {
   resetUserPassword,
   resolveSession,
   sanitizeAuth,
+  sanitizeInvite,
   signIn,
   signOut,
   signUpManager,
   suspendStaff,
   updateStaffAccess,
 } = require("./api/_auth");
+const {
+  buildRecord: buildWorkspaceCodeRecord,
+  generateWorkspaceCode,
+  hashWorkspaceCode,
+  isUsable: isWorkspaceCodeUsable,
+  normalizeWorkspaceCode,
+  splitCombinedInvite,
+  throwCodeMismatch,
+} = require("./api/_workspace_codes");
+const { assertRedeemAllowed } = require("./api/_rate_limit");
 const { appendWebhookMessages } = require("./api/_channel_intake");
 const { normalizeWebhookPayload, requireWebhookSignatureConfig, verifyWebhookChallenge, verifyWebhookSignature } = require("./api/_channel_webhook");
 const { appendInboundMessage, normalizeChannelMessages } = require("./api/_inbound");
@@ -32,6 +43,12 @@ const ROOT_DIR = __dirname;
 const DATA_DIR = path.join(ROOT_DIR, "data");
 const STATE_FILE = path.join(DATA_DIR, "state.json");
 const AUTH_FILE = path.join(DATA_DIR, "auth.json");
+// Local dev is single-workspace and file-backed, so codes live in a file rather
+// than the Supabase table. The security-critical logic -- hashing, expiry,
+// single use -- is shared with production via api/_workspace_codes.js; only the
+// persistence differs.
+const WORKSPACE_CODES_FILE = path.join(DATA_DIR, "workspace-codes.json");
+const LOCAL_WORKSPACE_ID = "local";
 const PORT = Number(process.env.PORT || 4179);
 const BODY_LIMIT = 1024 * 1024 * 5;
 
@@ -90,6 +107,7 @@ async function routeApi(request, response, url) {
     "/api/keepalive": "GET, OPTIONS",
     "/api/readiness": "GET, OPTIONS",
     "/api/session": "GET, POST, OPTIONS",
+    "/api/workspace-code": "POST, OPTIONS",
     "/api/state": "GET, PUT, OPTIONS",
   };
 
@@ -163,6 +181,30 @@ async function routeApi(request, response, url) {
     return;
   }
 
+  if (url.pathname === "/api/workspace-code" && request.method === "POST") {
+    const body = (await readJsonBody(request)) || {};
+    const action = String(body.action || "").trim();
+
+    if (action === "redeem") {
+      assertRedeemAllowed(request);
+      const result = await redeemLocalWorkspaceCode(body.code, "join");
+      sendJson(response, 200, { ok: true, workspaceId: result.workspaceId });
+      return;
+    }
+
+    if (action === "create") {
+      const { auth } = await readAuthDocument();
+      const { user } = requireManager(auth, request);
+      const issued = await issueLocalWorkspaceCode("join", user?.id);
+      sendJson(response, 201, { ok: true, workspaceCode: issued.workspaceCode, expiresAt: issued.expiresAt });
+      return;
+    }
+
+    const error = new Error("Unknown workspace code action");
+    error.statusCode = 400;
+    throw error;
+  }
+
   if (url.pathname === "/api/session") {
     const { auth, exists, changed } = await readAuthDocument();
     if (exists && changed) {
@@ -197,10 +239,21 @@ async function routeApi(request, response, url) {
       }
 
       if (action === "accept-invite") {
-        const result = acceptStaffInvite(auth, body);
+        // Local dev is single-workspace, so redeeming the code only marks it
+        // used. Production resolves a different workspace here.
+        const combined = splitCombinedInvite(body.inviteCode || body.code || "");
+        let joinedWorkspaceId = "";
+        if (combined.workspaceCode) {
+          const redeemed = await redeemLocalWorkspaceCode(combined.workspaceCode, "invite");
+          joinedWorkspaceId = redeemed.workspaceId;
+        }
+        const result = acceptStaffInvite(auth, {
+          ...body,
+          inviteToken: combined.inviteToken || body.inviteToken || body.token,
+        });
         await writeJsonAtomic(AUTH_FILE, result.auth);
         response.setHeader("Set-Cookie", buildSessionCookie(result.token, request));
-        await sendSessionPayload(response, request, result.auth, 200, { session: result.session, user: result.user });
+        await sendSessionPayload(response, request, result.auth, 200, { session: result.session, user: result.user }, { joinedWorkspaceId });
         return;
       }
 
@@ -245,7 +298,13 @@ async function routeApi(request, response, url) {
       if (action === "create-staff-invite") {
         const result = createStaffInvite(auth, user, body);
         await writeJsonAtomic(AUTH_FILE, result.auth);
-        await sendSessionPayload(response, request, result.auth, 201, null, { invite: result.invite });
+        const issued = await issueLocalWorkspaceCode("invite", user?.id);
+        const invite = sanitizeInvite(
+          result.auth.users.find((item) => item.email === result.invite.email) || {},
+          result.inviteToken,
+          issued.workspaceCode,
+        );
+        await sendSessionPayload(response, request, result.auth, 201, null, { invite });
         return;
       }
 
@@ -498,6 +557,32 @@ async function writeJsonAtomic(filePath, value) {
   const tempPath = `${filePath}.tmp`;
   await fs.writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
   await fs.rename(tempPath, filePath);
+}
+
+// File-backed equivalents of the Supabase-backed helpers in
+// api/_workspace_codes.js. Same validation, same single-use and expiry rules;
+// only the storage differs.
+async function issueLocalWorkspaceCode(kind, createdByUserId) {
+  const workspaceCode = generateWorkspaceCode();
+  const record = buildWorkspaceCodeRecord(workspaceCode, LOCAL_WORKSPACE_ID, kind, createdByUserId);
+  const existing = await readJsonWithExists(WORKSPACE_CODES_FILE);
+  const rows = Array.isArray(existing.value) ? existing.value : [];
+  rows.push(record);
+  await writeJsonAtomic(WORKSPACE_CODES_FILE, rows);
+  return { workspaceCode, expiresAt: record.expires_at, kind };
+}
+
+async function redeemLocalWorkspaceCode(rawCode, kind) {
+  const normalized = normalizeWorkspaceCode(rawCode);
+  if (!normalized) throwCodeMismatch();
+  const codeHash = hashWorkspaceCode(normalized);
+  const existing = await readJsonWithExists(WORKSPACE_CODES_FILE);
+  const rows = Array.isArray(existing.value) ? existing.value : [];
+  const record = rows.find((row) => row.code_hash === codeHash && row.kind === kind);
+  if (!isWorkspaceCodeUsable(record)) throwCodeMismatch();
+  record.redeemed_at = new Date().toISOString();
+  await writeJsonAtomic(WORKSPACE_CODES_FILE, rows);
+  return { workspaceId: record.workspace_id, kind };
 }
 
 async function readAuthDocument() {

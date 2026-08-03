@@ -66,7 +66,15 @@ function resolveWorkspaceId(request) {
 // Bind the resolved workspace to every storage call so a handler can never
 // accidentally read or write another tenant's documents.
 function storeForRequest(request) {
-  const workspace = resolveWorkspaceId(request);
+  return storeForWorkspace(resolveWorkspaceId(request));
+}
+
+// Bind to a workspace resolved by something other than the request header. The
+// only caller is invite acceptance, where a redeemed workspace code names the
+// workspace before the device has ever addressed it. The workspace id must come
+// from a redeemed code, never from client input.
+function storeForWorkspace(workspaceId) {
+  const workspace = validateWorkspaceId(workspaceId);
   return {
     workspace,
     getDocument: (documentKey) => getDocument(documentKey, workspace),
@@ -271,6 +279,7 @@ function normalizeEnv(value) {
 }
 
 module.exports = {
+  WORKSPACE_ID_PATTERN,
   getDocument,
   getSupabaseConfig,
   getStorageSummary,
@@ -279,4 +288,11 @@ module.exports = {
   resolveWorkspaceId,
   setDocument,
   storeForRequest,
+  storeForWorkspace,
+  // Exported for api/_workspace_codes.js only. Workspace codes are keyed by
+  // hash rather than by workspace, because the caller redeeming one does not
+  // yet know which workspace they are joining, so they cannot go through
+  // storeForRequest. Any other caller should use storeForRequest.
+  supabaseRequest,
+  validateWorkspaceId,
 };

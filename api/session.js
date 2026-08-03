@@ -14,6 +14,7 @@ const {
   resetUserPassword,
   resolveSession,
   sanitizeAuth,
+  sanitizeInvite,
   signIn,
   signOut,
   signUpManager,
@@ -21,7 +22,8 @@ const {
   updateStaffAccess,
 } = require("./_auth");
 const { handleError, handleOptions, readJsonBody, sendJson, sendMethodNotAllowed } = require("./_response");
-const { storeForRequest } = require("./_store");
+const { storeForRequest, storeForWorkspace } = require("./_store");
+const { issueWorkspaceCode, redeemWorkspaceCode, splitCombinedInvite } = require("./_workspace_codes");
 
 module.exports = async function handler(request, response) {
   const methods = ["GET", "POST", "OPTIONS"];
@@ -62,10 +64,35 @@ module.exports = async function handler(request, response) {
       }
 
       if (action === "accept-invite") {
-        const result = acceptStaffInvite(auth, body);
-        await store.setDocument("auth", result.auth);
+        // An invite is handed to someone who opens the app on their own device,
+        // which sits in its own empty workspace. The combined invite string
+        // carries a workspace code so the invite can be resolved against the
+        // workspace that issued it rather than the one this browser happens to
+        // be in. Without this the invite only works in the manager's browser.
+        const combined = splitCombinedInvite(body.inviteCode || body.code || "");
+        let inviteStore = store;
+        let inviteAuth = auth;
+        let joinedWorkspaceId = "";
+
+        if (combined.workspaceCode) {
+          const redeemed = await redeemWorkspaceCode(combined.workspaceCode, "invite");
+          joinedWorkspaceId = redeemed.workspaceId;
+          inviteStore = storeForWorkspace(joinedWorkspaceId);
+          const invited = await inviteStore.getDocument("auth");
+          inviteAuth = normalizeAuthDocument(invited.value || {}).auth;
+        }
+
+        const result = acceptStaffInvite(inviteAuth, {
+          ...body,
+          inviteToken: combined.inviteToken || body.inviteToken || body.token,
+        });
+        await inviteStore.setDocument("auth", result.auth);
         response.setHeader("Set-Cookie", buildSessionCookie(result.token, request));
-        await sendSessionPayload(store, response, request, result.auth, 200, { session: result.session, user: result.user });
+        await sendSessionPayload(inviteStore, response, request, result.auth, 200, { session: result.session, user: result.user }, {
+          // The client adopts this so every later request carries the right
+          // x-workspace-id header.
+          joinedWorkspaceId,
+        });
         return;
       }
 
@@ -112,7 +139,28 @@ module.exports = async function handler(request, response) {
       if (action === "create-staff-invite") {
         const result = createStaffInvite(auth, user, body);
         await store.setDocument("auth", result.auth);
-        await sendSessionPayload(store, response, request, result.auth, 201, null, { invite: result.invite });
+        // Pair the invite with a workspace code so it can be accepted from the
+        // invitee's own device. Without this the invite is only redeemable in
+        // the manager's browser, because acceptStaffInvite looks for the user
+        // inside whatever workspace the request header resolves to.
+        //
+        // Degrade rather than fail if the code cannot be issued -- most likely
+        // because the Phase 019 migration has not been applied yet. Deploying
+        // this code ahead of the migration then leaves invites working exactly
+        // as they did before instead of returning a storage error.
+        let workspaceCode = "";
+        try {
+          const issued = await issueWorkspaceCode(store.workspace, "invite", user?.id);
+          workspaceCode = issued.workspaceCode;
+        } catch (codeError) {
+          console.error("Workspace code issue failed; returning a same-device invite", codeError);
+        }
+        const invite = sanitizeInvite(
+          result.auth.users.find((item) => item.email === result.invite.email) || {},
+          result.inviteToken,
+          workspaceCode,
+        );
+        await sendSessionPayload(store, response, request, result.auth, 201, null, { invite });
         return;
       }
 

@@ -6,6 +6,7 @@ const API_BOOTSTRAP_PATH = "/api/bootstrap";
 const API_STATE_PATH = "/api/state";
 const API_SESSION_PATH = "/api/session";
 const API_DATA_PATH = "/api/data";
+const API_WORKSPACE_CODE_PATH = "/api/workspace-code";
 const MIN_PASSWORD_LENGTH = 8;
 const TEAM_LIMIT = 25;
 let deviceWorkspaceId = "";
@@ -126,6 +127,9 @@ let lastInviteResult = null;
 // Recovery codes are returned by the server exactly once. Hold the value only
 // long enough to show it, then clear it — it is never persisted client-side.
 let lastRecoveryResult = null;
+// Workspace join codes are returned once and are short-lived. Held only long
+// enough to display, never persisted.
+let lastWorkspaceCode = null;
 
 renderLoading();
 initializeApp();
@@ -1082,7 +1086,7 @@ function render() {
 }
 
 function renderOnboarding() {
-  const mode = ["signin", "signup", "invite", "recover"].includes(authMode) ? authMode : "signin";
+  const mode = ["signin", "signup", "invite", "recover", "join"].includes(authMode) ? authMode : "signin";
   const hasAccounts = auth.users.length > 0;
   const actionTitle = mode === "signin"
     ? "Sign in to Studio OS"
@@ -1090,14 +1094,18 @@ function renderOnboarding() {
       ? "Accept staff invite"
       : mode === "recover"
         ? "Recover access"
-        : "Create manager access";
+        : mode === "join"
+          ? "Open an existing workspace"
+          : "Create manager access";
   const actionCopy = mode === "signin"
     ? "Use the manager account or an active staff account created by the manager."
     : mode === "invite"
       ? "Use the invite token from the manager to finish staff onboarding and set your password."
       : mode === "recover"
         ? "Use the recovery code saved when this account was created to set a new password."
-        : "Start with one manager account. Staff access can be assigned later in settings.";
+        : mode === "join"
+          ? "Enter the workspace code from a device already signed in to that studio."
+          : "Start with one manager account. Staff access can be assigned later in settings.";
 
   app.innerHTML = `
     <main class="onboarding-page">
@@ -1138,7 +1146,7 @@ function renderOnboarding() {
             <p>${actionCopy}</p>
           </div>
         </div>
-        ${mode === "signin" ? renderSignInForm(hasAccounts) : mode === "invite" ? renderInviteForm() : mode === "recover" ? renderRecoveryForm() : renderSignUpForm()}
+        ${mode === "signin" ? renderSignInForm(hasAccounts) : mode === "invite" ? renderInviteForm() : mode === "recover" ? renderRecoveryForm() : mode === "join" ? renderJoinForm() : renderSignUpForm()}
       </section>
     </main>
   `;
@@ -1157,8 +1165,8 @@ function renderInviteForm() {
         <input name="email" type="email" autocomplete="email" required placeholder="staff@studio.com">
       </label>
       <label class="field full">
-        <span>Invite token</span>
-        <input name="inviteToken" autocomplete="one-time-code" required placeholder="Paste manager invite token">
+        <span>Invite code</span>
+        <input name="inviteCode" autocomplete="one-time-code" required placeholder="Paste the invite code from your manager">
       </label>
       <label class="field">
         <span>Password</span>
@@ -1192,6 +1200,23 @@ function renderSignInForm(hasAccounts) {
         <button class="btn" type="submit">Sign in</button>
         <button class="btn secondary" type="button" data-auth-mode="signup">Create manager account</button>
         <button class="btn secondary" type="button" data-auth-mode="recover">Forgot password</button>
+        <button class="btn secondary" type="button" data-auth-mode="join">Have a workspace code</button>
+      </div>
+    </form>
+  `;
+}
+
+function renderJoinForm() {
+  return `
+    <form id="joinForm" class="auth-form">
+      <label class="field full">
+        <span>Workspace code</span>
+        <input name="workspaceCode" autocomplete="one-time-code" required placeholder="ABCDE-FGHJK">
+      </label>
+      <div class="auth-note full">A manager creates this code from Settings on a device that is already signed in. It lasts 30 minutes and works once. Opening a workspace does not sign you in — you still need your own account for it.</div>
+      <div class="button-row full">
+        <button class="btn" type="submit">Open workspace</button>
+        <button class="btn secondary" type="button" data-auth-mode="signin">Back to sign in</button>
       </div>
     </form>
   `;
@@ -1534,6 +1559,17 @@ function renderModal() {
       confirmAction: "confirm-delete-staff",
       id: staff.id,
       confirmLabel: "Remove staff",
+      tone: "danger",
+    });
+  }
+
+  if (modalState.type === "confirm-join") {
+    return renderConfirmModal({
+      title: "Leave this workspace?",
+      eyebrow: "Open another workspace",
+      message: `This browser will point at the other workspace instead. Anything in the current one stays stored but this device will no longer reach it. Current workspace id: ${modalState.outgoing}`,
+      confirmAction: "confirm-join",
+      confirmLabel: "Open other workspace",
       tone: "danger",
     });
   }
@@ -2682,7 +2718,34 @@ function renderAccountSecurityPanel() {
         </div>
       </form>
       ${backendReady && auth.serverManaged ? renderRecoveryCodePanel(user) : ""}
+      ${backendReady && auth.serverManaged && user.role === "manager" ? renderWorkspaceCodePanel() : ""}
     </section>
+  `;
+}
+
+function renderWorkspaceCodePanel() {
+  return `
+    <div class="panel-header">
+      <div>
+        <h2>Open on another device</h2>
+        <p>Create a code, then enter it on the other device from the sign-in screen. It lasts 30 minutes and works once.</p>
+      </div>
+    </div>
+    ${lastWorkspaceCode ? `
+      <div class="inline-callout">
+        <div>
+          <strong>Workspace code</strong>
+          <p class="muted small-text">Enter this on the other device within 30 minutes. It works once. Anyone with this code can point a browser at this workspace, though they still need an account to sign in.</p>
+        </div>
+        <code>${escapeHtml(lastWorkspaceCode.code)}</code>
+        <div class="button-row">
+          <button class="btn small secondary" type="button" data-action="dismiss-workspace-code">Done</button>
+        </div>
+      </div>
+    ` : ""}
+    <div class="button-row">
+      <button class="btn small secondary" type="button" data-action="create-workspace-code">Create workspace code</button>
+    </div>
   `;
 }
 
@@ -2806,10 +2869,10 @@ function renderInviteResult(invite) {
   return `
     <div class="inline-callout">
       <div>
-        <strong>Invite token created for ${escapeHtml(invite.email)}</strong>
-        <p class="muted small-text">Share this once with the staff member. It expires ${formatDate(invite.inviteExpiresAt)}.</p>
+        <strong>Invite code created for ${escapeHtml(invite.email)}</strong>
+        <p class="muted small-text">Share this one value with them. They can accept it on their own device. It expires ${formatDate(invite.inviteExpiresAt)}.</p>
       </div>
-      <code>${escapeHtml(invite.inviteToken)}</code>
+      <code>${escapeHtml(invite.inviteCode || invite.inviteToken)}</code>
     </div>
   `;
 }
@@ -3027,7 +3090,7 @@ function wireEvents() {
   app.onclick = (event) => {
     const authModeButton = event.target.closest("[data-auth-mode]");
     if (authModeButton) {
-      authMode = ["signin", "signup", "invite", "recover"].includes(authModeButton.dataset.authMode) ? authModeButton.dataset.authMode : "signin";
+      authMode = ["signin", "signup", "invite", "recover", "join"].includes(authModeButton.dataset.authMode) ? authModeButton.dataset.authMode : "signin";
       render();
       return;
     }
@@ -3088,6 +3151,9 @@ function wireEvents() {
     if (action === "reactivate-staff") updateStaffStatus(id, "reactivate-staff");
     if (action === "delete-staff") deleteStaff(id);
     if (action === "create-recovery-code") createRecoveryCode();
+    if (action === "create-workspace-code") createWorkspaceJoinCode();
+    if (action === "dismiss-workspace-code") dismissWorkspaceCode();
+    if (action === "confirm-join") confirmJoinWorkspace();
     if (action === "reset-user-password") issueRecoveryCodeForUser(id);
     if (action === "dismiss-recovery-code") dismissRecoveryCode();
     if (action === "reset-demo") resetLocalData();
@@ -3141,6 +3207,7 @@ function wireEvents() {
     if (form.id === "signinForm") handleSignIn(form);
     if (form.id === "signupForm") handleSignUp(form);
     if (form.id === "recoveryForm") handleRecoverySubmit(form);
+    if (form.id === "joinForm") handleJoinSubmit(form);
     if (form.id === "inviteForm") handleInviteAccept(form);
     if (form.id === "setupForm") handleProfileSubmit(form, true);
     if (form.id === "settingsForm") handleProfileSubmit(form, false);
@@ -3290,7 +3357,7 @@ async function handleInviteAccept(form) {
   const data = new FormData(form);
   const name = clean(data.get("name"));
   const email = clean(data.get("email")).toLowerCase();
-  const inviteToken = clean(data.get("inviteToken"));
+  const inviteCode = clean(data.get("inviteCode") || data.get("inviteToken"));
   const password = String(data.get("password") || "");
   const confirmPassword = String(data.get("confirmPassword") || "");
 
@@ -3303,10 +3370,115 @@ async function handleInviteAccept(form) {
     return;
   }
 
-  await runServerAuthAction("accept-invite", { name, email, inviteToken, password, confirmPassword }, {
+  const result = await runServerAuthAction("accept-invite", { name, email, inviteCode, password, confirmPassword }, {
     successMessage: "Invite accepted.",
     nextView: "first-accessible",
   });
+  // The invite carried its own workspace, which is almost never the one this
+  // browser generated for itself. Adopt it so later requests address the right
+  // workspace instead of this device's empty one.
+  if (result?.joinedWorkspaceId) {
+    adoptWorkspace(result.joinedWorkspaceId, { reload: false });
+  }
+}
+
+// Point this browser at an existing workspace. Every later request carries it
+// as x-workspace-id. The id must come from the server, never from user input.
+function adoptWorkspace(workspaceId, { reload = true } = {}) {
+  const id = clean(workspaceId);
+  if (!id) return false;
+  try {
+    localStorage.setItem(WORKSPACE_KEY, id);
+  } catch (error) {
+    showToast("This browser is blocking storage, so the workspace cannot be saved.");
+    return false;
+  }
+  deviceWorkspaceId = id;
+  // Local caches belong to the workspace being left behind.
+  localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem(AUTH_KEY);
+  if (reload) window.location.reload();
+  return true;
+}
+
+function currentWorkspaceHasData() {
+  try {
+    return Boolean(localStorage.getItem(STORAGE_KEY)) || auth.users.length > 0;
+  } catch (error) {
+    return auth.users.length > 0;
+  }
+}
+
+async function handleJoinSubmit(form) {
+  const data = new FormData(form);
+  const code = clean(data.get("workspaceCode"));
+  if (!code) return;
+
+  if (!backendReady) {
+    showToast("Joining a workspace requires the online app.");
+    return;
+  }
+
+  // Adopting abandons whatever workspace this browser is currently in. Its rows
+  // stay in storage but nothing points at them any more, so confirm first and
+  // show the outgoing id so it can be written down.
+  if (currentWorkspaceHasData() && !modalState) {
+    modalState = { type: "confirm-join", code, outgoing: getWorkspaceId() };
+    render();
+    return;
+  }
+
+  await redeemWorkspaceCode(code);
+}
+
+async function redeemWorkspaceCode(code) {
+  try {
+    const response = await fetch(API_WORKSPACE_CODE_PATH, {
+      method: "POST",
+      headers: apiHeaders({ "Content-Type": "application/json" }),
+      credentials: "same-origin",
+      body: JSON.stringify({ action: "redeem", code }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || "That code is not valid.");
+    if (adoptWorkspace(result.workspaceId)) {
+      showToast("Workspace opened. Sign in to continue.");
+    }
+  } catch (error) {
+    showToast(error.message || "That code is not valid.");
+  }
+}
+
+async function createWorkspaceJoinCode() {
+  if (currentUser()?.role !== "manager") {
+    showToast("Only a manager can open this workspace on another device.");
+    return;
+  }
+  try {
+    const response = await fetch(API_WORKSPACE_CODE_PATH, {
+      method: "POST",
+      headers: apiHeaders({ "Content-Type": "application/json" }),
+      credentials: "same-origin",
+      body: JSON.stringify({ action: "create" }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || "Could not create a code.");
+    lastWorkspaceCode = { code: result.workspaceCode, expiresAt: result.expiresAt };
+    render();
+  } catch (error) {
+    showToast(error.message || "Could not create a code.");
+  }
+}
+
+function dismissWorkspaceCode() {
+  lastWorkspaceCode = null;
+  render();
+}
+
+async function confirmJoinWorkspace() {
+  const code = modalState?.type === "confirm-join" ? modalState.code : "";
+  closeModal(false);
+  if (code) await redeemWorkspaceCode(code);
 }
 
 async function signOut() {
