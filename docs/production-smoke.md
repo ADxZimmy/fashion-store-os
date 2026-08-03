@@ -22,12 +22,22 @@ Real-store pilot UAT was waived, so this smoke test is the only validation the w
 
 ## What The Operator Must Supply
 
-The person running this supplies the test account credentials and performs the signup step themselves. An agent driving this test should ask for them rather than inventing them, and must not write them into logs, reports, or this repo.
+Step 3 creates a manager account, so this test needs credentials. Run it one of two ways.
 
-- A test email address
-- A password for the test manager account
+### Operator mode
 
-Use a throwaway address you control. You will delete this account in Step 6.
+You supply a throwaway email and a password and perform the signup yourself. An agent driving the rest of the test should ask you for them rather than inventing them.
+
+### Agent mode (end to end, no human in the loop)
+
+An agent may run the whole procedure unattended provided all four of these hold. They are what make the test account safe to create and disposable; skipping any one of them turns a test artifact into a real account.
+
+1. **Generate both credentials at runtime.** A random address at a domain that receives no mail — `fso-smoke-<random>@example.com` — and a random password of at least 20 characters. Never a hardcoded, guessable, or reused value. The app sends no email of any kind, so the address never needs to be real.
+2. **Treat them as ephemeral.** Hold them in memory for the run only. Do not write either one into the report, the transcript summary, logs, a file, or this repo. They are needed at Step 3, Step 6, and nowhere else.
+3. **Never reuse a real credential.** Do not use the operator's own email or any password that exists elsewhere.
+4. **Complete Step 7.** Cleanup deletes the workspace's `auth` and `state` documents, which destroys the test account. An abandoned test account with a generated password nobody holds is exactly the unrecoverable state Phase 018 exists to prevent.
+
+If any of the four cannot be satisfied, stop and hand back to operator mode.
 
 ## Procedure
 
@@ -54,7 +64,7 @@ Open `https://fashion-store-os.vercel.app` in a **new incognito window**.
 
 ### Step 3 — Manager signup ← the write path
 
-The operator performs this step with their own credentials.
+Operator mode: the operator performs this step with their own credentials. Agent mode: use the runtime-generated credentials from above.
 
 Create the manager account.
 
@@ -118,6 +128,8 @@ This removes the `state` and `auth` documents for that workspace only. It does n
 
 ```text
 Date / operator:
+Mode:                     operator / agent
+Workspace id used:
 Step 1 API baseline:      PASS / FAIL
 Step 2 fresh workspace:   PASS / FAIL
 Step 3 manager signup:    PASS / FAIL   <- the write path
@@ -129,7 +141,9 @@ Console errors:           none / details
 Notes:
 ```
 
-Do not include the test password, session cookies, or any customer data in the report.
+Do not include the test email, the test password, the recovery code, session cookies, or any customer data in the report. The workspace id is safe to report and is what makes an incomplete cleanup traceable.
+
+If Step 7 did not complete, say so at the top of the report, not in the notes. An undeleted test account is a live account in production.
 
 ## If Something Fails
 
