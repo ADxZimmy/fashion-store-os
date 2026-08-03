@@ -123,6 +123,9 @@ let storageMode = "loading";
 let storageMessage = "Getting your workspace ready";
 let syncFailureAnnounced = false;
 let lastInviteResult = null;
+// Recovery codes are returned by the server exactly once. Hold the value only
+// long enough to show it, then clear it — it is never persisted client-side.
+let lastRecoveryResult = null;
 
 renderLoading();
 initializeApp();
@@ -278,6 +281,11 @@ function normalizeAuth(nextAuth = {}) {
           inviteAcceptedAt: clean(user.inviteAcceptedAt),
           suspendedAt: clean(user.suspendedAt),
           lastSignInAt: clean(user.lastSignInAt),
+          // Metadata only; the hash never reaches the client. Listed here for
+          // the same reason as in the server normalizer — this rebuilds from an
+          // explicit field list, so anything omitted is dropped.
+          recoveryIssuedAt: clean(user.recoveryIssuedAt),
+          recoveryRedeemedAt: clean(user.recoveryRedeemedAt),
         }))
         .filter((user) => user.email || nextAuth.serverManaged)
     : [];
@@ -1074,18 +1082,22 @@ function render() {
 }
 
 function renderOnboarding() {
-  const mode = ["signin", "signup", "invite"].includes(authMode) ? authMode : "signin";
+  const mode = ["signin", "signup", "invite", "recover"].includes(authMode) ? authMode : "signin";
   const hasAccounts = auth.users.length > 0;
   const actionTitle = mode === "signin"
     ? "Sign in to Studio OS"
     : mode === "invite"
       ? "Accept staff invite"
-      : "Create manager access";
+      : mode === "recover"
+        ? "Recover access"
+        : "Create manager access";
   const actionCopy = mode === "signin"
     ? "Use the manager account or an active staff account created by the manager."
     : mode === "invite"
       ? "Use the invite token from the manager to finish staff onboarding and set your password."
-      : "Start with one manager account. Staff access can be assigned later in settings.";
+      : mode === "recover"
+        ? "Use the recovery code saved when this account was created to set a new password."
+        : "Start with one manager account. Staff access can be assigned later in settings.";
 
   app.innerHTML = `
     <main class="onboarding-page">
@@ -1126,7 +1138,7 @@ function renderOnboarding() {
             <p>${actionCopy}</p>
           </div>
         </div>
-        ${mode === "signin" ? renderSignInForm(hasAccounts) : mode === "invite" ? renderInviteForm() : renderSignUpForm()}
+        ${mode === "signin" ? renderSignInForm(hasAccounts) : mode === "invite" ? renderInviteForm() : mode === "recover" ? renderRecoveryForm() : renderSignUpForm()}
       </section>
     </main>
   `;
@@ -1179,6 +1191,35 @@ function renderSignInForm(hasAccounts) {
       <div class="button-row">
         <button class="btn" type="submit">Sign in</button>
         <button class="btn secondary" type="button" data-auth-mode="signup">Create manager account</button>
+        <button class="btn secondary" type="button" data-auth-mode="recover">Forgot password</button>
+      </div>
+    </form>
+  `;
+}
+
+function renderRecoveryForm() {
+  return `
+    <form id="recoveryForm" class="auth-form">
+      <label class="field full">
+        <span>Email</span>
+        <input name="email" type="email" autocomplete="email" required placeholder="name@studio.com">
+      </label>
+      <label class="field full">
+        <span>Recovery code</span>
+        <input name="recoveryCode" autocomplete="one-time-code" required placeholder="Paste your saved recovery code">
+      </label>
+      <label class="field">
+        <span>New password</span>
+        <input name="password" type="password" autocomplete="new-password" required minlength="${MIN_PASSWORD_LENGTH}" placeholder="Minimum ${MIN_PASSWORD_LENGTH} characters">
+      </label>
+      <label class="field">
+        <span>Confirm password</span>
+        <input name="confirmPassword" type="password" autocomplete="new-password" required minlength="${MIN_PASSWORD_LENGTH}" placeholder="Repeat password">
+      </label>
+      <div class="auth-note full">A recovery code can only be used once. After resetting, sign in with your new password. If you have no recovery code, ask a manager on this workspace to issue one.</div>
+      <div class="button-row full">
+        <button class="btn" type="submit">Reset password</button>
+        <button class="btn secondary" type="button" data-auth-mode="signin">Back to sign in</button>
       </div>
     </form>
   `;
@@ -2601,6 +2642,7 @@ function renderTeamAccessPanel() {
         <span class="status">${auth.users.length}/${TEAM_LIMIT} users</span>
       </div>
       ${lastInviteResult ? renderInviteResult(lastInviteResult) : ""}
+      ${lastRecoveryResult && lastRecoveryResult.context === "team" ? renderRecoveryResult(lastRecoveryResult) : ""}
       ${remaining ? backendReady && auth.serverManaged ? renderStaffInviteForm() : renderStaffCreateForm() : `<div class="empty">User limit reached. Remove an account before adding another.</div>`}
       <div class="team-list">
         ${members.map(renderStaffAccessCard).join("") || emptyState("No other team members yet.")}
@@ -2639,7 +2681,40 @@ function renderAccountSecurityPanel() {
           <button class="btn small" type="submit">Change password</button>
         </div>
       </form>
+      ${backendReady && auth.serverManaged ? renderRecoveryCodePanel(user) : ""}
     </section>
+  `;
+}
+
+function renderRecoveryCodePanel(user) {
+  const issued = clean(user.recoveryIssuedAt);
+  return `
+    <div class="panel-header">
+      <div>
+        <h2>Recovery code</h2>
+        <p>The only way back into this account if the password is lost. Generating a new code replaces any previous one.</p>
+      </div>
+      ${issued ? `<span class="status">Issued ${escapeHtml(formatDate(issued))}</span>` : `<span class="status">None saved</span>`}
+    </div>
+    ${lastRecoveryResult && lastRecoveryResult.context !== "team" ? renderRecoveryResult(lastRecoveryResult) : ""}
+    <div class="button-row">
+      <button class="btn small secondary" type="button" data-action="create-recovery-code">Generate recovery code</button>
+    </div>
+  `;
+}
+
+function renderRecoveryResult(recovery) {
+  return `
+    <div class="inline-callout">
+      <div>
+        <strong>Recovery code for ${escapeHtml(recovery.email)}</strong>
+        <p class="muted small-text">Save this now. It is shown once, never shown again, and can only be used once. Anyone with this code can reset the password for this account.</p>
+      </div>
+      <code>${escapeHtml(recovery.recoveryCode)}</code>
+      <div class="button-row">
+        <button class="btn small secondary" type="button" data-action="dismiss-recovery-code">I have saved it</button>
+      </div>
+    </div>
   `;
 }
 
@@ -2752,6 +2827,11 @@ function renderStaffAccessCard(user) {
           ${user.inviteExpiresAt ? `<p class="muted small-text">Invite expires ${formatDate(user.inviteExpiresAt)}</p>` : ""}
           <p class="muted small-text">Managers have full access. To remove a manager, reset the workspace.</p>
         </div>
+        ${backendReady && auth.serverManaged ? `
+          <div class="button-row">
+            <button class="btn small secondary" type="button" data-action="reset-user-password" data-id="${escapeHtml(user.id)}">Issue recovery code</button>
+          </div>
+        ` : ""}
       </article>
     `;
   }
@@ -2770,6 +2850,9 @@ function renderStaffAccessCard(user) {
           ${user.status === "suspended"
             ? `<button class="btn small secondary" type="button" data-action="reactivate-staff" data-id="${escapeHtml(user.id)}">Reactivate</button>`
             : `<button class="btn small secondary" type="button" data-action="suspend-staff" data-id="${escapeHtml(user.id)}">Suspend</button>`}
+          ${backendReady && auth.serverManaged
+            ? `<button class="btn small secondary" type="button" data-action="reset-user-password" data-id="${escapeHtml(user.id)}">Issue recovery code</button>`
+            : ""}
           <button class="btn small danger" type="button" data-action="delete-staff" data-id="${escapeHtml(user.id)}">Remove</button>
         </div>
       </form>
@@ -2944,7 +3027,7 @@ function wireEvents() {
   app.onclick = (event) => {
     const authModeButton = event.target.closest("[data-auth-mode]");
     if (authModeButton) {
-      authMode = ["signin", "signup", "invite"].includes(authModeButton.dataset.authMode) ? authModeButton.dataset.authMode : "signin";
+      authMode = ["signin", "signup", "invite", "recover"].includes(authModeButton.dataset.authMode) ? authModeButton.dataset.authMode : "signin";
       render();
       return;
     }
@@ -3004,6 +3087,9 @@ function wireEvents() {
     if (action === "suspend-staff") updateStaffStatus(id, "suspend-staff");
     if (action === "reactivate-staff") updateStaffStatus(id, "reactivate-staff");
     if (action === "delete-staff") deleteStaff(id);
+    if (action === "create-recovery-code") createRecoveryCode();
+    if (action === "reset-user-password") issueRecoveryCodeForUser(id);
+    if (action === "dismiss-recovery-code") dismissRecoveryCode();
     if (action === "reset-demo") resetLocalData();
   };
 
@@ -3054,6 +3140,7 @@ function wireEvents() {
     const form = event.target;
     if (form.id === "signinForm") handleSignIn(form);
     if (form.id === "signupForm") handleSignUp(form);
+    if (form.id === "recoveryForm") handleRecoverySubmit(form);
     if (form.id === "inviteForm") handleInviteAccept(form);
     if (form.id === "setupForm") handleProfileSubmit(form, true);
     if (form.id === "settingsForm") handleProfileSubmit(form, false);
@@ -3091,10 +3178,20 @@ async function handleSignUp(form) {
   }
 
   if (backendReady) {
-    await runServerAuthAction("signup", { name, email, password, confirmPassword }, {
+    const result = await runServerAuthAction("signup", { name, email, password, confirmPassword }, {
       successMessage: "Manager access created.",
       nextView: "dashboard",
     });
+    // Shown once and never stored. Without it, a forgotten password would make
+    // this workspace unrecoverable.
+    if (result?.recovery?.recoveryCode) {
+      lastRecoveryResult = {
+        email,
+        recoveryCode: result.recovery.recoveryCode,
+        context: "signup",
+      };
+      render();
+    }
     return;
   }
 
@@ -3124,6 +3221,33 @@ async function handleSignUp(form) {
   localStorage.setItem(VIEW_KEY, currentView);
   showToast("Manager access created.");
   render();
+}
+
+async function handleRecoverySubmit(form) {
+  const data = new FormData(form);
+  const email = clean(data.get("email")).toLowerCase();
+  const recoveryCode = clean(data.get("recoveryCode"));
+  const password = String(data.get("password") || "");
+  const confirmPassword = String(data.get("confirmPassword") || "");
+
+  if (!backendReady) {
+    showToast("Account recovery requires server-managed auth.");
+    return;
+  }
+  if (password.length < MIN_PASSWORD_LENGTH || password !== confirmPassword) {
+    showToast(`Passwords must match and be at least ${MIN_PASSWORD_LENGTH} characters.`);
+    return;
+  }
+
+  const result = await runServerAuthAction("redeem-recovery-code", { email, recoveryCode, password, confirmPassword }, {
+    successMessage: "Password reset. Sign in with your new password.",
+  });
+  // Redeeming grants no session by design, so land on sign-in and let the new
+  // password prove itself rather than assuming the reset worked.
+  if (result?.passwordReset) {
+    authMode = "signin";
+    render();
+  }
 }
 
 async function handleSignIn(form) {
@@ -3417,6 +3541,53 @@ async function updateStaffStatus(id, action) {
   staff.updatedAt = isoDate(0);
   saveAuth();
   showToast(action === "suspend-staff" ? "Staff account suspended." : "Staff account reactivated.");
+  render();
+}
+
+async function createRecoveryCode() {
+  if (!backendReady || !auth.serverManaged) {
+    showToast("Recovery codes require server-managed auth.");
+    return;
+  }
+  const result = await runServerAuthAction("create-recovery-code", {}, {
+    successMessage: "Recovery code generated.",
+  });
+  if (result?.recovery?.recoveryCode) {
+    lastRecoveryResult = {
+      email: result.recovery.email,
+      recoveryCode: result.recovery.recoveryCode,
+      context: "self",
+    };
+    render();
+  }
+}
+
+async function issueRecoveryCodeForUser(id) {
+  if (currentUser()?.role !== "manager") {
+    showToast("Only a manager can issue a recovery code for another account.");
+    return;
+  }
+  if (!backendReady || !auth.serverManaged) {
+    showToast("Recovery codes require server-managed auth.");
+    return;
+  }
+  // The manager hands the code over; the colleague chooses their own password,
+  // so the manager never learns it.
+  const result = await runServerAuthAction("reset-user-password", { id }, {
+    successMessage: "Recovery code issued. Share it once with that person.",
+  });
+  if (result?.recovery?.recoveryCode) {
+    lastRecoveryResult = {
+      email: result.recovery.email,
+      recoveryCode: result.recovery.recoveryCode,
+      context: "team",
+    };
+    render();
+  }
+}
+
+function dismissRecoveryCode() {
+  lastRecoveryResult = null;
   render();
 }
 

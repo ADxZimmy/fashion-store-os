@@ -3,12 +3,15 @@ const {
   buildClearSessionCookie,
   buildSessionCookie,
   changePassword,
+  createRecoveryCode,
   createStaff,
   createStaffInvite,
   deleteStaff,
   normalizeAuthDocument,
   reactivateStaff,
+  redeemRecoveryCode,
   requireSession,
+  resetUserPassword,
   resolveSession,
   sanitizeAuth,
   signIn,
@@ -44,7 +47,9 @@ module.exports = async function handler(request, response) {
         const result = signUpManager(auth, body);
         await store.setDocument("auth", result.auth);
         response.setHeader("Set-Cookie", buildSessionCookie(result.token, request));
-        await sendSessionPayload(store, response, request, result.auth, 201, { session: result.session, user: result.user });
+        await sendSessionPayload(store, response, request, result.auth, 201, { session: result.session, user: result.user }, {
+          recovery: { recoveryCode: result.recoveryCode },
+        });
         return;
       }
 
@@ -61,6 +66,23 @@ module.exports = async function handler(request, response) {
         await store.setDocument("auth", result.auth);
         response.setHeader("Set-Cookie", buildSessionCookie(result.token, request));
         await sendSessionPayload(store, response, request, result.auth, 200, { session: result.session, user: result.user });
+        return;
+      }
+
+      // Unauthenticated by necessity: the caller cannot sign in, which is why
+      // they are here. Deliberately issues no session and sets no cookie, so
+      // the client must authenticate with the new password afterwards.
+      if (action === "redeem-recovery-code") {
+        const result = redeemRecoveryCode(auth, body);
+        await store.setDocument("auth", result.auth);
+        sendJson(response, 200, {
+          ok: true,
+          authenticated: false,
+          auth: sanitizeAuth(result.auth),
+          state: null,
+          stateExists: false,
+          passwordReset: true,
+        });
         return;
       }
 
@@ -98,6 +120,20 @@ module.exports = async function handler(request, response) {
         const nextAuth = updateStaffAccess(auth, user, body);
         await store.setDocument("auth", nextAuth);
         await sendSessionPayload(store, response, request, nextAuth);
+        return;
+      }
+
+      if (action === "create-recovery-code") {
+        const result = createRecoveryCode(auth, user);
+        await store.setDocument("auth", result.auth);
+        await sendSessionPayload(store, response, request, result.auth, 201, null, { recovery: result.recovery });
+        return;
+      }
+
+      if (action === "reset-user-password") {
+        const result = resetUserPassword(auth, user, body);
+        await store.setDocument("auth", result.auth);
+        await sendSessionPayload(store, response, request, result.auth, 201, null, { recovery: result.recovery });
         return;
       }
 

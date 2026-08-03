@@ -96,7 +96,7 @@ The repo is single-branch: `main` is the working, default, and production branch
 
 - Item: Phase 017 post-launch watch window (14 days from 2026-08-03), per the Post-Launch Support section of `docs/operations-runbook.md`.
 - Item: Production write-path verification via the `docs/cutover.md` Step 6 browser smoke set (manager signup → business setup → refresh → persistence; second browser for workspace isolation). Owner-side. The first attempt on 2026-08-03 was blocked by the account lockout below and has not been completed.
-- Item: Phase 018 (account recovery and password reset) is planned but not started; see `.planning/phases/018-account-recovery-password-reset/`.
+- Item: Phase 018 production verification — the recovery round trip is now Step 6 of `docs/production-smoke.md` and runs with the write-path smoke. The owner last-resort procedure is documented but not rehearsed.
 
 ## Blocked
 
@@ -287,6 +287,9 @@ Owner (`ADxZimmy`): run the `docs/cutover.md` Step 6 browser smoke against `http
 - Command/check: Live `/api/health`, `/api/readiness`, `/api/keepalive`, `/api/bootstrap` after Supabase restore
   Result: Passed on 2026-07-31; DNS resolved again, health `ok: true` with `storage: "supabase"` on both aliases, readiness all 6 checks green, keepalive HTTP 200, and bootstrap on an isolated workspace returned a clean empty state. The successful `SELECT` confirms the schema survived — this was a pause/restore, not a delete/recreate, so no migration re-run was needed.
   Note: Read path only. The production write path was not exercised after the restore; `docs/cutover.md` Step 6 covers it post-cutover.
+- Command/check: Phase 018 recovery implementation
+  Result: Passed on 2026-08-03. 37 unit assertions over `api/_auth.js` plus an HTTP round trip through the local server: signup issues a code, only the hash reaches disk, the hash survives a subsequent auth write, redeem sets no `Set-Cookie` and returns `authenticated: false`/`passwordReset: true`, the old password stops working, the code is single-use, a code backdated 400 days still redeems, and unknown-email and wrong-code both return 401 `Recovery details do not match.`
+  Note: The `normalizeAuthDocument` field-list trap existed in two places, not one — `normalizeAuth` in `src/app.js:266` rebuilds users from its own explicit list and dropped the recovery metadata until it was added there too.
 - Command/check: `npm.cmd run launch:check` and `npm.cmd run release:preflight` for Phase 017 repo-side
   Result: Passed on 2026-07-31; syntax/UX/security/build green, clean worktree, owner-authored latest commit.
 - Command/check: `CRON_SECRET` enforcement on the deployed `/api/keepalive`

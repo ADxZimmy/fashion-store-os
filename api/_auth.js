@@ -54,6 +54,10 @@ function normalizeAuthDocument(document = {}) {
       inviteAcceptedAt: clean(sourceUser.inviteAcceptedAt),
       suspendedAt: clean(sourceUser.suspendedAt),
       lastSignInAt: clean(sourceUser.lastSignInAt),
+      // Recovery fields must be listed here or they are dropped on the next write.
+      recoveryCodeHash: clean(sourceUser.recoveryCodeHash),
+      recoveryIssuedAt: clean(sourceUser.recoveryIssuedAt),
+      recoveryRedeemedAt: clean(sourceUser.recoveryRedeemedAt),
       ...passwordRecord,
     });
   }
@@ -127,6 +131,11 @@ function sanitizeUser(user) {
     inviteAcceptedAt: clean(user.inviteAcceptedAt),
     suspendedAt: clean(user.suspendedAt),
     lastSignInAt: clean(user.lastSignInAt),
+    // Metadata only. recoveryCodeHash is never exposed. For unauthenticated
+    // callers these arrive undefined from the stripped record in sanitizeAuth
+    // and clean() renders them empty, so no recovery state leaks.
+    recoveryIssuedAt: clean(user.recoveryIssuedAt),
+    recoveryRedeemedAt: clean(user.recoveryRedeemedAt),
   };
 }
 
@@ -159,7 +168,10 @@ function signUpManager(auth, payload = {}) {
   };
   auth.users.push(manager);
   appendAuditEvent(auth, "manager.signup", manager, manager, "Manager access created");
-  return createSession(auth, manager.id);
+  // Issued at signup because a solo manager has nobody to issue one later.
+  // Returned exactly once; only the hash is stored.
+  const recoveryCode = issueRecoveryCode(auth, manager, manager);
+  return { ...createSession(auth, manager.id), recoveryCode };
 }
 
 function signIn(auth, payload = {}) {
@@ -360,6 +372,104 @@ function changePassword(auth, currentUser, payload = {}, currentSession = null) 
   auth.sessions = auth.sessions.filter((session) => session.userId !== currentUser.id || session.id === currentSession?.id);
   appendAuditEvent(auth, "account.password_change", currentUser, currentUser, "Password changed");
   return auth;
+}
+
+// Recovery codes are the way back in when a password is lost. Without them a
+// forgotten manager password destroys a workspace: signup refuses to create a
+// second manager, and sanitizeAuth deliberately hides which email owns the
+// workspace from unauthenticated callers.
+//
+// Deliberately NOT time-limited, unlike staff invites. A recovery code is only
+// ever used long after it was issued, so a TTL would reliably leave it dead at
+// the moment it is needed. Single use is the control instead of time.
+function issueRecoveryCode(auth, user, actor = user) {
+  const recoveryCode = randomToken(24);
+  const now = new Date().toISOString();
+  Object.assign(user, {
+    recoveryCodeHash: hashToken(recoveryCode),
+    recoveryIssuedAt: now,
+    recoveryRedeemedAt: "",
+    updatedAt: now,
+  });
+  appendAuditEvent(auth, "account.recovery_issue", actor, user, "Recovery code issued");
+  return recoveryCode;
+}
+
+function createRecoveryCode(auth, currentUser) {
+  if (!currentUser) {
+    throwPublicError("Sign in is required.", 401);
+  }
+  // Self-issue. Any signed-in account may replace its own code; issuing a new
+  // one invalidates the previous code.
+  const recoveryCode = issueRecoveryCode(auth, currentUser, currentUser);
+  return { auth, recovery: sanitizeRecovery(currentUser, recoveryCode) };
+}
+
+function resetUserPassword(auth, currentUser, payload = {}) {
+  assertManager(currentUser);
+  const target = auth.users.find((user) => user.id === clean(payload.id));
+  if (!target) {
+    throwPublicError("Account not found.", 404);
+  }
+  // A manager hands out a recovery code rather than setting a colleague's
+  // password directly, so the colleague chooses their own password and the
+  // manager never learns it. Reuses the recovery path instead of adding a
+  // second token type.
+  const recoveryCode = issueRecoveryCode(auth, target, currentUser);
+  return { auth, recovery: sanitizeRecovery(target, recoveryCode) };
+}
+
+function redeemRecoveryCode(auth, payload = {}) {
+  const email = clean(payload.email).toLowerCase();
+  const recoveryCode = clean(payload.recoveryCode || payload.code);
+  const password = String(payload.password || "");
+  const confirmPassword = String(payload.confirmPassword || payload.password || "");
+
+  assertEmail(email);
+  assertPassword(password, confirmPassword);
+
+  const user = auth.users.find((item) => item.email === email);
+  // One message for both "no such account" and "wrong code". Diverging here
+  // would turn this route into the user-enumeration oracle that sanitizeAuth
+  // exists to prevent.
+  if (!verifyRecoveryCode(user, recoveryCode)) {
+    throwPublicError("Recovery details do not match.", 401);
+  }
+  // No expiry check by design. Do not add an inviteExpiresAt-style guard here.
+  assertCanAuthenticate(user);
+
+  const now = new Date().toISOString();
+  Object.assign(user, {
+    updatedAt: now,
+    recoveryCodeHash: "",
+    recoveryRedeemedAt: now,
+    ...hashPassword(password),
+  });
+  // Every existing session for this account is dropped, and no new session is
+  // created. The caller signs in with the new password, which proves the reset
+  // worked rather than masking a failure behind a session granted anyway.
+  auth.sessions = auth.sessions.filter((session) => session.userId !== user.id);
+  appendAuditEvent(auth, "account.recovery_redeem", user, user, "Password reset with recovery code");
+  return { auth, user };
+}
+
+function verifyRecoveryCode(user, recoveryCode) {
+  // Hash unconditionally so a missing user and a wrong code cost the same.
+  const providedHash = hashToken(String(recoveryCode || ""));
+  const storedHash = clean(user?.recoveryCodeHash);
+  if (!storedHash || !recoveryCode) return false;
+  const expected = Buffer.from(storedHash, "hex");
+  const actual = Buffer.from(providedHash, "hex");
+  return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
+}
+
+function sanitizeRecovery(user, recoveryCode) {
+  return {
+    email: clean(user.email).toLowerCase(),
+    name: clean(user.name),
+    recoveryCode,
+    recoveryIssuedAt: clean(user.recoveryIssuedAt),
+  };
 }
 
 function resolveSession(auth, request) {
@@ -603,13 +713,16 @@ module.exports = {
   buildClearSessionCookie,
   buildSessionCookie,
   changePassword,
+  createRecoveryCode,
   createStaff,
   createStaffInvite,
   deleteStaff,
   normalizeAuthDocument,
   reactivateStaff,
+  redeemRecoveryCode,
   requireManager,
   requireSession,
+  resetUserPassword,
   resolveSession,
   sanitizeAuth,
   signIn,

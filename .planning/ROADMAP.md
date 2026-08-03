@@ -12,10 +12,6 @@
 
 ## Next
 
-- Phase 018: Account recovery and password reset.
-  Outcome: A locked-out user regains access — a solo manager redeems a one-time recovery code, a manager resets a colleague's password, and the owner has a documented last-resort procedure. No path reveals whether an account or workspace exists.
-  Status: Planned (`.planning/phases/018-account-recovery-password-reset/`). Raised by the 2026-08-03 smoke test, where a forgotten manager password made a workspace permanently unreachable: signup is blocked by the existing manager, `sanitizeAuth` correctly hides the account email from unauthenticated callers, and no reset flow exists. Email-based reset is deliberately out of scope — the codebase has no mail capability and the project constrains new dependencies.
-
 - Item: Custom domain, if wanted.
   Outcome: A branded domain replaces the `fashion-store-os.vercel.app` alias as the public target.
   Status: Not done. v1.0.0 launched on the existing Vercel alias, so `docs/cutover.md` Steps 3 and 5 were skipped. Those steps remain written and applicable whenever a domain is registered.
@@ -71,6 +67,10 @@
 - Phase 015: Observability, backup, and security operations.
   Outcome: `/api/readiness`, local readiness parity, operations runbook, and `npm.cmd run ops:security` were added.
   Status: Complete and deployed; owner-side backup/restore rehearsal pending.
+- Phase 018: Account recovery and password reset.
+  Outcome: One-time recovery codes issued at manager signup and re-issuable from Settings, manager-issued codes for colleagues, a redeem flow that grants no session, and a documented owner last-resort procedure.
+  Status: Implemented and verified locally on 2026-08-03; 37 unit assertions plus an HTTP round trip. Raised by the 2026-08-03 smoke test, where a forgotten manager password made a workspace permanently unreachable. Email-based reset stayed out of scope — no mail capability exists and the project constrains new dependencies. Outstanding: the production recovery round trip (`docs/production-smoke.md` Step 6) and a rehearsal of the owner last-resort procedure.
+
 - Phase 016: Pilot UAT and launch readiness.
   Outcome: Pilot UAT script, issue triage, and `npm.cmd run launch:check` were added.
   Status: Complete locally; real-store pilot execution waived on 2026-07-31.

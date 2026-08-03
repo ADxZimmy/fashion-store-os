@@ -6,13 +6,16 @@ const {
   buildClearSessionCookie,
   buildSessionCookie,
   changePassword,
+  createRecoveryCode,
   createStaff,
   createStaffInvite,
   deleteStaff,
   normalizeAuthDocument,
   reactivateStaff,
+  redeemRecoveryCode,
   requireManager,
   requireSession,
+  resetUserPassword,
   resolveSession,
   sanitizeAuth,
   signIn,
@@ -179,7 +182,9 @@ async function routeApi(request, response, url) {
         const result = signUpManager(auth, body);
         await writeJsonAtomic(AUTH_FILE, result.auth);
         response.setHeader("Set-Cookie", buildSessionCookie(result.token, request));
-        await sendSessionPayload(response, request, result.auth, 201, { session: result.session, user: result.user });
+        await sendSessionPayload(response, request, result.auth, 201, { session: result.session, user: result.user }, {
+          recovery: { recoveryCode: result.recoveryCode },
+        });
         return;
       }
 
@@ -196,6 +201,21 @@ async function routeApi(request, response, url) {
         await writeJsonAtomic(AUTH_FILE, result.auth);
         response.setHeader("Set-Cookie", buildSessionCookie(result.token, request));
         await sendSessionPayload(response, request, result.auth, 200, { session: result.session, user: result.user });
+        return;
+      }
+
+      // Unauthenticated by necessity, and deliberately issues no session.
+      if (action === "redeem-recovery-code") {
+        const result = redeemRecoveryCode(auth, body);
+        await writeJsonAtomic(AUTH_FILE, result.auth);
+        sendJson(response, 200, {
+          ok: true,
+          authenticated: false,
+          auth: sanitizeAuth(result.auth),
+          state: null,
+          stateExists: false,
+          passwordReset: true,
+        });
         return;
       }
 
@@ -233,6 +253,20 @@ async function routeApi(request, response, url) {
         const nextAuth = updateStaffAccess(auth, user, body);
         await writeJsonAtomic(AUTH_FILE, nextAuth);
         await sendSessionPayload(response, request, nextAuth);
+        return;
+      }
+
+      if (action === "create-recovery-code") {
+        const result = createRecoveryCode(auth, user);
+        await writeJsonAtomic(AUTH_FILE, result.auth);
+        await sendSessionPayload(response, request, result.auth, 201, null, { recovery: result.recovery });
+        return;
+      }
+
+      if (action === "reset-user-password") {
+        const result = resetUserPassword(auth, user, body);
+        await writeJsonAtomic(AUTH_FILE, result.auth);
+        await sendSessionPayload(response, request, result.auth, 201, null, { recovery: result.recovery });
         return;
       }
 

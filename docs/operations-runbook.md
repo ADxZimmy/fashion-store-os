@@ -94,6 +94,29 @@ Minimum production routine:
 
 Do not place database dumps, customer records, service keys, or recovery passwords in this repository or `.planning/`.
 
+## Account Recovery
+
+Users have two self-service paths before this becomes an owner problem:
+
+1. **Recovery code.** Issued at manager signup and re-issuable from Settings → Account security. Redeem it from the sign-in screen via "Forgot password". Single use, no expiry, and redeeming grants no session — the user signs in with the new password afterwards.
+2. **Manager-issued code.** Any manager can issue a recovery code for another account from Settings → Team access. The colleague sets their own password, so the manager never learns it.
+
+### Owner Last Resort
+
+Use only when a workspace has no manager who can sign in and no valid recovery code. This is not routine support — it requires the service-role key and direct Supabase access.
+
+Prerequisites: the workspace id (the `x-workspace-id` the browser holds under the `fashion-studio-os-workspace-v1` local-storage key) and the Supabase service-role key.
+
+1. In the Supabase SQL editor, locate the workspace's auth document by `workspace_id` and `document_key = 'auth'`.
+2. Identify the target user inside the `users` array of that document and confirm the email with the person requesting recovery, out of band.
+3. Clear that user's `recoveryCodeHash`, `recoveryIssuedAt`, and `recoveryRedeemedAt`, and clear their password record fields (`passwordHash`, `passwordSalt`) so the account has no usable password.
+4. Have the user sign in once through the app to confirm the account is now unusable, then issue them a fresh recovery code by restoring manager access — in practice, the simplest safe route is to recreate manager access on a workspace with no remaining manager.
+5. Record the date, operator, workspace id, and reason outside this repo.
+
+Do not place the service-role key, database dumps, customer records, recovery codes, or password hashes in this repository or `.planning/`.
+
+Note the boundary this procedure cannot cross: a workspace is reachable only through the browser's stored workspace id. If the user has cleared their browser storage, the workspace id is gone and there is no way to find their rows — the data stays in Supabase but is unreachable. Tell users not to clear site data.
+
 ## Secret Rotation
 
 Rotate secrets when a maintainer leaves, a token may have leaked, or a provider credential changes.

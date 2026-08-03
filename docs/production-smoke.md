@@ -76,7 +76,27 @@ Open the site in a **second, different browser** (not another tab, not another w
 
 **Pass:** the second browser shows a clean manager signup with none of the data from Step 4. Two devices must not share a workspace.
 
-### Step 6 — Cleanup (mandatory)
+### Step 6 — Recovery code round trip
+
+At signup (Step 3) the app shows a **recovery code once**, with a "save this now" warning. Copy it before dismissing.
+
+1. Sign out.
+2. On the sign-in screen choose **Forgot password**.
+3. Enter the test email, the saved recovery code, and a new password.
+
+**Pass:** the reset succeeds and returns you to the **sign-in screen** — not the dashboard. You are deliberately not signed in; redeeming grants no session.
+
+4. Sign in with the new password.
+
+**Pass:** sign-in succeeds. The old password no longer works.
+
+5. Try **Forgot password** again with the same code.
+
+**Pass:** it is rejected. Recovery codes are single use.
+
+**Fail signals:** landing on the dashboard straight after redeeming (a session was minted when it should not have been), the same code working twice, or the code being rejected immediately after signup.
+
+### Step 7 — Cleanup (mandatory)
 
 While still signed in as the manager from Step 3, delete the test workspace's data:
 
@@ -103,7 +123,8 @@ Step 2 fresh workspace:   PASS / FAIL
 Step 3 manager signup:    PASS / FAIL   <- the write path
 Step 4 persistence:       PASS / FAIL
 Step 5 isolation:         PASS / FAIL
-Step 6 cleanup:           PASS / FAIL
+Step 6 recovery code:     PASS / FAIL
+Step 7 cleanup:           PASS / FAIL
 Console errors:           none / details
 Notes:
 ```
@@ -117,6 +138,7 @@ Severity, per `docs/operations-runbook.md`:
 - **Step 3 or 4 fails** → sev-1. The production write path is broken. Users cannot sign up or save anything. Work the Incident Checklist in the operations runbook, check the Supabase project's grants and RLS policies against `supabase/migrations/`, and consider rolling back by promoting the previous known-good deployment in Vercel.
 - **Step 5 fails** (workspaces bleeding together) → sev-1. That is a tenant isolation defect and a data-exposure risk. Stop and escalate immediately.
 - **Step 2 fails** → sev-2 unless the app is entirely unreachable, in which case sev-1.
-- **Step 6 fails** → sev-3, but say so explicitly in the report, because it means test data is still sitting in production.
+- **Step 6 fails** → sev-2. Recovery is the only way back into an account with a lost password; if it does not work, a forgotten password means a lost workspace. If redeeming signs the user straight into the dashboard, treat it as sev-2 regardless of the reset succeeding — a session is being minted on a path that must not grant one.
+- **Step 7 fails** → sev-3, but say so explicitly in the report, because it means test data is still sitting in production.
 
 Fixes go to `main` as `ADxZimmy` and deploy on push — see `docs/release-lane.md`. There is no staging branch, so every fix is a production release.
