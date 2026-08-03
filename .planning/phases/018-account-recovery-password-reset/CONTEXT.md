@@ -49,6 +49,10 @@ Phase 017 is complete; v1.0.0 is live on `https://fashion-store-os.vercel.app` w
   Reason: It works today with no code change, so it closes the gap immediately. It also requires the service-role key and direct Supabase access, which is exactly why it must not become routine support.
 - Decision: Do not weaken `sanitizeAuth`.
   Reason: Revealing which email owns a workspace to unauthenticated callers would trade a recovery problem for a user-enumeration vulnerability.
+- Decision: Recovery codes do not expire. Owner decision, 2026-08-03.
+  Reason: A recovery code is only ever used long after it was issued — an expiring one would reliably be dead at the exact moment it is needed, which is the failure this phase exists to fix. Unlike `INVITE_TTL_SECONDS`, where a short window is the point, a TTL here defeats the purpose. The accepted trade is that a leaked code stays valid indefinitely; single-use redemption, manager re-issue, and audit events are the controls instead of time.
+- Decision: Redeeming a recovery code returns the user to the sign-in screen with their new password rather than signing them in. Owner decision, 2026-08-03.
+  Reason: Avoids minting a session on a path authenticated only by a code the user may have stored insecurely. It also keeps redemption and authentication as separate, independently auditable steps, and means the new password is exercised immediately — proving the reset actually worked rather than masking a failure behind a session that was granted anyway.
 
 ## Risks
 
