@@ -12,6 +12,10 @@
 
 ## Next
 
+- Phase 019: Multi-device workspace access.
+  Outcome: A manager opens their workspace on a second device, and an invited staff member accepts an invite from their own browser, via a short-lived human-typable workspace code that resolves the tenant and grants nothing else.
+  Status: Planned (`.planning/phases/019-multi-device-workspace-access/`). Raised on 2026-08-03 when an operator switched machines and could not reach their workspace — the only workaround was copying an internal `localStorage` value between browsers. Carries a live bug fix: staff invites cannot be accepted cross-device today, because `acceptStaffInvite` looks for the invited user inside the invitee's own empty workspace, so an invite only works on the browser that created it. Account-based tenancy is the conventional fix and is deliberately out of scope.
+
 - Item: Custom domain, if wanted.
   Outcome: A branded domain replaces the `fashion-store-os.vercel.app` alias as the public target.
   Status: Not done. v1.0.0 launched on the existing Vercel alias, so `docs/cutover.md` Steps 3 and 5 were skipped. Those steps remain written and applicable whenever a domain is registered.
