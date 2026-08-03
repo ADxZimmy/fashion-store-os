@@ -47,6 +47,14 @@ A join code has to be looked up by someone who does **not** yet know the workspa
   Reason: Keeps the security story simple and true — the code tells a browser which tenant to address, and the existing sign-in or invite flow still decides whether you get in. A code alone must never yield data.
 - Decision: Join codes expire, in deliberate contrast to Phase 018 recovery codes.
   Reason: The two have opposite usage shapes. A recovery code is used long after issue, so a TTL would defeat it. A join code is read off one screen and typed into another within minutes, so a short TTL costs nothing and sharply limits a leaked or brute-forced code. Do not copy Phase 018's no-expiry reasoning here.
+- Decision: `join`-kind codes expire after 30 minutes. Owner decision, 2026-08-03.
+  Reason: Long enough to walk to another device, short enough that a leaked or observed code is worthless by the time anyone could use it.
+- Decision: TTL is per `kind`, not global. `join` uses 30 minutes; `invite` keeps the existing `INVITE_TTL_SECONDS` of 3 days.
+  Reason: A single global TTL silently breaks invites. An invite is handed to someone to use over the following days — that is what the 3-day window is for — so a 30-minute workspace code inside the combined invite string would expire long before the invite it carries. The two kinds have different human timelines and must not share a constant.
+- Decision: One use per code. Owner decision, 2026-08-03.
+  Reason: Each device redemption is a deliberate act, so a fresh code per device is the honest model, and a spent code is worthless if it leaks afterwards. Onboarding several staff means issuing several codes, which is the correct cost.
+- Decision: An invite is one combined string carrying both the workspace code and the invite token. Owner decision, 2026-08-03.
+  Reason: A manager hands one value to one person. Two fields invite transcription mistakes and a support conversation about which is which. Split on a separator outside the base64url alphabet — `.` — since `-` and `_` both occur in `randomToken` output.
 - Decision: Codes are short and human-typable, from an alphabet excluding visually ambiguous characters.
   Reason: The real use is someone reading a code off a phone and typing it on a laptop. A base64url token is fine to paste and miserable to transcribe. Shortness is paid for with the TTL, limited uses, and rate limiting rather than with entropy alone.
 - Decision: Store only a hash of the code, and audit issue and redemption.
