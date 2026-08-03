@@ -3181,6 +3181,15 @@ async function handleSignUp(form) {
     const result = await runServerAuthAction("signup", { name, email, password, confirmPassword }, {
       successMessage: "Manager access created.",
       nextView: "dashboard",
+      // Signup is refused when this workspace already has a manager. Leaving the
+      // user on the signup tab strands them: "Forgot password" only exists on
+      // the sign-in tab, so the recovery route is invisible from here.
+      onError: (error) => {
+        if (/already exists/i.test(error?.message || "")) {
+          authMode = "signin";
+          render();
+        }
+      },
     });
     // Shown once and never stored. Without it, a forgotten password would make
     // this workspace unrecoverable.
@@ -3201,7 +3210,7 @@ async function handleSignUp(form) {
   }
   if (auth.users.some((user) => user.role === "manager")) {
     authMode = "signin";
-    showToast("Manager access already exists. Sign in or add staff from Settings.");
+    showToast("Manager access already exists. Sign in, or use Forgot password if you have a recovery code.");
     render();
     return;
   }
@@ -5219,6 +5228,7 @@ async function runServerAuthAction(action, payload = {}, options = {}) {
   } catch (error) {
     console.warn("Server auth action failed.", error);
     showToast(error.message || "Auth request failed.");
+    if (typeof options.onError === "function") options.onError(error);
     return null;
   }
 }

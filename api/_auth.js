@@ -149,7 +149,7 @@ function signUpManager(auth, payload = {}) {
   assertPassword(password, confirmPassword);
 
   if (auth.users.some((user) => user.role === "manager")) {
-    throwPublicError("Manager access already exists. Sign in or add staff from Settings.", 409);
+    throwPublicError("Manager access already exists. Sign in, or use Forgot password if you have a recovery code.", 409);
   }
   if (auth.users.some((user) => user.email === email)) {
     throwPublicError("An account already exists for that email.", 409);
