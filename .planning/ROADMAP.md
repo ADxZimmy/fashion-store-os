@@ -12,6 +12,10 @@
 
 ## Next
 
+- Phase 018: Account recovery and password reset.
+  Outcome: A locked-out user regains access — a solo manager redeems a one-time recovery code, a manager resets a colleague's password, and the owner has a documented last-resort procedure. No path reveals whether an account or workspace exists.
+  Status: Planned (`.planning/phases/018-account-recovery-password-reset/`). Raised by the 2026-08-03 smoke test, where a forgotten manager password made a workspace permanently unreachable: signup is blocked by the existing manager, `sanitizeAuth` correctly hides the account email from unauthenticated callers, and no reset flow exists. Email-based reset is deliberately out of scope — the codebase has no mail capability and the project constrains new dependencies.
+
 - Item: Custom domain, if wanted.
   Outcome: A branded domain replaces the `fashion-store-os.vercel.app` alias as the public target.
   Status: Not done. v1.0.0 launched on the existing Vercel alias, so `docs/cutover.md` Steps 3 and 5 were skipped. Those steps remain written and applicable whenever a domain is registered.

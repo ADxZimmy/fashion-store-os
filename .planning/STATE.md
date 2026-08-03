@@ -95,7 +95,8 @@ The repo is single-branch: `main` is the working, default, and production branch
 ## In Progress
 
 - Item: Phase 017 post-launch watch window (14 days from 2026-08-03), per the Post-Launch Support section of `docs/operations-runbook.md`.
-- Item: Production write-path verification via the `docs/cutover.md` Step 6 browser smoke set (manager signup → business setup → refresh → persistence; second browser for workspace isolation). Owner-side.
+- Item: Production write-path verification via the `docs/cutover.md` Step 6 browser smoke set (manager signup → business setup → refresh → persistence; second browser for workspace isolation). Owner-side. The first attempt on 2026-08-03 was blocked by the account lockout below and has not been completed.
+- Item: Phase 018 (account recovery and password reset) is planned but not started; see `.planning/phases/018-account-recovery-password-reset/`.
 
 ## Blocked
 
@@ -299,3 +300,7 @@ Owner (`ADxZimmy`): run the `docs/cutover.md` Step 6 browser smoke against `http
 - Command/check: Phase 017 cutover Step 6 API verification
   Result: Passed on 2026-08-03; `/api/bootstrap` on an isolated workspace returned a clean empty state with `authenticated: false`. `/api/keepalive` returned 401 without a bearer token, which is correct with `CRON_SECRET` set and is not a storage signal.
   Note: Write path not covered. The Step 6 browser smoke (manager signup through persistence) is owner-side and outstanding.
+- Command/check: Phase 017 cutover Step 6 browser smoke, first attempt
+  Result: Blocked on 2026-08-03. Signup returned "Manager access already exists" because the operator's browser was bound via `localStorage` (`fashion-studio-os-workspace-v1`) to a workspace that already had a manager, and the credentials were unknown. Confirmed not a tenancy defect: `/api/bootstrap` with no `x-workspace-id` header showed the `default` workspace empty (`authExists: false`, 0 users), and `src/app.js:170` correctly generates and persists a per-device id.
+  Finding: the workspace was unrecoverable. `sanitizeAuth` blanks `name`/`email` for unauthenticated callers (`api/_auth.js:98-104`, correct — it prevents user enumeration), and no password reset flow exists anywhere in the codebase. A forgotten manager password therefore destroys access to a workspace permanently. Raised as Phase 018.
+  Workaround: cleared the browser's workspace and app keys to start a fresh workspace. This orphans the old workspace's Supabase rows with no UI path to reach or delete them; acceptable here because it held only test data.
