@@ -94,11 +94,12 @@ Expected: health `ok: true` with `storage: "supabase"`.
 
 Do not curl `/api/keepalive` as a liveness check once `CRON_SECRET` is set — it returns `401` to any caller without the bearer token, including you. That is correct behavior, not an outage. Keepalive's 200/503 signal is observable only through **Vercel → Settings → Cron Jobs**, which is where a failed run appears.
 
-Then run the browser smoke set from `docs/pilot-uat.md` against the live domain, at minimum:
+Then run the browser smoke set. **Full procedure: `docs/production-smoke.md`** — self-contained, safe to hand to an operator or coworking agent, and it includes mandatory cleanup. In summary:
 
-- Scenario 1 (workspace setup): manager signup → business setup → refresh → workspace persists.
-- Confirm a second browser gets its own isolated workspace.
-- Confirm no old brand name appears anywhere in runtime UI.
+- Fresh incognito workspace loads to manager signup with no leftover data.
+- Manager signup → business setup → refresh → the workspace persists.
+- A second browser gets its own isolated workspace.
+- Delete the test workspace data when done.
 
 This is the first real exercise of the production **write** path since the Supabase restore. Reads were verified on 2026-07-31; writes were not.
 
