@@ -100,15 +100,20 @@ The Git-connected project now has the required Vercel production env vars for Su
 
 Procedure: `docs/cutover.md`. Post-launch support: the Post-Launch Support section of `docs/operations-runbook.md`.
 
-Fill these in at cutover:
+v1.0.0 released 2026-08-03:
 
 ```text
-Cutover date: PENDING
-Deployed commit: PENDING
-Release tag: PENDING (annotated, v1.0.0-style, from the deployed commit)
-Public domain: PENDING
-/api/health on final domain: PENDING
-Watch window start / end: PENDING
+Cutover date: 2026-08-03
+Deployed commit: 8b5943e (confirmed Ready in Vercel before tagging)
+Release tag: v1.0.0 (annotated 7420d1c -> 8b5943e)
+Public target: https://fashion-store-os.vercel.app
+  No custom domain; no DNS change. The alias was already serving, so
+  cutover Steps 3 and 5 were skipped and there is no DNS rollback lever.
+  Rollback = promote the previous known-good Vercel deployment.
+/api/health on final target: PASS (ok:true, storage:"supabase")
+/api/readiness: PASS (6/6)
+Write path: NOT VERIFIED - cutover Step 6 browser smoke outstanding
+Watch window: 2026-08-03 to 2026-08-17
 ```
 
 Availability note: the Supabase project paused after ~31 days idle and production returned `storage: "supabase-unreachable"` from roughly 2026-06-29 until it was restored on 2026-07-31. A daily Vercel Cron on `/api/keepalive` now issues a real query to prevent a repeat idle pause. `CRON_SECRET` is not yet set, and cron registration is unconfirmed — both are owner-side.

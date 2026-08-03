@@ -1,10 +1,12 @@
 # State
 
-Last updated: 2026-07-31
+Last updated: 2026-08-03
 
 ## Current Focus
 
-Phases 001-016 are implemented and Phase 017 is repo-side complete: `docs/cutover.md` holds the ordered cutover checklist, and `docs/operations-runbook.md` holds the post-launch watch window, issue intake, and triage. The critical path is now owner-only execution — confirm the Ready deployment, push the annotated `v1.0.0` tag, add the Vercel domain, pass the `/api/health` gate, then point DNS.
+Phase 017 cutover executed on 2026-08-03. `v1.0.0` is tagged (annotated `7420d1c` → commit `8b5943e`, the commit confirmed Ready in Vercel), the `/api/health` gate passed, and the public target is the existing `https://fashion-store-os.vercel.app` alias. No custom domain was registered and no DNS was changed, so Steps 3 and 5 of `docs/cutover.md` were not applicable — the alias was already serving, meaning there was no cutover moment and no DNS rollback lever. Rollback is Vercel deployment promotion only.
+
+The 14-day watch window is open. The remaining unverified item is the production write path: reads and both health endpoints pass, but no manager signup has been completed against live Supabase since the restore. `docs/cutover.md` Step 6 browser smoke covers it and is owner-side.
 
 Real-store pilot UAT was waived by owner decision on 2026-07-31 rather than executed. Its scenarios are reused as the post-cutover smoke set. The production write path is therefore unvalidated by a real operator.
 
@@ -92,13 +94,13 @@ The repo is single-branch: `main` is the working, default, and production branch
 
 ## In Progress
 
-- Item: Phase 017 owner-side cutover execution (`docs/cutover.md` steps 1-7).
+- Item: Phase 017 post-launch watch window (14 days from 2026-08-03), per the Post-Launch Support section of `docs/operations-runbook.md`.
+- Item: Production write-path verification via the `docs/cutover.md` Step 6 browser smoke set (manager signup → business setup → refresh → persistence; second browser for workspace isolation). Owner-side.
 
 ## Blocked
 
 - Collaborator-authored Vercel production deploys are blocked with `TEAM_ACCESS_REQUIRED` because commit author `NnazimuzoO` / Vercel user `nnazimuzoo` does not have contributing access to `sanuske2-2147s-projects/fashion-store-os`. The attempted invite to `nnazimuzoo@nitechsoftware.com.ng` failed because Vercel Hobby teams do not permit team members.
-- Public custom-domain cutover requires owner domain/DNS actions and cannot be executed from a collaborator session.
-- `CRON_SECRET` is unset and `/api/keepalive` cron registration is unconfirmed; both need the owner Vercel account.
+- `/api/keepalive` cron registration in Vercel → Settings → Cron Jobs is still unconfirmed from this session; the available CLI authenticates as `nnazimuzoo`, which has no access to the `sanuske2-2147s-projects` scope. `CRON_SECRET` enforcement was confirmed live on 2026-08-02 (401 without a bearer token), but a successful scheduled firing has not been observed.
 
 ## Waived
 
@@ -106,7 +108,7 @@ The repo is single-branch: `main` is the working, default, and production branch
 
 ## Next Action
 
-Owner (`ADxZimmy`): work `docs/cutover.md` steps 1-7 — confirm the Ready deployment, push the annotated `v1.0.0` tag, add the Vercel domain, pass the `/api/health` gate, point DNS, verify on the final domain, and open the watch window. Set `CRON_SECRET` and confirm cron registration while in the Vercel dashboard.
+Owner (`ADxZimmy`): run the `docs/cutover.md` Step 6 browser smoke against `https://fashion-store-os.vercel.app` — manager signup, business setup, refresh for persistence, and a second browser for workspace isolation. This is the first exercise of the production write path since the Supabase restore. Then confirm the `/api/keepalive` cron shows a successful run under Vercel → Settings → Cron Jobs, and work the watch-window cadence for 14 days.
 
 ## Verification Snapshot
 
@@ -286,3 +288,14 @@ Owner (`ADxZimmy`): work `docs/cutover.md` steps 1-7 — confirm the Ready deplo
   Note: Read path only. The production write path was not exercised after the restore; `docs/cutover.md` Step 6 covers it post-cutover.
 - Command/check: `npm.cmd run launch:check` and `npm.cmd run release:preflight` for Phase 017 repo-side
   Result: Passed on 2026-07-31; syntax/UX/security/build green, clean worktree, owner-authored latest commit.
+- Command/check: `CRON_SECRET` enforcement on the deployed `/api/keepalive`
+  Result: Passed on 2026-08-02; returned 401 with no auth header and 401 with a wrong bearer, where it had returned 200 before. Confirms the secret is both set and picked up by a redeploy, since Vercel env changes do not apply to existing deployments. `/api/health` stayed public and green.
+- Command/check: Phase 017 cutover Step 0 gates
+  Result: Passed on 2026-08-03; `launch:check` (syntax/UX/security/build) and `release:preflight` (clean worktree, expected repo, owner-authored) all green.
+- Command/check: Annotated release tag
+  Result: Passed on 2026-08-03; `v1.0.0` (`7420d1c`) points at `8b5943e`, tagger `ADxZimmy`, pushed to GitHub. The owner confirmed the Vercel Ready deployment was built from `8b5943e` before tagging.
+- Command/check: Phase 017 cutover Step 4 health gate on `https://fashion-store-os.vercel.app`
+  Result: Passed on 2026-08-03; `/api/health` returned `ok: true`, `storage: "supabase"`, and `/api/readiness` returned all 6 checks green.
+- Command/check: Phase 017 cutover Step 6 API verification
+  Result: Passed on 2026-08-03; `/api/bootstrap` on an isolated workspace returned a clean empty state with `authenticated: false`. `/api/keepalive` returned 401 without a bearer token, which is correct with `CRON_SECRET` set and is not a storage signal.
+  Note: Write path not covered. The Step 6 browser smoke (manager signup through persistence) is owner-side and outstanding.

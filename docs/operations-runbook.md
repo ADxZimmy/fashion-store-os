@@ -139,10 +139,11 @@ Run for **14 days** after cutover. The daily keepalive cron does the liveness po
 ```powershell
 Invoke-RestMethod https://YOUR-DOMAIN/api/health
 Invoke-RestMethod https://YOUR-DOMAIN/api/readiness
-Invoke-RestMethod https://YOUR-DOMAIN/api/keepalive
 ```
 
 A failed `/api/keepalive` cron run is the earliest reliable outage signal available — it is the only check that goes red on unreachable storage without a human looking. Do not dismiss it as a cron glitch.
+
+Read that signal from **Vercel → Settings → Cron Jobs**, not by curling the route. With `CRON_SECRET` set (done 2026-08-02), `/api/keepalive` returns `401` to every caller without the bearer token, so a manual request tells you nothing about storage either way.
 
 Two known blind spots in this setup:
 

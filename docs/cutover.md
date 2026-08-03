@@ -56,9 +56,11 @@ The tag is the rollback anchor: it maps one Git commit to one known-good Vercel 
 
 ## Step 3 — Add the custom domain [OWNER]
 
-Vercel → project → Settings → Domains → Add. Vercel will display the DNS records the registrar needs.
+**Not applicable to the v1.0.0 release.** The public target is `https://fashion-store-os.vercel.app`, the Vercel alias that was already serving, so there is no domain to add and no DNS to change. Steps 3 and 5 are skipped; Step 4 still runs.
 
-**Record the values, but do not change DNS yet.** Adding the domain in Vercel is reversible; repointing DNS at a broken target is what causes user-visible downtime.
+Consequence for rollback: there is no DNS lever. Because the launch target is the same alias that already serves production, rollback is **only** promoting the previous known-good deployment in Vercel. See Rollback below.
+
+If a custom domain is added later, this step applies as written: Vercel → project → Settings → Domains → Add, which displays the DNS records the registrar needs. **Record the values, but do not change DNS yet.** Adding the domain in Vercel is reversible; repointing DNS at a broken target is what causes user-visible downtime.
 
 ## Step 4 — Health gate before DNS
 
@@ -75,7 +77,9 @@ Read `/api/health` for this decision, not `/api/readiness`. Readiness reports co
 
 ## Step 5 — Point DNS [OWNER]
 
-At the registrar, add exactly the records Vercel specified in Step 3. Then wait for propagation and for Vercel to issue the TLS certificate; the domain shows as valid in the Vercel dashboard when this completes.
+**Not applicable to the v1.0.0 release** — see Step 3.
+
+If a custom domain is added later: at the registrar, add exactly the records Vercel specified in Step 3. Then wait for propagation and for Vercel to issue the TLS certificate; the domain shows as valid in the Vercel dashboard when this completes.
 
 ## Step 6 — Verify on the final domain
 
@@ -84,10 +88,11 @@ Replace `YOUR-DOMAIN` with the live domain:
 ```powershell
 Invoke-RestMethod https://YOUR-DOMAIN/api/health
 Invoke-RestMethod https://YOUR-DOMAIN/api/readiness
-Invoke-RestMethod https://YOUR-DOMAIN/api/keepalive
 ```
 
-Expected: health `ok: true` with `storage: "supabase"`; keepalive HTTP 200. A keepalive `503` means production storage is unreachable — treat it as a failed cutover and roll back.
+Expected: health `ok: true` with `storage: "supabase"`.
+
+Do not curl `/api/keepalive` as a liveness check once `CRON_SECRET` is set — it returns `401` to any caller without the bearer token, including you. That is correct behavior, not an outage. Keepalive's 200/503 signal is observable only through **Vercel → Settings → Cron Jobs**, which is where a failed run appears.
 
 Then run the browser smoke set from `docs/pilot-uat.md` against the live domain, at minimum:
 
@@ -113,10 +118,13 @@ Fill this in at cutover and keep it in the repo:
 
 | Field | Value |
 | --- | --- |
-| Cutover date | _pending_ |
-| Deployed commit | _pending_ |
-| Release tag | _pending_ |
-| Public domain | _pending_ |
+| Cutover date | 2026-08-03 |
+| Deployed commit | `8b5943e` (confirmed Ready in Vercel before tagging) |
+| Release tag | `v1.0.0` — annotated `7420d1c`, points at `8b5943e` |
+| Public domain | `https://fashion-store-os.vercel.app` (existing Vercel alias; no custom domain, no DNS change) |
 | Operator | `ADxZimmy` |
-| `/api/health` on final domain | _pending_ |
+| `/api/health` on final domain | Passed 2026-08-03: `ok: true`, `storage: "supabase"` |
+| `/api/readiness` | Passed 2026-08-03: all 6 checks green |
+| Read path | Passed 2026-08-03: `/api/bootstrap` on an isolated workspace returned a clean empty state |
+| Write path | **Not verified.** Requires the browser smoke set in Step 6 |
 | Pilot UAT status | Waived 2026-07-31; post-cutover smoke only |

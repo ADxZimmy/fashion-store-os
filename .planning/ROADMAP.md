@@ -2,19 +2,23 @@
 
 ## Now
 
-- Phase 017: Production cutover and post-launch support.
-  Outcome: Custom domain, final env vars, release tag, handover docs, rollback plan, monitoring watch window, and post-launch issue process are in place.
-  Status: Repo-side complete on 2026-07-31 — `docs/cutover.md` authored, post-launch watch window and issue intake added to `docs/operations-runbook.md`, handover/roadmap/state updated. Remaining steps are owner-only: Ready-deployment confirmation, annotated release tag, Vercel domain, `/api/health` gate, then DNS.
+- Item: Post-launch watch window (14 days from 2026-08-03).
+  Outcome: Daily `/api/health` + `/api/readiness` checks, Vercel Cron Jobs and Runtime Log scans, and sev-1..4 triage per the Post-Launch Support section of `docs/operations-runbook.md`.
+  Status: Open. Exit criteria are no unresolved sev-1/sev-2 issues and 7 consecutive successful keepalive cron runs.
+
+- Item: Production write-path verification.
+  Outcome: `docs/cutover.md` Step 6 browser smoke — manager signup, business setup, refresh persistence, second-browser workspace isolation.
+  Status: Outstanding and owner-side. The first exercise of the write path since the Supabase restore; reads and health endpoints are verified, writes are not.
 
 ## Next
 
-- Item: Owner-side cutover execution.
-  Outcome: `ADxZimmy` works `docs/cutover.md` steps 1-7, ending with a live public domain and an open watch window.
-  Status: Pending owner execution. Also pending owner-side: set `CRON_SECRET`, confirm the `/api/keepalive` cron is registered.
+- Item: Custom domain, if wanted.
+  Outcome: A branded domain replaces the `fashion-store-os.vercel.app` alias as the public target.
+  Status: Not done. v1.0.0 launched on the existing Vercel alias, so `docs/cutover.md` Steps 3 and 5 were skipped. Those steps remain written and applicable whenever a domain is registered.
 
-- Item: Real-store pilot UAT.
-  Outcome: A live store operator completes `docs/pilot-uat.md` and records issues.
-  Status: **Waived by owner decision on 2026-07-31** to proceed directly to cutover. Not executed. The scenarios are reused as the post-cutover smoke set in `docs/cutover.md` Step 6, which means they run after the domain is live rather than gating it. The production write path remains unvalidated by a real operator.
+- Item: Vercel ownership decision.
+  Outcome: Collaborator-authored commits can deploy without owner intervention.
+  Status: Open. `TEAM_ACCESS_REQUIRED` still blocks non-owner deploys on the Hobby plan, so emergency fixes require `ADxZimmy`.
 
 ## Done
 
@@ -69,6 +73,10 @@
 
 ## Later
 
-- Item: Post-pilot enhancements and public launch follow-up.
-  Outcome: Incorporate pilot feedback before final public cutover.
-  Status: Planned after Phase 017.
+- Item: Post-launch enhancements.
+  Outcome: Incorporate issues surfaced by the watch window and by real usage.
+  Status: Planned. Originally scoped as "post-pilot enhancements" fed by pilot feedback; since pilot UAT was waived on 2026-07-31, the input is now watch-window findings and operator reports instead.
+
+- Item: Alerting.
+  Outcome: An outage notifies someone instead of waiting to be noticed.
+  Status: Not started. The keepalive cron records failures in the Vercel dashboard but pages nobody — this is the gap that let the 2026-07-30 outage run unnoticed for a month.

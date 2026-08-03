@@ -1,6 +1,6 @@
 # Verification
 
-Status: Repo-side complete on 2026-07-31 (plan steps 2-5). Owner-side cutover (steps 6-8) not yet executed. Record owner results here as steps complete.
+Status: Cutover executed 2026-08-03. v1.0.0 tagged and the health gate passed against `https://fashion-store-os.vercel.app`. Steps 3 and 5 (custom domain, DNS) were not applicable — the public target is the alias that was already serving. Outstanding: the Step 6 browser smoke covering the production write path, and confirmation of a successful keepalive cron run.
 
 ## Automated Checks
 
@@ -25,11 +25,16 @@ Status: Repo-side complete on 2026-07-31 (plan steps 2-5). Owner-side cutover (s
 - Check: Production **write** path validated against live Supabase.
   Result: **Not verified.** Reads were confirmed on 2026-07-31; no write round-trip was run after the restore. Covered by `docs/cutover.md` Step 6 (post-cutover), not before it.
 - Check: Annotated release tag points at the deployed commit.
-  Result: Pending owner action.
-- Check: Live domain serves the app and pilot smoke scenarios pass.
-  Result: Pending owner action.
-- Check: `/api/keepalive` cron registered in Vercel → Settings → Cron Jobs.
-  Result: Pending owner confirmation; the CLI available in the working session authenticates as `nnazimuzoo`, which has no access to the `sanuske2-2147s-projects` scope.
+  Result: Passed on 2026-08-03; `v1.0.0` (`7420d1c`) points at `8b5943e`, tagger `ADxZimmy`, pushed to GitHub. The owner confirmed the Vercel Ready deployment was built from `8b5943e` before the tag was created.
+- Check: `/api/health` and `/api/readiness` on the final public target.
+  Result: Passed on 2026-08-03 against `https://fashion-store-os.vercel.app`; health `ok: true` with `storage: "supabase"`, readiness 6/6.
+- Check: `CRON_SECRET` enforcement on `/api/keepalive`.
+  Result: Passed on 2026-08-02; 401 with no header and 401 with a wrong bearer, having returned 200 before. Confirms the value is live in the running build.
+  Notes: A consequence worth carrying — `/api/keepalive` can no longer be used as an external liveness probe, because it returns 401 to any caller without the token. Its 200/503 signal is visible only in the Vercel Cron Jobs tab. `docs/cutover.md` Step 6 and the runbook watch window were corrected accordingly.
+- Check: Live target serves the app and pilot smoke scenarios pass.
+  Result: **Outstanding.** API-level checks pass; the browser smoke set (manager signup → business setup → refresh → persistence, plus second-browser isolation) has not been run.
+- Check: `/api/keepalive` cron registered in Vercel → Settings → Cron Jobs with a successful run.
+  Result: **Outstanding.** `CRON_SECRET` enforcement is confirmed, but no scheduled firing has been observed. The CLI available in the working session authenticates as `nnazimuzoo`, which has no access to the `sanuske2-2147s-projects` scope.
 
 ## Residual Risk
 
@@ -42,6 +47,9 @@ Status: Repo-side complete on 2026-07-31 (plan steps 2-5). Owner-side cutover (s
   Mitigation: `docs/cutover.md` Step 6 reuses the pilot scenarios as a post-cutover smoke set. This detects rather than prevents, because it runs after the domain is live.
   Owner: ADxZimmy.
 - Risk: Collaborator-authored emergency deploys remain blocked (`TEAM_ACCESS_REQUIRED`) until the Vercel plan/ownership decision is made.
+  Owner: ADxZimmy.
+- Risk: v1.0.0 launched on the `fashion-store-os.vercel.app` alias rather than a custom domain, so there is no DNS lever to pull in an incident.
+  Mitigation: rollback is Vercel deployment promotion only, as documented in `docs/cutover.md`. Registering a domain later restores the DNS option and re-enables cutover Steps 3 and 5.
   Owner: ADxZimmy.
 - Risk: `/api/readiness` reports configuration, not connectivity, and returned `ok: true` throughout the outage.
   Mitigation: documented in `docs/operations-runbook.md` and `docs/cutover.md` Step 4 — read `/api/health` for liveness decisions.
