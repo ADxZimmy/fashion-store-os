@@ -35,10 +35,18 @@ module.exports = async function handler(request, response) {
         await store.setDocument("auth", normalized.auth);
       }
       const { user } = requireManager(normalized.auth, request);
-      // requireManager is what keeps a code from ever pointing at a workspace
-      // with no manager, so joining can never hand someone an unclaimed
-      // workspace that signup would then let them take over.
-      const issued = await issueWorkspaceCode(store.workspace, "join", user?.id);
+      // requireManager returns a null user for a workspace with no accounts --
+      // the bootstrap accommodation the other handlers depend on, since a brand
+      // new workspace has nobody to authenticate as yet. Issuing a code must not
+      // inherit it: without this guard an unauthenticated caller can mint a code
+      // for any empty workspace. Found in production on 2026-08-03, where a
+      // foreign key error happened to mask it.
+      if (!user || user.role !== "manager") {
+        const error = new Error("Only a manager can create a workspace code.");
+        error.statusCode = 401;
+        throw error;
+      }
+      const issued = await issueWorkspaceCode(store.workspace, "join", user.id);
       sendJson(response, 201, {
         ok: true,
         workspaceCode: issued.workspaceCode,

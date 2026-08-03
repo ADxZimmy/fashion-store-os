@@ -195,7 +195,14 @@ async function routeApi(request, response, url) {
     if (action === "create") {
       const { auth } = await readAuthDocument();
       const { user } = requireManager(auth, request);
-      const issued = await issueLocalWorkspaceCode("join", user?.id);
+      // See api/workspace-code.js: requireManager treats a workspace with no
+      // accounts as unlocked, so issuing needs its own guard.
+      if (!user || user.role !== "manager") {
+        const error = new Error("Only a manager can create a workspace code.");
+        error.statusCode = 401;
+        throw error;
+      }
+      const issued = await issueLocalWorkspaceCode("join", user.id);
       sendJson(response, 201, { ok: true, workspaceCode: issued.workspaceCode, expiresAt: issued.expiresAt });
       return;
     }

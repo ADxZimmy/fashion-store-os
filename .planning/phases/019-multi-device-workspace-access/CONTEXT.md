@@ -70,6 +70,7 @@ A join code has to be looked up by someone who does **not** yet know the workspa
   Mitigation: Hash at rest, constant-time compare, generic failure message, short TTL, limited uses, and rate limiting on the lookup endpoint. Redeeming a code grants no data and no session.
 - Risk: A workspace with no manager can be claimed by anyone holding its id, because signup is only refused when a manager already exists.
   Mitigation: Present in the current model too, but joining makes ids more mobile. Verify the behaviour explicitly and consider refusing signup on any workspace that was joined rather than created.
+  Note added 2026-08-03: the first implementation got this wrong. `requireManager` deliberately returns a null user for a workspace with no accounts, so the issuing handler let an unauthenticated caller mint a code for an empty workspace. Do not treat `requireManager` alone as proof that a manager exists — check the returned user. See VERIFICATION for the full account.
 - Risk: Adopting a workspace silently abandons the device's current one, orphaning its rows exactly as the 2026-08-03 workaround did.
   Mitigation: Warn before switching when the current workspace holds data, and surface the outgoing id so it can be recorded.
 - Risk: A partial implementation leaves invites broken in a new way.
