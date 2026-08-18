@@ -6,6 +6,8 @@ const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 const npmCli = process.env.npm_execpath || "";
 const checks = [
   ["JavaScript syntax", ["run", "check"]],
+  ["Identity plane unit suite", ["run", "test:identity"]],
+  ["Local-first boundary guards", ["run", "test:local-first"]],
   ["Mobile/accessibility UX audit", ["run", "ux:audit"]],
   ["Security hygiene audit", ["run", "ops:security"]],
   ["Production build", ["run", "build"]],

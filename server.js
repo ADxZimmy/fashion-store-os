@@ -1,44 +1,19 @@
-const http = require("http");
+﻿const http = require("http");
 const path = require("path");
 const fs = require("fs/promises");
-// Legacy document-auth imports serve only the routes not yet migrated in the
-// Phase 021 pivot (state/inbound/data/workspace-code). The identity routes --
-// bootstrap, session, auth -- run the row-based plane through
-// api/_identity_http.js, shared verbatim with the serverless functions.
-const {
-  normalizeAuthDocument,
-  requireManager,
-  requireSession,
-  resolveSession,
-  sanitizeAuth,
-} = require("./api/_auth");
+// Phase 021: api/_auth.js (the per-workspace auth document) has no consumer
+// here any more. Identity is row-based; the only legacy surface left is the
+// channel webhook's state document, which step 5 replaces with the inbox.
 const { sweepIdentity } = require("./api/_identity");
 const { handleIdentityGet, handleSessionAction } = require("./api/_identity_http");
 const { createLocalIdentityStore } = require("./api/_identity_local");
-const {
-  buildRecord: buildWorkspaceCodeRecord,
-  generateWorkspaceCode,
-  hashWorkspaceCode,
-  isUsable: isWorkspaceCodeUsable,
-  normalizeWorkspaceCode,
-  splitCombinedInvite,
-  throwCodeMismatch,
-} = require("./api/_workspace_codes");
-const { assertRedeemAllowed } = require("./api/_rate_limit");
 const { appendWebhookMessages } = require("./api/_channel_intake");
 const { normalizeWebhookPayload, requireWebhookSignatureConfig, verifyWebhookChallenge, verifyWebhookSignature } = require("./api/_channel_webhook");
-const { appendInboundMessage, normalizeChannelMessages } = require("./api/_inbound");
 
 const ROOT_DIR = __dirname;
 const DATA_DIR = path.join(ROOT_DIR, "data");
 const STATE_FILE = path.join(DATA_DIR, "state.json");
 const AUTH_FILE = path.join(DATA_DIR, "auth.json");
-// Local dev is single-workspace and file-backed, so codes live in a file rather
-// than the Supabase table. The security-critical logic -- hashing, expiry,
-// single use -- is shared with production via api/_workspace_codes.js; only the
-// persistence differs.
-const WORKSPACE_CODES_FILE = path.join(DATA_DIR, "workspace-codes.json");
-const LOCAL_WORKSPACE_ID = "local";
 const PORT = Number(process.env.PORT || 4179);
 const BODY_LIMIT = 1024 * 1024 * 5;
 // Row-based identity, file-backed: data/identity.json mirrors the Supabase
@@ -94,14 +69,14 @@ async function routeApi(request, response, url) {
     "/api/auth": "GET, OPTIONS",
     "/api/bootstrap": "GET, OPTIONS",
     "/api/channel-webhook": "GET, POST, OPTIONS",
-    "/api/data": "GET, DELETE, OPTIONS",
+    "/api/data": "OPTIONS",
     "/api/health": "GET, OPTIONS",
-    "/api/inbound": "GET, POST, OPTIONS",
+    "/api/inbound": "OPTIONS",
     "/api/keepalive": "GET, OPTIONS",
     "/api/readiness": "GET, OPTIONS",
     "/api/session": "POST, OPTIONS",
-    "/api/workspace-code": "POST, OPTIONS",
-    "/api/state": "GET, PUT, OPTIONS",
+    "/api/workspace-code": "OPTIONS",
+    "/api/state": "OPTIONS",
   };
 
   if (request.method === "OPTIONS" && optionsAllow[url.pathname]) {
@@ -167,35 +142,15 @@ async function routeApi(request, response, url) {
     return;
   }
 
-  if (url.pathname === "/api/workspace-code" && request.method === "POST") {
-    const body = (await readJsonBody(request)) || {};
-    const action = String(body.action || "").trim();
-
-    if (action === "redeem") {
-      assertRedeemAllowed(request);
-      const result = await redeemLocalWorkspaceCode(body.code, "join");
-      sendJson(response, 200, { ok: true, workspaceId: result.workspaceId });
-      return;
-    }
-
-    if (action === "create") {
-      const { auth } = await readAuthDocument();
-      const { user } = requireManager(auth, request);
-      // See api/workspace-code.js: requireManager treats a workspace with no
-      // accounts as unlocked, so issuing needs its own guard.
-      if (!user || user.role !== "manager") {
-        const error = new Error("Only a manager can create a workspace code.");
-        error.statusCode = 401;
-        throw error;
-      }
-      const issued = await issueLocalWorkspaceCode("join", user.id);
-      sendJson(response, 201, { ok: true, workspaceCode: issued.workspaceCode, expiresAt: issued.expiresAt });
-      return;
-    }
-
-    const error = new Error("Unknown workspace code action");
-    error.statusCode = 400;
-    throw error;
+  // Phase 021 Release A: retired endpoints answer 410 here exactly as they do
+  // in api/_gone.js, so local dev and production agree about what is gone.
+  if (["/api/state", "/api/inbound", "/api/data", "/api/workspace-code"].includes(url.pathname)) {
+    sendJson(response, 410, {
+      ok: false,
+      error: "Business data is stored on your device and is no longer synced to the server.",
+      retired: "Phase 021 moved business data onto the device. This endpoint no longer exists.",
+    });
+    return;
   }
 
   if (url.pathname === "/api/session" && request.method === "POST") {
@@ -263,70 +218,8 @@ async function routeApi(request, response, url) {
     return;
   }
 
-  if (request.method === "GET" && url.pathname === "/api/inbound") {
-    const { auth } = await readAuthDocument();
-    requireSession(auth, request);
-    const result = await readJsonWithExists(STATE_FILE);
-    sendJson(response, 200, {
-      messages: normalizeChannelMessages(result.value?.channelMessages),
-      exists: result.exists,
-    });
-    return;
-  }
-
-  if (request.method === "POST" && url.pathname === "/api/inbound") {
-    const { auth } = await readAuthDocument();
-    requireSession(auth, request);
-    const result = await readJsonWithExists(STATE_FILE);
-    const next = appendInboundMessage(result.value || {}, await readJsonBody(request));
-    await writeJsonAtomic(STATE_FILE, next.state);
-    sendJson(response, 201, { ok: true, message: next.message });
-    return;
-  }
-
-  if (request.method === "GET" && url.pathname === "/api/state") {
-    const { auth } = await readAuthDocument();
-    requireSession(auth, request);
-    const result = await readJsonWithExists(STATE_FILE);
-    sendJson(response, 200, { state: result.value, exists: result.exists });
-    return;
-  }
-
-  if (request.method === "PUT" && url.pathname === "/api/state") {
-    const { auth } = await readAuthDocument();
-    requireSession(auth, request);
-    const body = await readJsonBody(request);
-    await writeJsonAtomic(STATE_FILE, body);
-    sendJson(response, 200, { ok: true });
-    return;
-  }
-
   if (request.method === "GET" && url.pathname === "/api/auth") {
     await handleIdentityGet(identityDb, request, response);
-    return;
-  }
-
-  if (request.method === "GET" && url.pathname === "/api/data") {
-    const { auth } = await readAuthDocument();
-    const { user } = requireManager(auth, request);
-    const stateResult = await readJsonWithExists(STATE_FILE);
-    sendJson(response, 200, {
-      ok: true,
-      exportedAt: new Date().toISOString(),
-      storage: { storage: "json-file", workspace: "local", configured: true },
-      state: stateResult.value,
-      stateExists: stateResult.exists,
-      auth: sanitizeAuth(auth, user.id),
-      authExists: auth.users.length > 0,
-    });
-    return;
-  }
-
-  if (request.method === "DELETE" && url.pathname === "/api/data") {
-    const { auth } = await readAuthDocument();
-    requireManager(auth, request);
-    await Promise.all([removeIfExists(STATE_FILE), removeIfExists(AUTH_FILE)]);
-    sendJson(response, 200, { ok: true });
     return;
   }
 
@@ -394,55 +287,6 @@ async function writeJsonAtomic(filePath, value) {
   const tempPath = `${filePath}.tmp`;
   await fs.writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
   await fs.rename(tempPath, filePath);
-}
-
-// File-backed equivalents of the Supabase-backed helpers in
-// api/_workspace_codes.js. Same validation, same single-use and expiry rules;
-// only the storage differs.
-async function issueLocalWorkspaceCode(kind, createdByUserId) {
-  const workspaceCode = generateWorkspaceCode();
-  const record = buildWorkspaceCodeRecord(workspaceCode, LOCAL_WORKSPACE_ID, kind, createdByUserId);
-  const existing = await readJsonWithExists(WORKSPACE_CODES_FILE);
-  const rows = Array.isArray(existing.value) ? existing.value : [];
-  rows.push(record);
-  await writeJsonAtomic(WORKSPACE_CODES_FILE, rows);
-  return { workspaceCode, expiresAt: record.expires_at, kind };
-}
-
-async function redeemLocalWorkspaceCode(rawCode, kind) {
-  const normalized = normalizeWorkspaceCode(rawCode);
-  if (!normalized) throwCodeMismatch();
-  const codeHash = hashWorkspaceCode(normalized);
-  const existing = await readJsonWithExists(WORKSPACE_CODES_FILE);
-  const rows = Array.isArray(existing.value) ? existing.value : [];
-  const record = rows.find((row) => row.code_hash === codeHash && row.kind === kind);
-  if (!isWorkspaceCodeUsable(record)) throwCodeMismatch();
-  record.redeemed_at = new Date().toISOString();
-  await writeJsonAtomic(WORKSPACE_CODES_FILE, rows);
-  return { workspaceId: record.workspace_id, kind };
-}
-
-async function readAuthDocument() {
-  const result = await readJsonWithExists(AUTH_FILE);
-  const normalized = normalizeAuthDocument(result.value || {});
-  if (result.exists && normalized.changed) {
-    await writeJsonAtomic(AUTH_FILE, normalized.auth);
-  }
-  return {
-    auth: normalized.auth,
-    exists: result.exists,
-    changed: normalized.changed,
-  };
-}
-
-async function removeIfExists(filePath) {
-  try {
-    await fs.unlink(filePath);
-  } catch (error) {
-    if (error.code !== "ENOENT") {
-      throw error;
-    }
-  }
 }
 
 async function readJsonBody(request) {

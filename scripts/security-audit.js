@@ -21,10 +21,22 @@ for (const file of files) {
   }
 }
 
+// Phase 021 note: the old "Manager-gated data export" signal asserted that
+// api/data.js contained requireManager. That endpoint is retired -- export is
+// a local file download now -- so the signal was replaced rather than
+// deleted, by ones that assert the invariants the pivot actually depends on:
+// manager gating still exists on the identity plane, and no server write path
+// for business data has crept back in.
+const identitySource = fs.readFileSync(path.join(rootDir, "api/_identity.js"), "utf8");
+const stateSource = fs.readFileSync(path.join(rootDir, "api/state.js"), "utf8");
+
 const requiredSignals = [
   ["API body limit", fs.readFileSync(path.join(rootDir, "api/_response.js"), "utf8").includes("BODY_LIMIT")],
   ["Webhook signature-required mode", fs.readFileSync(path.join(rootDir, "api/channel-webhook.js"), "utf8").includes("CHANNEL_WEBHOOK_REQUIRE_SIGNATURE")],
-  ["Manager-gated data export", fs.readFileSync(path.join(rootDir, "api/data.js"), "utf8").includes("requireManager")],
+  ["Manager-gated identity actions", identitySource.includes("requireManager")],
+  ["Identity rate limiting is durable", identitySource.includes("consumeRateLimit")],
+  ["Retired state endpoint is gated", stateSource.includes("sendGone")],
+  ["No server-side business state writes", !stateSource.includes("setDocument")],
   ["Release owner lane mentions ADxZimmy", fs.readFileSync(path.join(rootDir, "scripts/release-preflight.js"), "utf8").includes("ADxZimmy")],
 ];
 

@@ -8,6 +8,9 @@ const publicFiles = [
   "index.html",
   "src/app.js",
   "src/styles.css",
+  // Offline app shell. Served from the root scope by the copy step below so
+  // it can control every route, not just /src.
+  "src/sw.js",
   "docs/IMG-20260528-WA0025.jpg",
   "docs/IMG-20260528-WA0028.jpg",
   "docs/IMG-20260528-WA0029.jpg",
@@ -23,7 +26,11 @@ async function copyPublicFile(relativePath) {
 async function build() {
   await fs.rm(distDir, { recursive: true, force: true });
   await Promise.all(publicFiles.map(copyPublicFile));
-  console.log(`Built ${publicFiles.length} public files into ${path.relative(rootDir, distDir)}.`);
+  // A service worker can only control paths at or below its own URL, so the
+  // shell worker has to be served from the root even though it is authored
+  // under src/.
+  await fs.copyFile(path.join(rootDir, "src/sw.js"), path.join(distDir, "sw.js"));
+  console.log(`Built ${publicFiles.length + 1} public files into ${path.relative(rootDir, distDir)}.`);
 }
 
 build().catch((error) => {

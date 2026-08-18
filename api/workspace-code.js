@@ -1,64 +1,9 @@
-const { normalizeAuthDocument, requireManager } = require("./_auth");
-const { handleError, handleOptions, readJsonBody, sendJson, sendMethodNotAllowed } = require("./_response");
-const { storeForRequest } = require("./_store");
-const { issueWorkspaceCode, redeemWorkspaceCode } = require("./_workspace_codes");
-const { assertRedeemAllowed } = require("./_rate_limit");
+// Retired by Phase 021. Workspace codes existed to move a device-bound
+// workspace id between browsers; accounts are global now, so signing in on
+// the second device replaces the whole mechanism. Deleted in Release B along
+// with the fashion_store_os_workspace_codes table.
+const { sendGone } = require("./_gone");
 
 module.exports = async function handler(request, response) {
-  const methods = ["POST", "OPTIONS"];
-  if (handleOptions(request, response, methods)) return;
-  if (request.method !== "POST") {
-    sendMethodNotAllowed(response, methods);
-    return;
-  }
-
-  try {
-    const body = (await readJsonBody(request)) || {};
-    const action = String(body.action || "").trim();
-
-    // Redeem is unauthenticated by necessity: the caller is on a new device and
-    // has no session for the workspace they are trying to reach. It returns a
-    // workspace id and nothing else -- reading any data still requires signing
-    // in afterwards.
-    if (action === "redeem") {
-      assertRedeemAllowed(request);
-      const result = await redeemWorkspaceCode(body.code, "join");
-      sendJson(response, 200, { ok: true, workspaceId: result.workspaceId });
-      return;
-    }
-
-    if (action === "create") {
-      const store = storeForRequest(request);
-      const authResult = await store.getDocument("auth");
-      const normalized = normalizeAuthDocument(authResult.value || {});
-      if (authResult.exists && normalized.changed) {
-        await store.setDocument("auth", normalized.auth);
-      }
-      const { user } = requireManager(normalized.auth, request);
-      // requireManager returns a null user for a workspace with no accounts --
-      // the bootstrap accommodation the other handlers depend on, since a brand
-      // new workspace has nobody to authenticate as yet. Issuing a code must not
-      // inherit it: without this guard an unauthenticated caller can mint a code
-      // for any empty workspace. Found in production on 2026-08-03, where a
-      // foreign key error happened to mask it.
-      if (!user || user.role !== "manager") {
-        const error = new Error("Only a manager can create a workspace code.");
-        error.statusCode = 401;
-        throw error;
-      }
-      const issued = await issueWorkspaceCode(store.workspace, "join", user.id);
-      sendJson(response, 201, {
-        ok: true,
-        workspaceCode: issued.workspaceCode,
-        expiresAt: issued.expiresAt,
-      });
-      return;
-    }
-
-    const error = new Error("Unknown workspace code action");
-    error.statusCode = 400;
-    throw error;
-  } catch (error) {
-    handleError(response, error);
-  }
+  sendGone(request, response, "Workspace codes are retired. Sign in with your email and password on the other device.");
 };

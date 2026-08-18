@@ -2,11 +2,20 @@
 const VIEW_KEY = "fashion-studio-os-view-v1";
 const AUTH_KEY = "fashion-studio-os-auth-v1";
 const WORKSPACE_KEY = "fashion-studio-os-workspace-v1";
+// Phase 021: the device's records belong to exactly one store. The tag lets
+// sign-in tell "this is my data" from "this is someone else's data on a
+// shared device", instead of silently overwriting either.
+const STORE_TAG_KEY = "fashion-studio-os-store-v1";
+// Last known identity, cached so a previously signed-in device can open with
+// the server unreachable. Contains no secrets: the session itself stays in the
+// HttpOnly cookie, and this cache alone can never authenticate to the server.
+const IDENTITY_CACHE_KEY = "fashion-studio-os-identity-v1";
+// How long an offline device keeps unlocking itself from that cache. The data
+// is already plaintext on the device, so this is not a confidentiality
+// control -- it bounds how long a lost device keeps presenting a working app.
+const OFFLINE_GRACE_MS = 1000 * 60 * 60 * 24 * 30;
 const API_BOOTSTRAP_PATH = "/api/bootstrap";
-const API_STATE_PATH = "/api/state";
 const API_SESSION_PATH = "/api/session";
-const API_DATA_PATH = "/api/data";
-const API_WORKSPACE_CODE_PATH = "/api/workspace-code";
 const MIN_PASSWORD_LENGTH = 8;
 const TEAM_LIMIT = 25;
 let deviceWorkspaceId = "";
@@ -119,56 +128,225 @@ let draftOrderStyleId = state.styles[0]?.id || "";
 let modalState = null;
 let mobileNavOpen = false;
 let toastTimer;
-let backendReady = false;
-let storageMode = "loading";
-let storageMessage = "Getting your workspace ready";
-let syncFailureAnnounced = false;
+// Phase 021 access model. Business data is always on the device; these only
+// decide whether the UI is unlocked, never whether the data survives.
+//   "unlocked" - a live server session, or a cached identity while offline
+//   "locked"   - the server answered and said no session. Data untouched.
+//   "mismatch" - signed in, but the device holds another store's records
+let accessMode = "loading";
+let offlineMode = false;
+let storeMismatch = null;
+let storageFailureAnnounced = false;
 let lastInviteResult = null;
 // Recovery codes are returned by the server exactly once. Hold the value only
 // long enough to show it, then clear it — it is never persisted client-side.
 let lastRecoveryResult = null;
 // Workspace join codes are returned once and are short-lived. Held only long
 // enough to display, never persisted.
-let lastWorkspaceCode = null;
 
 renderLoading();
 initializeApp();
 
 async function initializeApp() {
-  const snapshot = await loadBackendSnapshot();
+  registerServiceWorker();
 
-  if (snapshot) {
-    const localStateExists = Boolean(localStorage.getItem(STORAGE_KEY));
+  // The device's records are loaded first and are never conditional on what
+  // the server says. Before Phase 021 the server was the source of truth, so
+  // an unauthenticated answer replaced local state with an empty seed and
+  // deleted the cache -- which under local-first would destroy the only copy
+  // on a routine session expiry. Authentication now gates the UI, nothing
+  // else.
+  state = loadState();
 
-    // The server session (HttpOnly cookie) is the single source of truth for
-    // auth. A stale local session pointer must never keep the app "signed in".
-    const authenticated = Boolean(snapshot.authenticated);
-    state = snapshot.stateLocked || !authenticated
-      ? createSeedState()
-      : normalizeState(snapshot.state || loadState());
-    auth = normalizeAuth(snapshot.auth || loadAuth());
-    if (!authenticated) {
-      auth.sessionUserId = "";
-    }
-    if (snapshot.stateLocked || !authenticated) {
-      localStorage.removeItem(STORAGE_KEY);
+  const snapshot = await loadIdentitySnapshot();
+
+  if (snapshot.reachable && snapshot.identity) {
+    applyIdentity(snapshot.identity);
+    cacheIdentity(snapshot.identity);
+    reconcileStoreTag(snapshot.identity);
+  } else if (snapshot.reachable) {
+    // The server answered and there is no session: lock, keep the data.
+    accessMode = "locked";
+    auth = normalizeAuth();
+  } else {
+    // Unreachable. A device that was signed in keeps working; one that never
+    // signed in stays locked, because there is nothing to unlock it with.
+    const cached = readCachedIdentity();
+    offlineMode = true;
+    if (cached) {
+      applyIdentity(cached);
+      accessMode = "unlocked";
     } else {
-      persistLocalState();
-    }
-    persistLocalAuth();
-
-    if (authenticated && !snapshot.stateExists && localStateExists) {
-      void saveBackendData(API_STATE_PATH, state);
+      accessMode = "locked";
+      auth = normalizeAuth();
     }
   }
 
-  authMode = auth.users.length ? "signin" : "signup";
+  authMode = "signin";
   selectedClientId = state.clients[0]?.id || "";
   draftOrderStyleId = state.styles[0]?.id || "";
   if (isDevHost()) {
     window.loadStudioDemo = loadStudioDemo;
   }
   render();
+}
+
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) return;
+  if (window.location.protocol === "file:") return;
+  // Failure is non-fatal: without the shell the app still works online, it
+  // just cannot be reopened offline.
+  navigator.serviceWorker.register("/sw.js").catch((error) => {
+    console.warn("Offline shell unavailable.", error);
+  });
+}
+
+// Identity only. This never returns business data -- there is none on the
+// server to return.
+async function loadIdentitySnapshot() {
+  if (window.location.protocol === "file:") {
+    return { reachable: false, identity: null };
+  }
+  try {
+    const response = await fetch(API_BOOTSTRAP_PATH, {
+      headers: apiHeaders(),
+      credentials: "same-origin",
+    });
+    if (!response.ok) {
+      // A 5xx is the server failing, not the server refusing. Treated as
+      // unreachable so a bad deploy locks nobody out of their own records.
+      if (response.status >= 500) return { reachable: false, identity: null };
+      throw new Error(`Identity check failed with ${response.status}`);
+    }
+    const payload = await response.json();
+    return { reachable: true, identity: payload.authenticated ? payload.identity : null };
+  } catch (error) {
+    console.warn("Identity service unreachable; opening from this device.", error);
+    return { reachable: false, identity: null };
+  }
+}
+
+// The server's row-based identity payload rendered into the shape the rest of
+// the UI already consumes. Pending invites appear as members with status
+// "invited" so the team panel keeps working without a rewrite.
+function authFromIdentity(identity) {
+  if (!identity) return normalizeAuth();
+  const members = (identity.members || []).map((member) => ({
+    id: member.accountId,
+    name: member.name,
+    email: member.email,
+    role: member.role,
+    status: member.status,
+    access: member.allowedViews,
+    createdAt: member.createdAt,
+    updatedAt: member.updatedAt,
+    suspendedAt: member.suspendedAt,
+    lastSignInAt: member.lastSignInAt,
+    recoveryIssuedAt: member.recoveryIssuedAt,
+    recoveryRedeemedAt: member.recoveryRedeemedAt,
+  }));
+  const invites = (identity.invites || []).map((invite) => ({
+    id: invite.id,
+    inviteId: invite.id,
+    name: invite.name,
+    email: invite.email,
+    role: invite.role,
+    status: "invited",
+    access: invite.allowedViews,
+    createdAt: invite.createdAt,
+    inviteExpiresAt: invite.inviteExpiresAt,
+  }));
+  return normalizeAuth({
+    users: [...members, ...invites],
+    auditEvents: identity.auditEvents,
+    sessionUserId: identity.account?.id || "",
+    serverManaged: true,
+  });
+}
+
+function applyIdentity(identity) {
+  auth = authFromIdentity(identity);
+  accessMode = "unlocked";
+  storeMismatch = null;
+}
+
+function cacheIdentity(identity) {
+  try {
+    localStorage.setItem(IDENTITY_CACHE_KEY, JSON.stringify({ identity, cachedAt: Date.now() }));
+  } catch (error) {
+    console.warn("Could not cache identity for offline use.", error);
+  }
+}
+
+function readCachedIdentity() {
+  try {
+    const raw = localStorage.getItem(IDENTITY_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.identity?.account?.id) return null;
+    if (!Number.isFinite(parsed.cachedAt) || Date.now() - parsed.cachedAt > OFFLINE_GRACE_MS) return null;
+    return parsed.identity;
+  } catch (error) {
+    return null;
+  }
+}
+
+function clearCachedIdentity() {
+  try {
+    localStorage.removeItem(IDENTITY_CACHE_KEY);
+  } catch (error) {
+    // nothing to clear
+  }
+}
+
+function localStoreTag() {
+  try {
+    return localStorage.getItem(STORE_TAG_KEY) || "";
+  } catch (error) {
+    return "";
+  }
+}
+
+function hasLocalBusinessData() {
+  try {
+    return Boolean(localStorage.getItem(STORAGE_KEY));
+  } catch (error) {
+    return false;
+  }
+}
+
+// Decide what the signed-in account may do with the records already on this
+// device. Never wipes: an unrecognised pairing asks rather than assumes.
+function reconcileStoreTag(identity) {
+  const storeId = identity?.store?.id || "";
+  if (!storeId) return;
+  const tag = localStoreTag();
+
+  if (!tag) {
+    // Untagged data predates the tag or belongs to a fresh device. Claim it
+    // for this store -- the alternative is stranding a manager's own records
+    // behind a mismatch prompt on first sign-in after the upgrade.
+    try {
+      localStorage.setItem(STORE_TAG_KEY, storeId);
+    } catch (error) {
+      console.warn("Could not tag local data with its store.", error);
+    }
+    return;
+  }
+
+  if (tag !== storeId && hasLocalBusinessData()) {
+    accessMode = "mismatch";
+    storeMismatch = { incomingStoreId: storeId, existingStoreId: tag };
+    return;
+  }
+
+  if (tag !== storeId) {
+    try {
+      localStorage.setItem(STORE_TAG_KEY, storeId);
+    } catch (error) {
+      console.warn("Could not tag local data with its store.", error);
+    }
+  }
 }
 
 // Per-device tenancy: each browser keeps its own random workspace id and sends
@@ -209,39 +387,14 @@ function generateWorkspaceId() {
   return `ws-${random.slice(0, 40)}`;
 }
 
+// Phase 021: no surviving endpoint reads x-workspace-id. Tenancy is the
+// account's store, resolved server-side from the session, not a device id the
+// client asserts. The header is gone rather than sent-and-ignored so nothing
+// starts trusting it again.
 function apiHeaders(extra = {}) {
-  return { Accept: "application/json", "x-workspace-id": getWorkspaceId(), ...extra };
+  return { Accept: "application/json", ...extra };
 }
 
-async function loadBackendSnapshot() {
-  if (window.location.protocol === "file:") {
-    storageMode = "local";
-    storageMessage = "Saved on this device";
-    return null;
-  }
-
-  try {
-    const response = await fetch(API_BOOTSTRAP_PATH, {
-      headers: apiHeaders(),
-      credentials: "same-origin",
-    });
-    if (!response.ok) {
-      throw new Error(`Backend responded with ${response.status}`);
-    }
-    const snapshot = await response.json();
-    backendReady = true;
-    storageMode = "server";
-    storageMessage = "All changes saved";
-    syncFailureAnnounced = false;
-    return snapshot;
-  } catch (error) {
-    console.warn("Fashion Store OS backend unavailable. Using local browser storage.", error);
-    backendReady = false;
-    storageMode = "local";
-    storageMessage = "Saved on this device";
-    return null;
-  }
-}
 
 function loadState() {
   try {
@@ -274,9 +427,15 @@ function normalizeAuth(nextAuth = {}) {
           id: user.id || uid("user"),
           name: clean(user.name),
           email: clean(user.email).toLowerCase(),
-          password: String(user.password || ""),
+          // No password field. The pre-pivot build kept plaintext passwords
+          // here for its local auth path; because this rebuilds from an
+          // explicit field list, omitting it drops any inherited value on the
+          // next write rather than carrying it forward forever.
           role: user.role === "staff" ? "staff" : "manager",
-          status: user.role === "staff" ? normalizeChoice(user.status, staffStatuses, "active") : "active",
+          // Invited applies to either role -- an invite is a pending row, not
+          // an account, so a pending manager must not render as active.
+          status: normalizeChoice(user.status, staffStatuses, "active"),
+          inviteId: clean(user.inviteId),
           access: normalizeAccess(user.access),
           createdAt: user.createdAt || isoDate(0),
           updatedAt: user.updatedAt || user.createdAt || isoDate(0),
@@ -1014,6 +1173,13 @@ function renderLoading() {
 function render() {
   applyTheme();
 
+  // A device holding another store's records asks before doing anything with
+  // them. It never silently adopts or erases.
+  if (accessMode === "mismatch") {
+    renderStoreMismatch();
+    return;
+  }
+
   if (!currentUser()) {
     renderOnboarding();
     return;
@@ -1085,8 +1251,31 @@ function render() {
   focusModalControl();
 }
 
+// Shown when a signed-in account belongs to a different store than the
+// records on this device. Both options are explicit and reversible-by-choice;
+// there is no path here that discards data without the operator saying so.
+function renderStoreMismatch() {
+  app.innerHTML = `
+    <main class="onboarding-page">
+      <section class="auth-panel">
+        <div class="auth-card">
+          <p class="eyebrow">Different store</p>
+          <h2>This device already holds another store's records.</h2>
+          <p class="lead">You are signed in to a store that does not match the data saved on this device. Nothing has been changed or deleted.</p>
+          <p>Records on this device belong to store <code>${escapeHtml(storeMismatch?.existingStoreId || "")}</code>. You signed in to <code>${escapeHtml(storeMismatch?.incomingStoreId || "")}</code>.</p>
+          <div class="form-actions">
+            <button class="btn secondary" type="button" data-action="mismatch-sign-out">Sign out and keep this device's records</button>
+            <button class="btn danger" type="button" data-action="mismatch-erase">Erase this device's records and continue</button>
+          </div>
+          <p class="hint">Erasing cannot be undone. If those records matter, sign out, sign back in with the account that owns them, and export a backup first.</p>
+        </div>
+      </section>
+    </main>
+  `;
+}
+
 function renderOnboarding() {
-  const mode = ["signin", "signup", "invite", "recover", "join"].includes(authMode) ? authMode : "signin";
+  const mode = ["signin", "signup", "invite", "recover"].includes(authMode) ? authMode : "signin";
   const hasAccounts = auth.users.length > 0;
   const actionTitle = mode === "signin"
     ? "Sign in to Studio OS"
@@ -1146,7 +1335,7 @@ function renderOnboarding() {
             <p>${actionCopy}</p>
           </div>
         </div>
-        ${mode === "signin" ? renderSignInForm(hasAccounts) : mode === "invite" ? renderInviteForm() : mode === "recover" ? renderRecoveryForm() : mode === "join" ? renderJoinForm() : renderSignUpForm()}
+        ${mode === "signin" ? renderSignInForm(hasAccounts) : mode === "invite" ? renderInviteForm() : mode === "recover" ? renderRecoveryForm() : renderSignUpForm()}
       </section>
     </main>
   `;
@@ -1206,21 +1395,6 @@ function renderSignInForm(hasAccounts) {
   `;
 }
 
-function renderJoinForm() {
-  return `
-    <form id="joinForm" class="auth-form">
-      <label class="field full">
-        <span>Workspace code</span>
-        <input name="workspaceCode" autocomplete="one-time-code" required placeholder="ABCDE-FGHJK">
-      </label>
-      <div class="auth-note full">A manager creates this code from Settings on a device that is already signed in. It lasts 30 minutes and works once. Opening a workspace does not sign you in — you still need your own account for it.</div>
-      <div class="button-row full">
-        <button class="btn" type="submit">Open workspace</button>
-        <button class="btn secondary" type="button" data-auth-mode="signin">Back to sign in</button>
-      </div>
-    </form>
-  `;
-}
 
 function renderRecoveryForm() {
   return `
@@ -1563,22 +1737,11 @@ function renderModal() {
     });
   }
 
-  if (modalState.type === "confirm-join") {
-    return renderConfirmModal({
-      title: "Leave this workspace?",
-      eyebrow: "Open another workspace",
-      message: `This browser will point at the other workspace instead. Anything in the current one stays stored but this device will no longer reach it. Current workspace id: ${modalState.outgoing}`,
-      confirmAction: "confirm-join",
-      confirmLabel: "Open other workspace",
-      tone: "danger",
-    });
-  }
-
   if (modalState.type === "reset-data") {
     return renderConfirmModal({
-      title: "Reset workspace data",
-      eyebrow: "Workspace data",
-      message: "This permanently clears all workspace records, sign-in records, and staff accounts. This cannot be undone.",
+      title: "Erase this device's records",
+      eyebrow: "Local data",
+      message: "This permanently deletes every record stored on this device -- clients, orders, inventory, everything. There is no server copy to restore from. Your account and team are not affected.",
       confirmAction: "confirm-reset-data",
       confirmLabel: "Reset data",
       tone: "danger",
@@ -1697,7 +1860,7 @@ function renderTopbar() {
         <p>${escapeHtml(viewSubtitle(currentView))}</p>
       </div>
       <div class="actions">
-        <span class="session-chip data-chip ${escapeHtml(storageMode)}">${escapeHtml(storageMessage)}</span>
+        ${offlineMode ? `<span class="session-chip data-chip local">Offline &mdash; working on this device</span>` : ""}
         <span class="session-chip">${escapeHtml(user?.name || "Studio user")} · ${escapeHtml(user?.role || "staff")}</span>
         ${canAccess("settings") ? `<button class="btn secondary" type="button" data-nav="settings">Brand settings</button>` : ""}
         ${canAccess("orders") ? `<button class="btn" type="button" data-nav="orders">New garment order</button>` : ""}
@@ -2655,7 +2818,7 @@ function renderSettings() {
             <h2>Workspace data</h2>
             <p>Your records are saved automatically as you work.</p>
           </div>
-          <span class="status">${escapeHtml(storageMessage)}</span>
+          <span class="status">${offlineMode ? "Offline" : "Online"}</span>
         </div>
         <div class="button-row">
           <button class="btn danger" type="button" data-action="reset-demo">Reset workspace data</button>
@@ -2679,7 +2842,7 @@ function renderTeamAccessPanel() {
       </div>
       ${lastInviteResult ? renderInviteResult(lastInviteResult) : ""}
       ${lastRecoveryResult && lastRecoveryResult.context === "team" ? renderRecoveryResult(lastRecoveryResult) : ""}
-      ${remaining ? backendReady && auth.serverManaged ? renderStaffInviteForm() : renderStaffCreateForm() : `<div class="empty">User limit reached. Remove an account before adding another.</div>`}
+      ${remaining ? renderStaffInviteForm() : `<div class="empty">User limit reached. Remove an account before adding another.</div>`}
       <div class="team-list">
         ${members.map(renderStaffAccessCard).join("") || emptyState("No other team members yet.")}
       </div>
@@ -2717,37 +2880,11 @@ function renderAccountSecurityPanel() {
           <button class="btn small" type="submit">Change password</button>
         </div>
       </form>
-      ${backendReady && auth.serverManaged ? renderRecoveryCodePanel(user) : ""}
-      ${backendReady && auth.serverManaged && user.role === "manager" ? renderWorkspaceCodePanel() : ""}
+      ${renderRecoveryCodePanel(user)}
     </section>
   `;
 }
 
-function renderWorkspaceCodePanel() {
-  return `
-    <div class="panel-header">
-      <div>
-        <h2>Open on another device</h2>
-        <p>Create a code, then enter it on the other device from the sign-in screen. It lasts 30 minutes and works once.</p>
-      </div>
-    </div>
-    ${lastWorkspaceCode ? `
-      <div class="inline-callout">
-        <div>
-          <strong>Workspace code</strong>
-          <p class="muted small-text">Enter this on the other device within 30 minutes. It works once. Anyone with this code can point a browser at this workspace, though they still need an account to sign in.</p>
-        </div>
-        <code>${escapeHtml(lastWorkspaceCode.code)}</code>
-        <div class="button-row">
-          <button class="btn small secondary" type="button" data-action="dismiss-workspace-code">Done</button>
-        </div>
-      </div>
-    ` : ""}
-    <div class="button-row">
-      <button class="btn small secondary" type="button" data-action="create-workspace-code">Create workspace code</button>
-    </div>
-  `;
-}
 
 function renderRecoveryCodePanel(user) {
   const issued = clean(user.recoveryIssuedAt);
@@ -2799,40 +2936,6 @@ function renderAccessSummaryPanel() {
   `;
 }
 
-function renderStaffCreateForm() {
-  return `
-    <form id="staffForm" class="staff-form">
-      <div class="form-grid">
-        <label class="field">
-          <span>Member name</span>
-          <input name="name" required placeholder="Tailor, admin, or co-manager">
-        </label>
-        <label class="field">
-          <span>Email</span>
-          <input name="email" type="email" required placeholder="member@studio.com">
-        </label>
-        <label class="field">
-          <span>Role</span>
-          <select name="role">
-            <option value="staff">Staff (limited access)</option>
-            <option value="manager">Manager (full access)</option>
-          </select>
-        </label>
-        <label class="field">
-          <span>Password</span>
-          <input name="password" type="password" required minlength="${MIN_PASSWORD_LENGTH}" placeholder="Minimum ${MIN_PASSWORD_LENGTH} characters">
-        </label>
-        <div class="field">
-          <span>Access (staff only)</span>
-          ${renderAccessChecks(["dashboard", "orders", "clients", "measurements"])}
-        </div>
-      </div>
-      <div class="button-row">
-        <button class="btn small" type="submit">Create account</button>
-      </div>
-    </form>
-  `;
-}
 
 function renderStaffInviteForm() {
   return `
@@ -2890,11 +2993,9 @@ function renderStaffAccessCard(user) {
           ${user.inviteExpiresAt ? `<p class="muted small-text">Invite expires ${formatDate(user.inviteExpiresAt)}</p>` : ""}
           <p class="muted small-text">Managers have full access. To remove a manager, reset the workspace.</p>
         </div>
-        ${backendReady && auth.serverManaged ? `
-          <div class="button-row">
-            <button class="btn small secondary" type="button" data-action="reset-user-password" data-id="${escapeHtml(user.id)}">Issue recovery code</button>
-          </div>
-        ` : ""}
+        <div class="button-row">
+          <button class="btn small secondary" type="button" data-action="reset-user-password" data-id="${escapeHtml(user.id)}">Issue recovery code</button>
+        </div>
       </article>
     `;
   }
@@ -2913,9 +3014,7 @@ function renderStaffAccessCard(user) {
           ${user.status === "suspended"
             ? `<button class="btn small secondary" type="button" data-action="reactivate-staff" data-id="${escapeHtml(user.id)}">Reactivate</button>`
             : `<button class="btn small secondary" type="button" data-action="suspend-staff" data-id="${escapeHtml(user.id)}">Suspend</button>`}
-          ${backendReady && auth.serverManaged
-            ? `<button class="btn small secondary" type="button" data-action="reset-user-password" data-id="${escapeHtml(user.id)}">Issue recovery code</button>`
-            : ""}
+          <button class="btn small secondary" type="button" data-action="reset-user-password" data-id="${escapeHtml(user.id)}">Issue recovery code</button>
           <button class="btn small danger" type="button" data-action="delete-staff" data-id="${escapeHtml(user.id)}">Remove</button>
         </div>
       </form>
@@ -3090,7 +3189,7 @@ function wireEvents() {
   app.onclick = (event) => {
     const authModeButton = event.target.closest("[data-auth-mode]");
     if (authModeButton) {
-      authMode = ["signin", "signup", "invite", "recover", "join"].includes(authModeButton.dataset.authMode) ? authModeButton.dataset.authMode : "signin";
+      authMode = ["signin", "signup", "invite", "recover"].includes(authModeButton.dataset.authMode) ? authModeButton.dataset.authMode : "signin";
       render();
       return;
     }
@@ -3151,9 +3250,8 @@ function wireEvents() {
     if (action === "reactivate-staff") updateStaffStatus(id, "reactivate-staff");
     if (action === "delete-staff") deleteStaff(id);
     if (action === "create-recovery-code") createRecoveryCode();
-    if (action === "create-workspace-code") createWorkspaceJoinCode();
-    if (action === "dismiss-workspace-code") dismissWorkspaceCode();
-    if (action === "confirm-join") confirmJoinWorkspace();
+    if (action === "mismatch-sign-out") signOut();
+    if (action === "mismatch-erase") eraseMismatchedData();
     if (action === "reset-user-password") issueRecoveryCodeForUser(id);
     if (action === "dismiss-recovery-code") dismissRecoveryCode();
     if (action === "reset-demo") resetLocalData();
@@ -3207,7 +3305,6 @@ function wireEvents() {
     if (form.id === "signinForm") handleSignIn(form);
     if (form.id === "signupForm") handleSignUp(form);
     if (form.id === "recoveryForm") handleRecoverySubmit(form);
-    if (form.id === "joinForm") handleJoinSubmit(form);
     if (form.id === "inviteForm") handleInviteAccept(form);
     if (form.id === "setupForm") handleProfileSubmit(form, true);
     if (form.id === "settingsForm") handleProfileSubmit(form, false);
@@ -3244,7 +3341,7 @@ async function handleSignUp(form) {
     return;
   }
 
-  if (backendReady) {
+  {
     const result = await runServerAuthAction("signup", { name, email, password, confirmPassword }, {
       successMessage: "Manager access created.",
       nextView: "dashboard",
@@ -3271,32 +3368,12 @@ async function handleSignUp(form) {
     return;
   }
 
-  if (auth.users.some((user) => user.email === email)) {
-    showToast("An account already exists for that email.");
-    return;
-  }
-  if (auth.users.some((user) => user.role === "manager")) {
-    authMode = "signin";
-    showToast("Manager access already exists. Sign in, or use Forgot password if you have a recovery code.");
-    render();
-    return;
-  }
-  const manager = {
-    id: uid("user"),
-    name,
-    email,
-    password,
-    role: "manager",
-    access: fullAccess(),
-    createdAt: isoDate(0),
-  };
-  auth.users.push(manager);
-  auth.sessionUserId = manager.id;
-  saveAuth();
-  currentView = "dashboard";
-  localStorage.setItem(VIEW_KEY, currentView);
-  showToast("Manager access created.");
-  render();
+  // No local fallback. The pre-pivot build kept a complete local auth path
+  // that stored plaintext passwords in localStorage; under local-first it
+  // would have become the primary credential store, so it is gone. Identity
+  // is server-side, and offline access comes from the cached-identity path in
+  // initializeApp rather than from a second, weaker set of credentials.
+  showToast("Creating an account needs a connection. Try again once you're online.");
 }
 
 async function handleRecoverySubmit(form) {
@@ -3306,8 +3383,8 @@ async function handleRecoverySubmit(form) {
   const password = String(data.get("password") || "");
   const confirmPassword = String(data.get("confirmPassword") || "");
 
-  if (!backendReady) {
-    showToast("Account recovery requires server-managed auth.");
+  if (offlineMode) {
+    showToast("Account recovery needs a connection. Your records stay available on this device.");
     return;
   }
   if (password.length < MIN_PASSWORD_LENGTH || password !== confirmPassword) {
@@ -3331,26 +3408,10 @@ async function handleSignIn(form) {
   const email = clean(data.get("email")).toLowerCase();
   const password = String(data.get("password") || "");
 
-  if (backendReady) {
-    await runServerAuthAction("signin", { email, password }, {
-      successMessage: "Signed in.",
-      nextView: "first-accessible",
-    });
-    return;
-  }
-
-  const user = auth.users.find((item) => item.email === email && item.password === password);
-  if (!user) {
-    showToast("Sign in details do not match.");
-    return;
-  }
-  auth.sessionUserId = user.id;
-  saveAuth();
-  const nav = accessibleNavItems();
-  currentView = nav[0]?.[0] || "dashboard";
-  localStorage.setItem(VIEW_KEY, currentView);
-  showToast(`Welcome, ${user.name}.`);
-  render();
+  await runServerAuthAction("signin", { email, password }, {
+    successMessage: "Signed in.",
+    nextView: "first-accessible",
+  });
 }
 
 async function handleInviteAccept(form) {
@@ -3361,141 +3422,57 @@ async function handleInviteAccept(form) {
   const password = String(data.get("password") || "");
   const confirmPassword = String(data.get("confirmPassword") || "");
 
-  if (!backendReady) {
-    showToast("Staff invites are only available when you're signed in online.");
-    return;
-  }
   if (password.length < MIN_PASSWORD_LENGTH || password !== confirmPassword) {
     showToast(`Passwords must match and be at least ${MIN_PASSWORD_LENGTH} characters.`);
     return;
   }
 
-  const result = await runServerAuthAction("accept-invite", { name, email, inviteCode, password, confirmPassword }, {
+  // Accepting on a device that already holds records used to wipe them with
+  // no warning -- the confirm guard only ever covered the join-code path.
+  // reconcileStoreTag now catches the mismatch after sign-in, so acceptance
+  // never destroys anything on its own.
+  await runServerAuthAction("accept-invite", { name, email, inviteCode, password, confirmPassword }, {
     successMessage: "Invite accepted.",
     nextView: "first-accessible",
   });
-  // The invite carried its own workspace, which is almost never the one this
-  // browser generated for itself. Adopt it so later requests address the right
-  // workspace instead of this device's empty one.
-  if (result?.joinedWorkspaceId) {
-    adoptWorkspace(result.joinedWorkspaceId, { reload: false });
-  }
 }
 
-// Point this browser at an existing workspace. Every later request carries it
-// as x-workspace-id. The id must come from the server, never from user input.
-function adoptWorkspace(workspaceId, { reload = true } = {}) {
-  const id = clean(workspaceId);
-  if (!id) return false;
-  try {
-    localStorage.setItem(WORKSPACE_KEY, id);
-  } catch (error) {
-    showToast("This browser is blocking storage, so the workspace cannot be saved.");
-    return false;
-  }
-  deviceWorkspaceId = id;
-  // Local caches belong to the workspace being left behind.
-  localStorage.removeItem(STORAGE_KEY);
-  localStorage.removeItem(AUTH_KEY);
-  if (reload) window.location.reload();
-  return true;
-}
-
-function currentWorkspaceHasData() {
-  try {
-    return Boolean(localStorage.getItem(STORAGE_KEY)) || auth.users.length > 0;
-  } catch (error) {
-    return auth.users.length > 0;
-  }
-}
-
-async function handleJoinSubmit(form) {
-  const data = new FormData(form);
-  const code = clean(data.get("workspaceCode"));
-  if (!code) return;
-
-  if (!backendReady) {
-    showToast("Joining a workspace requires the online app.");
-    return;
-  }
-
-  // Adopting abandons whatever workspace this browser is currently in. Its rows
-  // stay in storage but nothing points at them any more, so confirm first and
-  // show the outgoing id so it can be written down.
-  if (currentWorkspaceHasData() && !modalState) {
-    modalState = { type: "confirm-join", code, outgoing: getWorkspaceId() };
-    render();
-    return;
-  }
-
-  await redeemWorkspaceCode(code);
-}
-
-async function redeemWorkspaceCode(code) {
-  try {
-    const response = await fetch(API_WORKSPACE_CODE_PATH, {
-      method: "POST",
-      headers: apiHeaders({ "Content-Type": "application/json" }),
-      credentials: "same-origin",
-      body: JSON.stringify({ action: "redeem", code }),
-    });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(result.error || "That code is not valid.");
-    if (adoptWorkspace(result.workspaceId)) {
-      showToast("Workspace opened. Sign in to continue.");
+// The operator chose to discard this device's records in favour of the store
+// they just signed in to. Explicit, never automatic.
+function eraseMismatchedData() {
+  const storeId = storeMismatch?.incomingStoreId || "";
+  eraseLocalBusinessData();
+  if (storeId) {
+    try {
+      localStorage.setItem(STORE_TAG_KEY, storeId);
+    } catch (error) {
+      console.warn("Could not tag local data with its store.", error);
     }
-  } catch (error) {
-    showToast(error.message || "That code is not valid.");
   }
-}
-
-async function createWorkspaceJoinCode() {
-  if (currentUser()?.role !== "manager") {
-    showToast("Only a manager can open this workspace on another device.");
-    return;
-  }
-  try {
-    const response = await fetch(API_WORKSPACE_CODE_PATH, {
-      method: "POST",
-      headers: apiHeaders({ "Content-Type": "application/json" }),
-      credentials: "same-origin",
-      body: JSON.stringify({ action: "create" }),
-    });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(result.error || "Could not create a code.");
-    lastWorkspaceCode = { code: result.workspaceCode, expiresAt: result.expiresAt };
-    render();
-  } catch (error) {
-    showToast(error.message || "Could not create a code.");
-  }
-}
-
-function dismissWorkspaceCode() {
-  lastWorkspaceCode = null;
+  storeMismatch = null;
+  accessMode = "unlocked";
+  showToast("Previous records erased. This device now belongs to your store.");
   render();
 }
 
-async function confirmJoinWorkspace() {
-  const code = modalState?.type === "confirm-join" ? modalState.code : "";
-  closeModal(false);
-  if (code) await redeemWorkspaceCode(code);
-}
 
 async function signOut() {
   mobileNavOpen = false;
 
-  if (backendReady && auth.serverManaged) {
-    await runServerAuthAction("signout", {}, {
-      successMessage: "Signed out.",
-      clearState: true,
-    });
+  // Always drop the offline cache first. Sign-out has to work with the server
+  // unreachable, otherwise a device that cannot reach Supabase could never be
+  // locked -- and the cached identity is exactly what would keep unlocking it.
+  clearCachedIdentity();
+
+  if (!offlineMode) {
+    await runServerAuthAction("signout", {}, { successMessage: "Signed out." });
     return;
   }
 
-  auth.sessionUserId = "";
-  saveAuth();
-  authMode = auth.users.length ? "signin" : "signup";
-  showToast("Signed out.");
+  auth = normalizeAuth();
+  accessMode = "locked";
+  authMode = "signin";
+  showToast("Signed out on this device. Your records stay here.");
   render();
 }
 
@@ -3605,30 +3582,9 @@ async function handleStaffSubmit(form) {
     return;
   }
 
-  if (backendReady && auth.serverManaged) {
-    await runServerAuthAction("create-staff", { name, email, password, role, access: selectedAccessFrom(form) }, {
-      successMessage: `${role === "manager" ? "Manager" : "Staff"} account created.`,
-    });
-    return;
-  }
-
-  if (auth.users.some((user) => user.email === email)) {
-    showToast("An account already exists for that email.");
-    return;
-  }
-
-  auth.users.push({
-    id: uid(role),
-    name,
-    email,
-    password,
-    role,
-    access: role === "manager" ? fullAccess() : selectedAccessFrom(form),
-    createdAt: isoDate(0),
+  await runServerAuthAction("create-staff", { name, email, password, role, access: selectedAccessFrom(form) }, {
+    successMessage: `${role === "manager" ? "Manager" : "Staff"} account created.`,
   });
-  saveAuth();
-  showToast(`${role === "manager" ? "Manager" : "Staff"} account created.`);
-  render();
 }
 
 async function handleStaffInviteSubmit(form) {
@@ -3636,8 +3592,8 @@ async function handleStaffInviteSubmit(form) {
     showToast("Only the manager can create staff invites.");
     return;
   }
-  if (!backendReady || !auth.serverManaged) {
-    showToast("Invites require being signed in online.");
+  if (offlineMode) {
+    showToast("Creating an invite needs a connection. Your records stay available on this device.");
     return;
   }
   if (auth.users.length >= TEAM_LIMIT) {
@@ -3662,8 +3618,8 @@ async function handleStaffInviteSubmit(form) {
 }
 
 async function handlePasswordSubmit(form) {
-  if (!backendReady || !auth.serverManaged) {
-    showToast("Password changes require server-managed auth.");
+  if (offlineMode) {
+    showToast("Changing your password needs a connection. Your records stay available on this device.");
     return;
   }
   const data = new FormData(form);
@@ -3688,19 +3644,9 @@ async function handleStaffAccessSubmit(form) {
     return;
   }
 
-  if (backendReady && auth.serverManaged) {
-    await runServerAuthAction("update-staff-access", { id: form.dataset.staffAccess, access: selectedAccessFrom(form) }, {
-      successMessage: "Staff access updated.",
-    });
-    return;
-  }
-
-  const staff = auth.users.find((user) => user.id === form.dataset.staffAccess && user.role === "staff");
-  if (!staff) return;
-  staff.access = selectedAccessFrom(form);
-  saveAuth();
-  showToast("Staff access updated.");
-  render();
+  await runServerAuthAction("update-staff-access", { id: form.dataset.staffAccess, access: selectedAccessFrom(form) }, {
+    successMessage: "Staff access updated.",
+  });
 }
 
 async function updateStaffStatus(id, action) {
@@ -3709,25 +3655,14 @@ async function updateStaffStatus(id, action) {
     return;
   }
 
-  if (backendReady && auth.serverManaged) {
-    await runServerAuthAction(action, { id }, {
-      successMessage: action === "suspend-staff" ? "Staff account suspended." : "Staff account reactivated.",
-    });
-    return;
-  }
-
-  const staff = auth.users.find((user) => user.id === id && user.role === "staff");
-  if (!staff) return;
-  staff.status = action === "suspend-staff" ? "suspended" : "active";
-  staff.updatedAt = isoDate(0);
-  saveAuth();
-  showToast(action === "suspend-staff" ? "Staff account suspended." : "Staff account reactivated.");
-  render();
+  await runServerAuthAction(action, { id }, {
+    successMessage: action === "suspend-staff" ? "Staff account suspended." : "Staff account reactivated.",
+  });
 }
 
 async function createRecoveryCode() {
-  if (!backendReady || !auth.serverManaged) {
-    showToast("Recovery codes require server-managed auth.");
+  if (offlineMode) {
+    showToast("Issuing a recovery code needs a connection. Your records stay available on this device.");
     return;
   }
   const result = await runServerAuthAction("create-recovery-code", {}, {
@@ -3748,8 +3683,8 @@ async function issueRecoveryCodeForUser(id) {
     showToast("Only a manager can issue a recovery code for another account.");
     return;
   }
-  if (!backendReady || !auth.serverManaged) {
-    showToast("Recovery codes require server-managed auth.");
+  if (offlineMode) {
+    showToast("Issuing a recovery code needs a connection. Your records stay available on this device.");
     return;
   }
   // The manager hands the code over; the colleague chooses their own password,
@@ -3789,21 +3724,19 @@ async function confirmDeleteStaff(id) {
     return;
   }
 
-  if (backendReady && auth.serverManaged) {
-    closeModal(false);
-    await runServerAuthAction("delete-staff", { id }, {
-      successMessage: "Staff account removed.",
+  const target = auth.users.find((user) => user.id === id);
+  closeModal(false);
+  // Pending invites are invite rows, not accounts, so they are cancelled
+  // rather than deleted -- which is also what frees the quota slot they hold.
+  if (target?.status === "invited") {
+    await runServerAuthAction("cancel-staff-invite", { id }, {
+      successMessage: "Invite cancelled.",
     });
     return;
   }
-
-  const staff = auth.users.find((user) => user.id === id && user.role === "staff");
-  if (!staff) return;
-  auth.users = auth.users.filter((user) => user.id !== id);
-  closeModal(false);
-  saveAuth();
-  showToast("Staff account removed.");
-  render();
+  await runServerAuthAction("delete-staff", { id }, {
+    successMessage: "Staff account removed.",
+  });
 }
 
 function handleInquirySubmit(form) {
@@ -4627,33 +4560,30 @@ function resetLocalData() {
   render();
 }
 
+// Erases this device's business records only. The account, the team, and the
+// store all survive -- deleting those is a separate action against the
+// identity plane, and mixing the two into one button was how the pre-pivot
+// reset could half-fail across two systems.
 async function confirmResetLocalData() {
   closeModal(false);
-  if (backendReady) {
+  eraseLocalBusinessData();
+  showToast("This device's records were erased. You are still signed in.");
+  render();
+}
+
+function eraseLocalBusinessData() {
+  for (const key of [STORAGE_KEY, VIEW_KEY, WORKSPACE_KEY, STORE_TAG_KEY]) {
     try {
-      const response = await fetch(API_DATA_PATH, { method: "DELETE", headers: apiHeaders(), credentials: "same-origin" });
-      if (!response.ok) {
-        throw new Error(`Reset failed with ${response.status}`);
-      }
+      localStorage.removeItem(key);
     } catch (error) {
-      console.warn("Could not reset backend data. Clearing browser storage only.", error);
-      backendReady = false;
-      storageMode = "local";
-      storageMessage = "Saved on this device";
+      console.warn("Could not clear", key, error);
     }
   }
-  localStorage.removeItem(STORAGE_KEY);
-  localStorage.removeItem(VIEW_KEY);
-  localStorage.removeItem(AUTH_KEY);
   state = createSeedState();
-  auth = normalizeAuth();
-  authMode = "signup";
   mobileNavOpen = false;
   currentView = "dashboard";
   selectedClientId = state.clients[0]?.id || "";
   draftOrderStyleId = state.styles[0]?.id || "";
-  showToast("Workspace data reset.");
-  render();
 }
 
 function estimateOrder(order) {
@@ -5406,25 +5336,22 @@ async function runServerAuthAction(action, payload = {}, options = {}) {
 }
 
 function applyServerSessionResult(result = {}, options = {}) {
-  backendReady = true;
-  storageMode = "server";
-  storageMessage = "All changes saved";
-  syncFailureAnnounced = false;
+  offlineMode = false;
 
-  if (result.auth) {
-    auth = normalizeAuth(result.auth);
+  if (result.authenticated && result.identity) {
+    applyIdentity(result.identity);
+    cacheIdentity(result.identity);
     persistLocalAuth();
+    reconcileStoreTag(result.identity);
+  } else {
+    // Sign-out and recovery redemption end the session. The UI locks; the
+    // device's records are untouched, which is the whole point of the pivot.
+    auth = normalizeAuth();
+    accessMode = "locked";
+    clearCachedIdentity();
   }
 
-  if (options.clearState) {
-    localStorage.removeItem(STORAGE_KEY);
-    state = createSeedState();
-  } else if (Object.prototype.hasOwnProperty.call(result, "state") && result.state) {
-    state = normalizeState(result.state);
-    persistLocalState();
-  }
-
-  authMode = auth.users.length ? "signin" : "signup";
+  authMode = "signin";
   selectedClientId = state.clients[0]?.id || "";
   draftOrderStyleId = state.styles[0]?.id || "";
 
@@ -5444,7 +5371,6 @@ function applyServerSessionResult(result = {}, options = {}) {
 
 function saveState() {
   persistLocalState();
-  void saveBackendData(API_STATE_PATH, state);
 }
 
 // Local-dev convenience: load the sample studio from the console. Never wired
@@ -5467,45 +5393,36 @@ function saveAuth() {
   persistLocalAuth();
 }
 
+// The only write path for business data. Nothing here reaches the network:
+// after Phase 021 there is no server copy, so a failure here is real data
+// loss and must be surfaced rather than swallowed. Step 3 moves this onto
+// IndexedDB with persistent-storage permission; the guard exists now because
+// this became the sole path the moment the server sync was removed.
 function persistLocalState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    if (storageFailureAnnounced) {
+      storageFailureAnnounced = false;
+    }
+    return true;
+  } catch (error) {
+    console.error("Could not save to this device.", error);
+    if (!storageFailureAnnounced) {
+      storageFailureAnnounced = true;
+      showToast("This device is out of storage space. Your last change was not saved — free up space, then retry.");
+    }
+    return false;
+  }
 }
 
 function persistLocalAuth() {
-  // In server mode the session lives in the HttpOnly cookie, not the browser.
-  // Never persist the session pointer at rest, so a reload can't resurrect a
-  // signed-in shell without a valid server session.
-  const safeAuth = backendReady || auth.serverManaged
-    ? { ...auth, sessionUserId: "" }
-    : auth;
-  localStorage.setItem(AUTH_KEY, JSON.stringify(safeAuth));
-}
-
-async function saveBackendData(path, value) {
-  if (!backendReady) return;
+  // The session lives in the HttpOnly cookie, never here. This is only a
+  // roster cache for rendering; the pointer is stripped so a reload cannot
+  // resurrect a signed-in shell without a real session or the offline cache.
   try {
-    const response = await fetch(path, {
-      method: "PUT",
-      headers: apiHeaders({ "Content-Type": "application/json" }),
-      credentials: "same-origin",
-      body: JSON.stringify(value),
-    });
-    if (!response.ok) {
-      throw new Error(`Sync failed with ${response.status}`);
-    }
-    storageMode = "server";
-    storageMessage = "All changes saved";
-    syncFailureAnnounced = false;
+    localStorage.setItem(AUTH_KEY, JSON.stringify({ ...auth, sessionUserId: "" }));
   } catch (error) {
-    console.warn("Could not sync Studio OS data to backend. Continuing with browser storage.", error);
-    backendReady = false;
-    storageMode = "local";
-    storageMessage = "Saved on this device";
-    if (!syncFailureAnnounced) {
-      syncFailureAnnounced = true;
-      showToast("Couldn't save your last change online. It's kept on this device.");
-      render();
-    }
+    console.warn("Could not cache the team roster.", error);
   }
 }
 
