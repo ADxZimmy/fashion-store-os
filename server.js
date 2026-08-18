@@ -1,30 +1,20 @@
 const http = require("http");
 const path = require("path");
 const fs = require("fs/promises");
+// Legacy document-auth imports serve only the routes not yet migrated in the
+// Phase 021 pivot (state/inbound/data/workspace-code). The identity routes --
+// bootstrap, session, auth -- run the row-based plane through
+// api/_identity_http.js, shared verbatim with the serverless functions.
 const {
-  acceptStaffInvite,
-  buildClearSessionCookie,
-  buildSessionCookie,
-  changePassword,
-  createRecoveryCode,
-  createStaff,
-  createStaffInvite,
-  deleteStaff,
   normalizeAuthDocument,
-  reactivateStaff,
-  redeemRecoveryCode,
   requireManager,
   requireSession,
-  resetUserPassword,
   resolveSession,
   sanitizeAuth,
-  sanitizeInvite,
-  signIn,
-  signOut,
-  signUpManager,
-  suspendStaff,
-  updateStaffAccess,
 } = require("./api/_auth");
+const { sweepIdentity } = require("./api/_identity");
+const { handleIdentityGet, handleSessionAction } = require("./api/_identity_http");
+const { createLocalIdentityStore } = require("./api/_identity_local");
 const {
   buildRecord: buildWorkspaceCodeRecord,
   generateWorkspaceCode,
@@ -51,6 +41,9 @@ const WORKSPACE_CODES_FILE = path.join(DATA_DIR, "workspace-codes.json");
 const LOCAL_WORKSPACE_ID = "local";
 const PORT = Number(process.env.PORT || 4179);
 const BODY_LIMIT = 1024 * 1024 * 5;
+// Row-based identity, file-backed: data/identity.json mirrors the Supabase
+// identity tables so local dev exercises the same core as production.
+const identityDb = createLocalIdentityStore(DATA_DIR);
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -106,7 +99,7 @@ async function routeApi(request, response, url) {
     "/api/inbound": "GET, POST, OPTIONS",
     "/api/keepalive": "GET, OPTIONS",
     "/api/readiness": "GET, OPTIONS",
-    "/api/session": "GET, POST, OPTIONS",
+    "/api/session": "POST, OPTIONS",
     "/api/workspace-code": "POST, OPTIONS",
     "/api/state": "GET, PUT, OPTIONS",
   };
@@ -124,11 +117,19 @@ async function routeApi(request, response, url) {
 
   if (request.method === "GET" && url.pathname === "/api/keepalive") {
     // Local storage is a json file and never pauses, so there is nothing to keep
-    // warm. Answer for route parity with the deployed Vercel cron target.
+    // warm. Runs the identity retention sweep for parity with the deployed cron.
+    let sweep = null;
+    try {
+      sweep = await sweepIdentity(identityDb);
+    } catch (sweepError) {
+      console.error("identity sweep failed", sweepError);
+      sweep = { ok: false, error: sweepError.message };
+    }
     sendJson(response, 200, {
       ok: true,
       storage: "json-file",
       workspace: process.env.FASHION_STORE_WORKSPACE_ID || "default",
+      sweep,
       timestamp: new Date().toISOString(),
     });
     return;
@@ -160,24 +161,9 @@ async function routeApi(request, response, url) {
   }
 
   if (request.method === "GET" && url.pathname === "/api/bootstrap") {
-    const [stateResult, authResult] = await Promise.all([
-      readJsonWithExists(STATE_FILE),
-      readJsonWithExists(AUTH_FILE),
-    ]);
-    const normalized = normalizeAuthDocument(authResult.value || {});
-    if (authResult.exists && normalized.changed) {
-      await writeJsonAtomic(AUTH_FILE, normalized.auth);
-    }
-    const resolved = resolveSession(normalized.auth, request);
-    const canReadState = !normalized.auth.users.length || Boolean(resolved.user);
-    sendJson(response, 200, {
-      state: canReadState ? stateResult.value : null,
-      stateExists: stateResult.exists,
-      auth: sanitizeAuth(normalized.auth, resolved.user?.id || ""),
-      authExists: authResult.exists || normalized.auth.users.length > 0,
-      authenticated: Boolean(resolved.user),
-      stateLocked: !canReadState && stateResult.exists,
-    });
+    // Phase 021: identity/session check only. Business state lives on the
+    // device; this response must never carry it or gate it.
+    await handleIdentityGet(identityDb, request, response);
     return;
   }
 
@@ -212,164 +198,12 @@ async function routeApi(request, response, url) {
     throw error;
   }
 
-  if (url.pathname === "/api/session") {
-    const { auth, exists, changed } = await readAuthDocument();
-    if (exists && changed) {
-      await writeJsonAtomic(AUTH_FILE, auth);
-    }
-
-    if (request.method === "GET") {
-      await sendSessionPayload(response, request, auth);
-      return;
-    }
-
-    if (request.method === "POST") {
-      const body = (await readJsonBody(request)) || {};
-      const action = String(body.action || "").trim();
-
-      if (action === "signup") {
-        const result = signUpManager(auth, body);
-        await writeJsonAtomic(AUTH_FILE, result.auth);
-        response.setHeader("Set-Cookie", buildSessionCookie(result.token, request));
-        await sendSessionPayload(response, request, result.auth, 201, { session: result.session, user: result.user }, {
-          recovery: { recoveryCode: result.recoveryCode },
-        });
-        return;
-      }
-
-      if (action === "signin") {
-        const result = signIn(auth, body);
-        await writeJsonAtomic(AUTH_FILE, result.auth);
-        response.setHeader("Set-Cookie", buildSessionCookie(result.token, request));
-        await sendSessionPayload(response, request, result.auth, 200, { session: result.session, user: result.user });
-        return;
-      }
-
-      if (action === "accept-invite") {
-        // Local dev is single-workspace, so redeeming the code only marks it
-        // used. Production resolves a different workspace here.
-        const combined = splitCombinedInvite(body.inviteCode || body.code || "");
-        let joinedWorkspaceId = "";
-        if (combined.workspaceCode) {
-          const redeemed = await redeemLocalWorkspaceCode(combined.workspaceCode, "invite");
-          joinedWorkspaceId = redeemed.workspaceId;
-        }
-        const result = acceptStaffInvite(auth, {
-          ...body,
-          inviteToken: combined.inviteToken || body.inviteToken || body.token,
-        });
-        await writeJsonAtomic(AUTH_FILE, result.auth);
-        response.setHeader("Set-Cookie", buildSessionCookie(result.token, request));
-        await sendSessionPayload(response, request, result.auth, 200, { session: result.session, user: result.user }, { joinedWorkspaceId });
-        return;
-      }
-
-      // Unauthenticated by necessity, and deliberately issues no session.
-      if (action === "redeem-recovery-code") {
-        const result = redeemRecoveryCode(auth, body);
-        await writeJsonAtomic(AUTH_FILE, result.auth);
-        sendJson(response, 200, {
-          ok: true,
-          authenticated: false,
-          auth: sanitizeAuth(result.auth),
-          state: null,
-          stateExists: false,
-          passwordReset: true,
-        });
-        return;
-      }
-
-      if (action === "signout") {
-        const nextAuth = signOut(auth, request);
-        await writeJsonAtomic(AUTH_FILE, nextAuth);
-        response.setHeader("Set-Cookie", buildClearSessionCookie(request));
-        sendJson(response, 200, {
-          ok: true,
-          authenticated: false,
-          auth: sanitizeAuth(nextAuth),
-          state: null,
-          stateExists: false,
-        });
-        return;
-      }
-
-      const { session, user } = requireSession(auth, request);
-
-      if (action === "create-staff") {
-        const nextAuth = createStaff(auth, user, body);
-        await writeJsonAtomic(AUTH_FILE, nextAuth);
-        await sendSessionPayload(response, request, nextAuth, 201);
-        return;
-      }
-
-      if (action === "create-staff-invite") {
-        const result = createStaffInvite(auth, user, body);
-        await writeJsonAtomic(AUTH_FILE, result.auth);
-        // createStaffInvite asserts a manager first, so user is real here; see the
-        // note in api/session.js before reintroducing optional chaining.
-        const issued = await issueLocalWorkspaceCode("invite", user.id);
-        const invite = sanitizeInvite(
-          result.auth.users.find((item) => item.email === result.invite.email) || {},
-          result.inviteToken,
-          issued.workspaceCode,
-        );
-        await sendSessionPayload(response, request, result.auth, 201, null, { invite });
-        return;
-      }
-
-      if (action === "update-staff-access") {
-        const nextAuth = updateStaffAccess(auth, user, body);
-        await writeJsonAtomic(AUTH_FILE, nextAuth);
-        await sendSessionPayload(response, request, nextAuth);
-        return;
-      }
-
-      if (action === "create-recovery-code") {
-        const result = createRecoveryCode(auth, user);
-        await writeJsonAtomic(AUTH_FILE, result.auth);
-        await sendSessionPayload(response, request, result.auth, 201, null, { recovery: result.recovery });
-        return;
-      }
-
-      if (action === "reset-user-password") {
-        const result = resetUserPassword(auth, user, body);
-        await writeJsonAtomic(AUTH_FILE, result.auth);
-        await sendSessionPayload(response, request, result.auth, 201, null, { recovery: result.recovery });
-        return;
-      }
-
-      if (action === "change-password") {
-        const nextAuth = changePassword(auth, user, body, session);
-        await writeJsonAtomic(AUTH_FILE, nextAuth);
-        await sendSessionPayload(response, request, nextAuth);
-        return;
-      }
-
-      if (action === "suspend-staff") {
-        const nextAuth = suspendStaff(auth, user, body);
-        await writeJsonAtomic(AUTH_FILE, nextAuth);
-        await sendSessionPayload(response, request, nextAuth);
-        return;
-      }
-
-      if (action === "reactivate-staff") {
-        const nextAuth = reactivateStaff(auth, user, body);
-        await writeJsonAtomic(AUTH_FILE, nextAuth);
-        await sendSessionPayload(response, request, nextAuth);
-        return;
-      }
-
-      if (action === "delete-staff") {
-        const nextAuth = deleteStaff(auth, user, body);
-        await writeJsonAtomic(AUTH_FILE, nextAuth);
-        await sendSessionPayload(response, request, nextAuth);
-        return;
-      }
-
-      const error = new Error("Unknown session action");
-      error.statusCode = 400;
-      throw error;
-    }
+  if (url.pathname === "/api/session" && request.method === "POST") {
+    // Phase 021: every identity action dispatches through the same module the
+    // serverless function uses; only the storage adapter differs.
+    const body = (await readJsonBody(request)) || {};
+    await handleSessionAction(identityDb, request, response, body);
+    return;
   }
 
   if (request.method === "GET" && url.pathname === "/api/channel-webhook") {
@@ -468,13 +302,7 @@ async function routeApi(request, response, url) {
   }
 
   if (request.method === "GET" && url.pathname === "/api/auth") {
-    const { auth, exists } = await readAuthDocument();
-    const resolved = resolveSession(auth, request);
-    sendJson(response, 200, {
-      auth: sanitizeAuth(auth, resolved.user?.id || ""),
-      authenticated: Boolean(resolved.user),
-      exists: exists || auth.users.length > 0,
-    });
+    await handleIdentityGet(identityDb, request, response);
     return;
   }
 
@@ -605,20 +433,6 @@ async function readAuthDocument() {
     exists: result.exists,
     changed: normalized.changed,
   };
-}
-
-async function sendSessionPayload(response, request, auth, statusCode = 200, resolvedOverride = null, extra = {}) {
-  const resolved = resolvedOverride || resolveSession(auth, request);
-  const stateResult = resolved.user ? await readJsonWithExists(STATE_FILE) : { value: null, exists: false };
-  sendJson(response, statusCode, {
-    ok: true,
-    authenticated: Boolean(resolved.user),
-    auth: sanitizeAuth(auth, resolved.user?.id || ""),
-    state: stateResult.value,
-    stateExists: stateResult.exists,
-    sessionExpiresAt: resolved.session?.expiresAt || "",
-    ...extra,
-  });
 }
 
 async function removeIfExists(filePath) {

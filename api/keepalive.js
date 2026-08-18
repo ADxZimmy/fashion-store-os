@@ -1,4 +1,6 @@
 const crypto = require("crypto");
+const { sweepIdentity } = require("./_identity");
+const identityDb = require("./_identity_supabase");
 const { handleOptions, sendJson, sendMethodNotAllowed } = require("./_response");
 const { getStorageSummary, probeStorage } = require("./_store");
 
@@ -32,11 +34,23 @@ module.exports = async function handler(request, response) {
   // dead database surfaces as a failed cron invocation instead of a silent 200.
   try {
     const storage = await probeStorage();
+    // Phase 021: the daily cron doubles as the retention sweep for the
+    // identity tables -- expired sessions and invites, day-old rate-limit
+    // events, 90-day-old audit rows. Best effort: a sweep failure must not
+    // turn a healthy keepalive into a failed cron run, so it logs instead.
+    let sweep = null;
+    try {
+      sweep = await sweepIdentity(identityDb);
+    } catch (sweepError) {
+      console.error("identity sweep failed", sweepError);
+      sweep = { ok: false, error: sweepError.publicMessage || sweepError.message };
+    }
     sendJson(response, 200, {
       ok: true,
       storage: "supabase",
       supabaseHost: storage.host,
       workspace: storage.workspace,
+      sweep,
       timestamp: new Date().toISOString(),
     });
   } catch (error) {

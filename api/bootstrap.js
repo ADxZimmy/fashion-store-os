@@ -1,6 +1,10 @@
-const { handleError, handleOptions, sendJson, sendMethodNotAllowed } = require("./_response");
-const { normalizeAuthDocument, resolveSession, sanitizeAuth } = require("./_auth");
-const { storeForRequest } = require("./_store");
+// App-open endpoint, rewritten for Phase 021: an identity/session check and
+// nothing else. Business state lives on the device now; the trust direction
+// flipped, so an unauthenticated answer here must never cause the client to
+// touch local data -- it only locks the UI.
+const db = require("./_identity_supabase");
+const { handleIdentityGet } = require("./_identity_http");
+const { handleError, handleOptions, sendMethodNotAllowed } = require("./_response");
 
 module.exports = async function handler(request, response) {
   const methods = ["GET", "OPTIONS"];
@@ -11,25 +15,7 @@ module.exports = async function handler(request, response) {
   }
 
   try {
-    const store = storeForRequest(request);
-    const [stateResult, authResult] = await Promise.all([
-      store.getDocument("state"),
-      store.getDocument("auth"),
-    ]);
-    const normalized = normalizeAuthDocument(authResult.value || {});
-    if (authResult.exists && normalized.changed) {
-      await store.setDocument("auth", normalized.auth);
-    }
-    const resolved = resolveSession(normalized.auth, request);
-    const canReadState = !normalized.auth.users.length || Boolean(resolved.user);
-    sendJson(response, 200, {
-      state: canReadState ? stateResult.value : null,
-      stateExists: stateResult.exists,
-      auth: sanitizeAuth(normalized.auth, resolved.user?.id || ""),
-      authExists: authResult.exists || normalized.auth.users.length > 0,
-      authenticated: Boolean(resolved.user),
-      stateLocked: !canReadState && stateResult.exists,
-    });
+    await handleIdentityGet(db, request, response);
   } catch (error) {
     handleError(response, error);
   }

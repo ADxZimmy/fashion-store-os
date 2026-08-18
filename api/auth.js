@@ -1,29 +1,19 @@
-const { normalizeAuthDocument, resolveSession, sanitizeAuth } = require("./_auth");
-const { handleError, handleOptions, sendJson, sendMethodNotAllowed } = require("./_response");
-const { storeForRequest } = require("./_store");
+// Identity read endpoint: the signed-in viewer's account, store, membership,
+// and role-scoped roster. Rewritten for Phase 021 row-based identity.
+const db = require("./_identity_supabase");
+const { handleIdentityGet } = require("./_identity_http");
+const { handleError, handleOptions, sendMethodNotAllowed } = require("./_response");
 
 module.exports = async function handler(request, response) {
   const methods = ["GET", "OPTIONS"];
   if (handleOptions(request, response, methods)) return;
+  if (request.method !== "GET") {
+    sendMethodNotAllowed(response, methods);
+    return;
+  }
 
   try {
-    if (request.method === "GET") {
-      const store = storeForRequest(request);
-      const result = await store.getDocument("auth");
-      const normalized = normalizeAuthDocument(result.value || {});
-      if (result.exists && normalized.changed) {
-        await store.setDocument("auth", normalized.auth);
-      }
-      const resolved = resolveSession(normalized.auth, request);
-      sendJson(response, 200, {
-        auth: sanitizeAuth(normalized.auth, resolved.user?.id || ""),
-        authenticated: Boolean(resolved.user),
-        exists: result.exists || normalized.auth.users.length > 0,
-      });
-      return;
-    }
-
-    sendMethodNotAllowed(response, methods);
+    await handleIdentityGet(db, request, response);
   } catch (error) {
     handleError(response, error);
   }
