@@ -1,11 +1,11 @@
 # Fashion Store OS Handover
 
-Last updated: 2026-06-29
+Last updated: 2026-08-03
 Current repo: `F:\Fashion Store OS`
 
 ## Project Summary
 
-Fashion Store OS is a static front-end prototype for Mo'ora Afrika, a contemporary African fashion and tailoring studio. It is intended to be a studio control room for inquiries, clients, measurements, garment orders, style recipes, material reserve, production flow, brand settings, onboarding, and staff access.
+Fashion Store OS is a brand-agnostic, pre-pilot fashion studio operations MVP. It is intended to be a control room for inquiries, clients, measurements, garment orders, style recipes, material reserve, production flow, brand settings, onboarding, and staff access.
 
 This repo is the active workspace. `C:\Users\PC\Documents\Nitech\Personal\Pastry County Kitchen OS` was used only as a reference and should not be edited for this project.
 
@@ -19,7 +19,7 @@ This repo is the active workspace. `C:\Users\PC\Documents\Nitech\Personal\Pastry
 - Backend runtime data: ignored JSON files under `data/`.
 - Reference assets and prompt files: `docs/`.
 - Data persistence uses backend JSON files when served through `node server.js`, Supabase document storage on Vercel, and browser `localStorage` as fallback when no backend API is available.
-- There is no production-grade auth yet; the current access system remains a prototype.
+- Server-backed deployments use hashed passwords, hashed session tokens, HttpOnly cookies, and one-time recovery codes. Email verification, MFA, rate limiting, and server-enforced per-capability authorization are not implemented yet.
 
 ## How To Run
 
@@ -91,10 +91,10 @@ Team ID: team_SumcS7BfGXgJWdQc7y2iAxSk
 Production branch: main
 Production alias: https://fashion-store-os-sanuske2-2147s-projects.vercel.app
 Public alias: https://fashion-store-os.vercel.app
-Latest Git-triggered deployment: inspect with `vercel inspect https://fashion-store-os.vercel.app` or `vercel ls fashion-store-os --scope sanuske2-2147s-projects`
+Latest Git-triggered deployment: `dpl_8y3EMKfnkkmLR6wPButZuVzEcZNz` from `8c8891e` (Ready, 2026-08-03)
 ```
 
-The Git-connected project now has the required Vercel production env vars for Supabase persistence. `/api/health` returns `ok: true`, `storage: "supabase"`, `supabaseHost: "elkpberfbhwbrkawklnk.supabase.co"`, and `workspace: "default"` on the deployment URL, the project alias, and `https://fashion-store-os.vercel.app`.
+The Git-connected project has the required Vercel production env vars for Supabase persistence. On 2026-08-03, `/api/health` returned `ok: true`, `storage: "supabase"`, `supabaseHost: "elkpberfbhwbrkawklnk.supabase.co"`, and `workspace: "default"`. `CRON_SECRET` is configured in Production; real provider secrets are not configured yet.
 
 ## Cutover Status
 
@@ -116,7 +116,7 @@ Write path: NOT VERIFIED - cutover Step 6 browser smoke outstanding
 Watch window: 2026-08-03 to 2026-08-17
 ```
 
-Availability note: the Supabase project paused after ~31 days idle and production returned `storage: "supabase-unreachable"` from roughly 2026-06-29 until it was restored on 2026-07-31. A daily Vercel Cron on `/api/keepalive` now issues a real query to prevent a repeat idle pause. `CRON_SECRET` is not yet set, and cron registration is unconfirmed — both are owner-side.
+Availability note: the Supabase project paused after ~31 days idle and production returned `storage: "supabase-unreachable"` from roughly 2026-06-29 until it was restored on 2026-07-31. A daily Vercel Cron on `/api/keepalive` now issues a real query to prevent a repeat idle pause. `CRON_SECRET` was set on 2026-08-02; the active deployment confirms the cron is registered at `0 6 * * *`, but a successful scheduled firing has not yet been observed.
 
 ## Current Git State
 
@@ -127,11 +127,25 @@ On 2026-07-30 the repo was consolidated to a single branch. `master` (32 commits
 Recent shipped code commits:
 
 ```text
+8c8891e Implement Phase 019: multi-device workspace access
+5f11650 Resolve Phase 019 open questions: 30 min TTL, single use, combined string
+9deec74 Plan Phase 019: multi-device workspace access
+ead9030 Route a refused signup to the sign-in tab so recovery is reachable
+2a4a696 Add agent mode to the production smoke procedure
+42e790b Implement Phase 018: account recovery and password reset
+83f7f62 Resolve Phase 018 open questions: no expiry, redeem returns to sign-in
+3acd4a0 Plan Phase 018: account recovery and password reset
+fc1b21b Add self-contained production write-path smoke procedure
+80cb6a1 Record v1.0.0 cutover on the Vercel alias
+8b5943e Complete Phase 017 repo-side: cutover runbook and post-launch support
+8a7ce32 Add daily keepalive cron to prevent Supabase idle pause
+93af421 Document single-branch main release flow
+a911466 Refresh release/pilot/persistence docs for per-device workspaces
+d55439f Multi-tenant per-device workspaces and multi-user access
+2934811 Author production commits as owner ADxZimmy for auto-deploy
+6df2770 Harden MVP for pilot: clean-slate signup, neutral UI, server-auth gate
 87b12d9 Install Supabase CLI for owner activation
 e12f23b Fix launch gate spawn and draft cutover handoff
-0c96d30 Update phase handoff state after push
-bcb5f64 Implement store workflow and launch readiness phases
-40d8e0e Implement production readiness phases 009-012
 ```
 
 Deployment and persistence setup files added in this slice:
@@ -148,6 +162,8 @@ scripts/build.js
 scripts/check.js
 supabase/migrations/20260611160501_create_fashion_store_os_documents.sql
 supabase/migrations/20260611163000_allow_default_workspace_document_api_access.sql
+supabase/migrations/20260626191000_harden_workspaces_audit_and_channel_events.sql
+supabase/migrations/20260803120000_create_workspace_codes.sql
 vercel.json
 ```
 
@@ -158,6 +174,29 @@ git status --short
 ```
 
 Do not overwrite user changes. If there are uncommitted changes you did not make, inspect them and work with them.
+
+## Production Readiness Assessment (2026-07-31)
+
+Current stage: feature-complete MVP serving from the stable Vercel alias. The GitHub-to-Vercel deployment lane, Supabase persistence, health/readiness endpoints, daily keepalive, account recovery, and the Phase 019 multi-device code bridge are deployed. It is suitable for controlled testing by one studio, but it is not ready for broad multi-user production.
+
+Verified now:
+
+- Local `npm.cmd run launch:check`, release preflight, build, and dependency audit pass; npm reports zero known vulnerabilities.
+- Vercel production deployment `dpl_8y3EMKfnkkmLR6wPButZuVzEcZNz` is Ready at `https://fashion-store-os.vercel.app`; its build log identifies GitHub `main` commit `8c8891e`.
+- Supabase migration `20260803120000_create_workspace_codes.sql` was applied to `elkpberfbhwbrkawklnk`; all four local and remote migration versions match. A live invalid-code redemption returned the expected generic 404 rather than a storage error, confirming the deployed function can reach the new table.
+- Live `/api/health` is green on Supabase storage.
+- GitHub `main` is the default branch, `NnazimuzoO` has write permission, the repo is private, and annotated tag `v1.0.0` points to cutover commit `8b5943e`. The current plan does not provide private-repo branch protection/rulesets, and there is no CI workflow.
+
+Release blockers:
+
+- Tenancy: Phase 019 now bridges devices with short-lived codes, but the underlying workspace id remains device-held rather than account-bound. The full production join/invite smoke is still outstanding.
+- Data integrity: the app saves the entire state document with last-write-wins `PUT`s and has no version check, retry queue, or merge. Concurrent users and failed online saves can lose work.
+- Authorization: staff navigation is filtered in the browser, while `/api/state` gives any authenticated workspace user full-document read/write access.
+- Abuse controls: public signup/sign-in/workspace creation has no rate limiting, lockout, quota, or bot protection.
+- Real channels: Vercel lacks `CHANNEL_WEBHOOK_SECRET` and `CHANNEL_WEBHOOK_VERIFY_TOKEN`; provider traffic also defaults to workspace `default`, not a browser-generated studio workspace.
+- Operational proof: real-store pilot UAT, automated browser/CI regression, backup/restore rehearsal, alerting, custom domain, annotated release tag, and post-launch watch-window evidence remain pending.
+
+Recommended order: fix workspace membership and conflict-safe persistence first; enforce permissions and abuse controls at the API; bind provider channels to an owned workspace and configure secrets; add CI/E2E and backup/alerting checks; then run the pilot and execute Phase 017 only after sign-off.
 
 ## Completed Work
 
@@ -426,40 +465,47 @@ Key design constraints from the owner:
 
 Suggested next work slices:
 
-1. Phase 017 production cutover — owner-side steps
-   - Repo-side work is done: `docs/cutover.md` holds the ordered checklist and `docs/operations-runbook.md` holds the post-launch watch window and issue intake.
-   - Remaining steps are owner-only: confirm the Ready deployment, push the annotated `v1.0.0` tag, add the domain in Vercel, pass the `/api/health` gate, then point DNS.
-   - Also owner-side: set `CRON_SECRET` in Vercel, and confirm the `/api/keepalive` cron is registered under Settings → Cron Jobs.
+1. Phase 020 production-readiness remediation — recommended before broader multi-user use
+   - Replace per-device workspace tenancy with account-bound server-owned membership while retaining the Phase 019 code bridge during migration.
+   - Add conflict-safe writes and offline recovery, then enforce role permissions in the API.
+   - Add abuse controls, bind provider traffic to the correct workspace, configure real channel secrets, and add CI/E2E coverage.
+   - The executable plan is `.planning/phases/020-production-readiness-remediation/PLAN.md`.
 
-2. Real-store pilot UAT — waived, not done
+2. Phase 017 post-launch verification
+   - The alias cutover and `v1.0.0` tag are complete; no custom domain or DNS change was used.
+   - Run `docs/production-smoke.md`, including the manager write path, Phase 018 recovery round trip, and Phase 019 second-device join/invite flow.
+   - Confirm a successful `/api/keepalive` firing under Vercel Settings → Cron Jobs. Registration and `CRON_SECRET` are already confirmed.
+   - Keep the 14-day watch window open through 2026-08-17 and triage per `docs/operations-runbook.md`.
+
+3. Real-store pilot UAT — waived, not done
    - The owner elected on 2026-07-31 to skip pilot UAT and proceed to cutover.
    - `docs/pilot-uat.md` is unexecuted. Its scenarios are reused as the post-cutover smoke set in `docs/cutover.md` Step 6.
    - Consequence to carry: the production **write** path has not been validated by a real operator since the Supabase restore. Reads were verified on 2026-07-31; writes were not.
 
-3. Vercel ownership decision
+4. Vercel ownership decision
    - Owner-authored GitHub commits from `ADxZimmy` deploy successfully to production.
    - Collaborator-authored deploys still fail on the Hobby plan with `TEAM_ACCESS_REQUIRED`.
    - Decide whether to upgrade/move the Vercel project so collaborator-authored commits can deploy without owner intervention.
 
-4. Real channel integrations
+5. Real channel integrations
    - Wire WhatsApp Business API or Instagram Graph API into `/api/inbound`.
    - Add provider verify tokens and HMAC secrets in Vercel, not in the repo.
 
-5. Responsive QA pass
+6. Responsive QA pass
    - Check mobile, tablet, laptop, and desktop widths.
    - Verify sidebar hover/collapse behavior at each width.
    - Confirm no text overlap or broken cards.
 
-6. Form validation and empty states
+7. Form validation and empty states
    - Tighten validation for orders, measurements, inventory, and staff creation.
    - Add helpful empty states for a fresh workspace with no seed data.
 
-7. Accessibility and keyboard pass
+8. Accessibility and keyboard pass
    - Verify keyboard navigation.
    - Verify modal focus flow.
    - Check labels, contrast, focus states, and Escape behavior.
 
-8. Test strategy
+9. Test strategy
    - Add lightweight automated checks if the project remains static.
    - At minimum, keep using `npm.cmd run launch:check` and live `/api/health` checks before releases.
 
@@ -493,7 +539,7 @@ Commit:
 
 ## Open Questions
 
-- Should staff access be limited to 2 permanently, or is that only for the current prototype?
+- The workspace user cap is currently 25; confirm the commercial plan and whether limits should be enforced per subscription tier.
 - Should Mo'ora Afrika branding assets be replaced with final production files later?
 - Vercel deployments should be driven by GitHub integration; owner-authored pushes now work, while collaborator-authored pushes need a Vercel access/plan decision.
 - What custom domain should be used for Phase 017 cutover, and who owns the DNS zone?
@@ -501,15 +547,20 @@ Commit:
 
 ## Known Risks
 
-- Prototype authentication is not secure for production.
 - JSON-file persistence is local-only; Vercel production uses Supabase document persistence.
 - localStorage can be cleared by the browser or overwritten by reset.
 - There is no migration system for future localStorage schema changes.
 - No automated browser regression suite exists yet.
 - Static HTML/CSS/JS is simple and fast, but larger features may need modularization.
+- Per-device workspace ids do not provide a cross-device workspace join path, so staff invites only work from a browser that already has the manager's workspace id.
+- Whole-document saves are last-write-wins and have no offline retry/conflict recovery; concurrent users can overwrite one another.
+- Staff permissions are not enforced on individual server operations; any authenticated workspace user can read/write the complete state document.
+- Public auth/workspace endpoints have no rate limiting, lockout, workspace quota, or bot protection.
+- The production webhook is signature-required but has no configured signing/verification secrets, and provider traffic defaults to the `default` workspace.
+- Security response headers beyond HSTS are not configured on the production frontend.
 - GitHub-triggered production deployments are wired and fire on `main`, but the current Git-connected project blocks collaborator-authored deploys with `TEAM_ACCESS_REQUIRED` on the Hobby plan.
-- Supabase projects can become inactive; `/api/health` now detects upstream storage failure, but live persistence still depends on `elkpberfbhwbrkawklnk` staying active.
-- Prototype auth is still not production-secure even after durable persistence; a real auth/session model is a separate hardening phase.
+- Supabase projects can become inactive; `/api/health` detects upstream failure and a daily keepalive now reduces idle pauses, but backup/restore has not been rehearsed.
+- Server-backed auth hashes passwords and sessions and supports one-time recovery codes, but email verification, MFA, rate limiting, and server-enforced per-capability authorization remain production work.
 
 ## GSD Hybrid Skill Transfer
 

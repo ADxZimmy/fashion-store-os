@@ -16,8 +16,8 @@ Ordered checklist for moving Fashion Store OS from the Vercel alias to a stable 
 | --- | --- |
 | Phase 008 Supabase activation | Complete (2026-06-29) |
 | Production `/api/health` | Green (re-verified 2026-07-31 after the Supabase restore) |
-| Daily keepalive cron | Deployed; confirm it is registered under Vercel → Settings → Cron Jobs |
-| `CRON_SECRET` set in Vercel | Pending owner action |
+| Daily keepalive cron | Registered at `0 6 * * *` in the active deployment; successful scheduled firing still needs observation |
+| `CRON_SECRET` set in Vercel | Complete (2026-08-02); protected route verified after production redeploy |
 | Real-store pilot UAT | **Waived by owner decision on 2026-07-31.** `docs/pilot-uat.md` was not executed against production |
 
 The pilot waiver is recorded, not resolved. The scenarios in `docs/pilot-uat.md` are still the best-defined smoke set for this app, so Step 6 reuses them as a post-cutover check. Note what that trades away: they run *after* the domain is live rather than gating it, and they exercise a manager signup and write path that has never been validated by a real operator.

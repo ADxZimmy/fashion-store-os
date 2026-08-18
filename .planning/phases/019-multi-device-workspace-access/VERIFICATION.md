@@ -1,16 +1,16 @@
 # Verification
 
-Status: Implemented and verified locally on 2026-08-03. **The migration has not been applied to the production Supabase project**, which is an owner action; see Deployment below.
+Status: Implemented and verified locally on 2026-08-03. Migration `20260803120000_create_workspace_codes.sql` was applied to production Supabase project `elkpberfbhwbrkawklnk` on 2026-08-03. Production join/invite verification remains outstanding.
 
-## Deployment Prerequisite
+## Deployment Status
 
-`supabase/migrations/20260803120000_create_workspace_codes.sql` must be applied before workspace codes work in production:
+Applied with:
 
 ```
 npx supabase db push
 ```
 
-Until it runs, `fashion_store_os_workspace_codes` does not exist. The invite path catches that failure and returns a same-device invite, so deploying ahead of the migration degrades to current behaviour rather than breaking invites — but the cross-device fix stays inert, and `/api/workspace-code` returns a storage error.
+`supabase migration list --linked` confirms `20260803120000` exists in both the local and remote ledgers. The `fashion_store_os_workspace_codes` table is now available to the deployed code.
 
 ## Automated Checks
 
@@ -66,7 +66,7 @@ Until it runs, `fashion_store_os_workspace_codes` does not exist. The invite pat
 - Check: Tenancy unweakened.
   Result: Passed by inspection on 2026-08-03. `storeForRequest` still resolves from the header; the new `storeForWorkspace` takes a workspace id that can only come from a redeemed code, and the code lookup returns a workspace id and nothing else.
 - Check: New table has RLS enabled and explicit grants.
-  Result: Written into the migration on 2026-08-03; `anon` and `authenticated` revoked, `service_role` granted. **Not yet applied to production** — see Deployment Prerequisite.
+  Result: Applied to production on 2026-08-03; the migration enables RLS, revokes `anon` and `authenticated`, and grants `service_role`.
 - Check: Migration applied to production.
   Result: Passed on 2026-08-03. A bogus redeem against production returned `404` with the generic mismatch message, which requires the table to exist and the lookup to run. A missing table would have returned `502`.
 - Check: Production verification of join and cross-device invite, end to end in a browser.
@@ -79,17 +79,17 @@ All four are settled; no open questions block implementation.
 - TTL: 30 minutes for `join`. Owner decision, 2026-08-03. Set per kind — `invite` keeps `INVITE_TTL_SECONDS` (3 days), because a global 30-minute TTL would expire the workspace-code half of a combined invite string two and a half days before the invite it carries.
 - Uses: one. Owner decision, 2026-08-03. Tracked with `redeemed_at` rather than a counter.
 - Invite format: one combined string, `<workspaceCode>.<inviteToken>`. Owner decision, 2026-08-03. Separator is `.` because `-` and `_` both occur in `randomToken` base64url output.
-- Should a joined workspace refuse manager signup? **No change needed.** Issuing a code of either kind goes through `requireManager`, so a code can only exist for a workspace that already has a manager — and `signUpManager` already refuses when a manager is present. The join path therefore cannot reach a claimable workspace. The residual exposure is a leaked workspace id used directly in the header against a manager-less workspace, which is pre-existing and unchanged by this phase. Verify rather than assume: see the check below.
+- Should a joined workspace refuse manager signup? **No change needed — but the original reasoning was wrong.** It read "issuing a code of either kind goes through `requireManager`, so a code can only exist for a workspace that already has a manager." `requireManager` returns a null user for a workspace with no accounts, so it never carried that guarantee; see the manager-gating checks above. The conclusion holds on the corrected implementation, by a different route for each kind: `join` is guarded explicitly in the issuing handler (`api/workspace-code.js`, `server.js`), and `invite` is issued only after `createStaffInvite` has called `assertManager`, so the null user cannot reach issuance there. On that basis a code of either kind requires a workspace that already has a manager, and `signUpManager` already refuses when a manager is present, so the join path cannot reach a claimable workspace. The residual exposure is a leaked workspace id used directly in the header against a manager-less workspace, which is pre-existing and unchanged by this phase.
 
 ## Residual Risk
 
 - Risk: Workspace ids become mobile, so a leaked id plus an unclaimed workspace is easier to squat.
-  Mitigation: Codes cannot be issued for a manager-less workspace, since issuing requires a manager, and signup is already refused where a manager exists. Covered by an explicit check rather than left to reasoning.
+  Mitigation: Codes cannot be issued for a manager-less workspace — `join` checks for a real manager user in the handler, and `invite` is issued only after `createStaffInvite` has asserted one — and signup is already refused where a manager exists. Recorded as verified by an explicit check, which is exactly what makes the first version's failure worth keeping: the check existed but only exercised a workspace that already had a manager, so it passed against the one case the bug did not touch. Production found the rest.
 - Risk: This makes multi-device access possible without making it discoverable — a user still has to know to ask for a code.
   Mitigation: Sign-in screen entry point, and the abandonment warning naturally surfaces the concept at the moment it matters.
 - Risk: Per-device tenancy remains the underlying model, so losing every device that holds a workspace id still strands the data.
   Mitigation: Not solved here. Account-based tenancy is the real fix and is deliberately out of scope.
 - Risk: Rate limiting is in-memory, so it does not span serverless instances.
   Mitigation: None in this phase, and stated plainly rather than implied to be more than it is. It stops a naive loop from one client against one instance. A durable limiter belongs in the storage layer if this ever needs to be a real control.
-- Risk: Deploying the code before the migration leaves the fix inert.
-  Mitigation: The invite path catches the failure and returns a same-device invite, so behaviour degrades to current rather than erroring. `/api/workspace-code` still returns a storage error until the migration runs.
+- Risk: Future code/schema drift could leave workspace-code behavior unavailable.
+  Mitigation: Keep `supabase migration list --linked` in release verification and run the production join/invite smoke after schema changes.

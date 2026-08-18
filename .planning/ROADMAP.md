@@ -10,11 +10,11 @@
   Outcome: `docs/cutover.md` Step 6 browser smoke — manager signup, business setup, refresh persistence, second-browser workspace isolation.
   Status: Outstanding and owner-side. The first exercise of the write path since the Supabase restore; reads and health endpoints are verified, writes are not.
 
-## Next
+- Phase 020: Production-readiness remediation.
+  Outcome: Tenancy is account-bound rather than device-bound; writes are conflict-safe and recoverable; permissions are enforced by the server; public endpoints have durable abuse controls; provider webhooks route to an owned workspace with real secrets.
+  Status: Plan drafted (`.planning/phases/020-production-readiness-remediation/`); recommended before broader multi-user production use. Phase 019 now supplies the short-lived code bridge for multi-device access.
 
-- Item: Apply the Phase 019 migration to production Supabase.
-  Outcome: `npx supabase db push` creates `fashion_store_os_workspace_codes`, after which workspace codes and cross-device invites work in production.
-  Status: **Owner action, outstanding.** Until it runs, the invite path degrades to a same-device invite and `/api/workspace-code` returns a storage error.
+## Next
 
 - Item: Custom domain, if wanted.
   Outcome: A branded domain replaces the `fashion-store-os.vercel.app` alias as the public target.
@@ -73,11 +73,11 @@
   Status: Complete and deployed; owner-side backup/restore rehearsal pending.
 - Phase 019: Multi-device workspace access.
   Outcome: Short-lived human-typable workspace codes let a manager open a workspace on a second device, and invites now carry their workspace so they can be accepted from the invitee's own browser.
-  Status: Implemented and verified locally on 2026-08-03; 38 unit assertions plus an API round trip. Includes a live bug fix — cross-device invite acceptance was confirmed failing on the pre-change build with "Invite details do not match" and confirmed working after. **The migration is not yet applied to production**, so the fix is inert there until `npx supabase db push` runs. Account-based tenancy remains deliberately out of scope.
+  Status: Implemented and verified locally on 2026-08-03; 38 unit assertions plus an API round trip. Migration `20260803120000_create_workspace_codes.sql` was applied to production Supabase on 2026-08-03 and local/remote migration ledgers match. Production join/invite smoke remains outstanding. Account-based tenancy remains deliberately out of scope.
 
 - Phase 018: Account recovery and password reset.
   Outcome: One-time recovery codes issued at manager signup and re-issuable from Settings, manager-issued codes for colleagues, a redeem flow that grants no session, and a documented owner last-resort procedure.
-  Status: Implemented and verified locally on 2026-08-03; 37 unit assertions plus an HTTP round trip. Raised by the 2026-08-03 smoke test, where a forgotten manager password made a workspace permanently unreachable. Email-based reset stayed out of scope — no mail capability exists and the project constrains new dependencies. Outstanding: the production recovery round trip (`docs/production-smoke.md` Step 6) and a rehearsal of the owner last-resort procedure.
+  Status: Implemented, verified locally, and deployed from `2a4a696` on 2026-08-03. Raised by the production smoke test, where a forgotten manager password made a workspace permanently unreachable. Email-based reset stayed out of scope — no mail capability exists and the project constrains new dependencies. Outstanding: the production recovery round trip (`docs/production-smoke.md` Step 6) and a rehearsal of the owner last-resort procedure.
 
 - Phase 016: Pilot UAT and launch readiness.
   Outcome: Pilot UAT script, issue triage, and `npm.cmd run launch:check` were added.

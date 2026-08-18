@@ -10,6 +10,8 @@ The 14-day watch window is open. The remaining unverified item is the production
 
 Real-store pilot UAT was waived by owner decision on 2026-07-31 rather than executed. Its scenarios are reused as the post-cutover smoke set. The production write path is therefore unvalidated by a real operator.
 
+Phase 018 account recovery is deployed from `2a4a696` and awaiting its production recovery round trip. Phase 019 adds a short-lived code bridge for multi-device workspace access and its production migration is applied. Account-bound tenancy, concurrent-write/offline recovery, server-enforced RBAC, durable abuse controls, and channel routing remain Phase 020 work before broader multi-user production use.
+
 The repo is single-branch: `main` is the working, default, and production branch. Every push to `main` is a production release.
 
 ## Completed
@@ -91,18 +93,23 @@ The repo is single-branch: `main` is the working, default, and production branch
 - Consolidated the repo to a single branch on 2026-07-30: deleted `master` (32 commits behind, unreferenced by any deploy config) and `codex/backend-foundation` (identical to `main`). `main` is now the working, default, and production branch, and `docs/release-lane.md` moves `release:preflight` to run before the push because every push is now a release.
 - Added `/api/keepalive` and a daily Vercel Cron (`0 6 * * *`) after the Supabase project paused from ~31 days idle and production returned `storage: "supabase-unreachable"`. The route runs a real Supabase query to reset the pause timer and returns 503 (not 200 like `/api/health`) when the probe fails, so an outage surfaces as a failed cron invocation. Gated by `CRON_SECRET` when set.
 - Phase 017 repo-side: authored `docs/cutover.md` (ordered preflight → tag → domain → health gate → DNS → verify → watch checklist with owner-only steps marked) and added Post-Launch Support to `docs/operations-runbook.md` (14-day watch window, issue intake fields, sev-1..4 triage). Recorded the readiness blind spot — `/api/readiness` reports configuration, not connectivity, and stayed green through the outage.
+- Fast-forwarded local `main` through four owner commits to `origin/main` at `8c8891e` on 2026-08-03 while preserving the uncommitted readiness and handover work.
+- Applied Supabase migration `20260803120000_create_workspace_codes.sql` to linked production project `elkpberfbhwbrkawklnk`; `supabase migration list --linked` confirms all four local and remote versions match.
+- Confirmed Ready Vercel deployment `dpl_8y3EMKfnkkmLR6wPButZuVzEcZNz` was built from `8c8891e`. Live `/api/health` remained green, and an invalid `/api/workspace-code` redemption returned the expected generic 404 rather than a storage error, proving the deployed function can query the new table.
 
 ## In Progress
 
 - Item: Phase 017 post-launch watch window (14 days from 2026-08-03), per the Post-Launch Support section of `docs/operations-runbook.md`.
 - Item: Production write-path verification via the `docs/cutover.md` Step 6 browser smoke set (manager signup → business setup → refresh → persistence; second browser for workspace isolation). Owner-side. The first attempt on 2026-08-03 was blocked by the account lockout below and has not been completed.
 - Item: Phase 018 production verification — the recovery round trip is now Step 6 of `docs/production-smoke.md` and runs with the write-path smoke. The owner last-resort procedure is documented but not rehearsed.
-- Item: Apply the Phase 019 migration to production. `npx supabase db push` creates `fashion_store_os_workspace_codes`. Owner action. Until then the invite path degrades to a same-device invite and `/api/workspace-code` returns a storage error, so the fix is inert in production.
+- Item: Phase 019 production verification — schema reachability is confirmed; run a real second-device join and cross-device invite acceptance next.
+- Item: Phase 020 production-readiness remediation — account-bound tenancy, conflict-safe writes, server-enforced authorization, durable abuse controls, and provider routing remain planned before broader multi-user use.
+- Item: Keepalive evidence — Vercel deployment metadata confirms `/api/keepalive` is registered at `0 6 * * *`, but a successful scheduled firing has not been observed.
 
 ## Known Defects
 
-- ~~Staff invites cannot be accepted from the invitee's own device.~~ **Fixed in Phase 019 on 2026-08-03**, pending the production migration. Invites now carry a workspace code, and acceptance resolves the issuing workspace instead of the invitee's own. The failure was confirmed on the pre-change build before the fix landed.
-- ~~A workspace is reachable only from the browser that created it.~~ **Fixed in Phase 019 on 2026-08-03**, pending the production migration. A manager issues a 30-minute single-use workspace code from Settings and redeems it on the other device.
+- ~~Staff invites cannot be accepted from the invitee's own device.~~ **Implemented in Phase 019 and migrated on 2026-08-03; production smoke outstanding.** Invites now carry a workspace code, and acceptance resolves the issuing workspace instead of the invitee's own.
+- ~~A workspace is reachable only from the browser that created it.~~ **Implemented in Phase 019 and migrated on 2026-08-03; production smoke outstanding.** A manager issues a 30-minute single-use workspace code from Settings and redeems it on the other device.
 
 Historical detail retained below.
 
@@ -112,7 +119,6 @@ Historical detail retained below.
 ## Blocked
 
 - Collaborator-authored Vercel production deploys are blocked with `TEAM_ACCESS_REQUIRED` because commit author `NnazimuzoO` / Vercel user `nnazimuzoo` does not have contributing access to `sanuske2-2147s-projects/fashion-store-os`. The attempted invite to `nnazimuzoo@nitechsoftware.com.ng` failed because Vercel Hobby teams do not permit team members.
-- `/api/keepalive` cron registration in Vercel → Settings → Cron Jobs is still unconfirmed from this session; the available CLI authenticates as `nnazimuzoo`, which has no access to the `sanuske2-2147s-projects` scope. `CRON_SECRET` enforcement was confirmed live on 2026-08-02 (401 without a bearer token), but a successful scheduled firing has not been observed.
 
 ## Waived
 
@@ -120,7 +126,7 @@ Historical detail retained below.
 
 ## Next Action
 
-Owner (`ADxZimmy`): run the `docs/cutover.md` Step 6 browser smoke against `https://fashion-store-os.vercel.app` — manager signup, business setup, refresh for persistence, and a second browser for workspace isolation. This is the first exercise of the production write path since the Supabase restore. Then confirm the `/api/keepalive` cron shows a successful run under Vercel → Settings → Cron Jobs, and work the watch-window cadence for 14 days.
+Run the production smoke against `https://fashion-store-os.vercel.app`, including manager signup, persistence, Phase 018 recovery, Phase 019 second-device join, and cross-device invite acceptance. Then confirm `/api/keepalive` shows a successful scheduled run and continue the 14-day watch window.
 
 ## Verification Snapshot
 
