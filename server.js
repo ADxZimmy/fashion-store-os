@@ -305,7 +305,9 @@ async function routeApi(request, response, url) {
       if (action === "create-staff-invite") {
         const result = createStaffInvite(auth, user, body);
         await writeJsonAtomic(AUTH_FILE, result.auth);
-        const issued = await issueLocalWorkspaceCode("invite", user?.id);
+        // createStaffInvite asserts a manager first, so user is real here; see the
+        // note in api/session.js before reintroducing optional chaining.
+        const issued = await issueLocalWorkspaceCode("invite", user.id);
         const invite = sanitizeInvite(
           result.auth.users.find((item) => item.email === result.invite.email) || {},
           result.inviteToken,

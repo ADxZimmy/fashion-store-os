@@ -148,9 +148,13 @@ module.exports = async function handler(request, response) {
         // because the Phase 019 migration has not been applied yet. Deploying
         // this code ahead of the migration then leaves invites working exactly
         // as they did before instead of returning a storage error.
+        //
+        // createStaffInvite has already called assertManager, so user is a real
+        // manager by this point. Do not soften this back to user?.id -- that idiom
+        // is what hid the missing gate on the join path in api/workspace-code.js.
         let workspaceCode = "";
         try {
-          const issued = await issueWorkspaceCode(store.workspace, "invite", user?.id);
+          const issued = await issueWorkspaceCode(store.workspace, "invite", user.id);
           workspaceCode = issued.workspaceCode;
         } catch (codeError) {
           console.error("Workspace code issue failed; returning a same-device invite", codeError);
