@@ -8,6 +8,7 @@ const checks = [
   ["JavaScript syntax", ["run", "check"]],
   ["Identity plane unit suite", ["run", "test:identity"]],
   ["Local-first boundary guards", ["run", "test:local-first"]],
+  ["Device storage suite", ["run", "test:storage"]],
   ["Mobile/accessibility UX audit", ["run", "ux:audit"]],
   ["Security hygiene audit", ["run", "ops:security"]],
   ["Production build", ["run", "build"]],

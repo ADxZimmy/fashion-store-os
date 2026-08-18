@@ -119,7 +119,7 @@ const navItems = [
   ["settings", "settings", "Settings"],
 ];
 
-let state = loadState();
+let state = createSeedState();
 let auth = loadAuth();
 let currentView = localStorage.getItem(VIEW_KEY) || "dashboard";
 let authMode = auth.users.length ? "signin" : "signup";
@@ -137,6 +137,11 @@ let accessMode = "loading";
 let offlineMode = false;
 let storeMismatch = null;
 let storageFailureAnnounced = false;
+const deviceStorage = typeof window !== "undefined" ? window.FsoStorage || null : null;
+let storageUnavailable = false;
+let storagePersisted = false;
+let storageSource = "empty";
+let storageEstimate = { supported: false, persisted: false, usage: 0, quota: 0 };
 let lastInviteResult = null;
 // Recovery codes are returned by the server exactly once. Hold the value only
 // long enough to show it, then clear it — it is never persisted client-side.
@@ -156,7 +161,7 @@ async function initializeApp() {
   // deleted the cache -- which under local-first would destroy the only copy
   // on a routine session expiry. Authentication now gates the UI, nothing
   // else.
-  state = loadState();
+  await openDeviceStorage();
 
   const snapshot = await loadIdentitySnapshot();
 
@@ -307,12 +312,19 @@ function localStoreTag() {
   }
 }
 
+// "Does this device hold real records?" -- asked when a sign-in could
+// otherwise clobber another store's data. Compares against a fresh seed
+// rather than checking a storage key, since the records now live in
+// IndexedDB and are already loaded by this point.
 function hasLocalBusinessData() {
-  try {
-    return Boolean(localStorage.getItem(STORAGE_KEY));
-  } catch (error) {
-    return false;
-  }
+  return Boolean(
+    state.clients.length ||
+      state.orders.length ||
+      state.inquiries.length ||
+      state.inventory.length ||
+      state.styles.length ||
+      state.profile,
+  );
 }
 
 // Decide what the signed-in account may do with the records already on this
@@ -396,16 +408,62 @@ function apiHeaders(extra = {}) {
 }
 
 
-function loadState() {
+// Business records live in IndexedDB (src/storage.js). Opening it also
+// migrates the pre-pivot localStorage blob and requests persistent storage,
+// so the browser stops treating the shop's only copy as evictable cache.
+async function openDeviceStorage() {
+  if (!deviceStorage) {
+    // No IndexedDB at all (private mode in some browsers, ancient engines).
+    // The app still runs for this session; it just cannot persist, and says so
+    // rather than pretending changes are saved.
+    storageUnavailable = true;
+    state = createSeedState();
+    return;
+  }
+
+  deviceStorage.onFailure(({ quota, phase }) => {
+    storageFailureAnnounced = true;
+    showToast(
+      quota
+        ? "This device is out of storage space. Your last change was not saved -- free up space, then retry."
+        : `Could not save to this device (${phase}). Your last change was not saved.`,
+    );
+    render();
+  });
+
   try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      return normalizeState(JSON.parse(saved));
+    const result = await deviceStorage.load();
+    state = result.value ? normalizeState(result.value) : createSeedState();
+    storageSource = result.source;
+    if (result.source === "recovered") {
+      // The current record would not parse and the recovery snapshot was used.
+      // Say so plainly: some recent edits are gone, the dataset is not.
+      showToast("Recovered your records from the last good snapshot. Very recent changes may be missing.");
+    }
+    if (result.warning === "migration-unverified") {
+      console.warn("Migrated records could not be verified; the old copy was kept.");
     }
   } catch (error) {
-    console.warn("Could not read saved Fashion Studio OS state.", error);
+    console.error("Could not open device storage.", error);
+    storageUnavailable = true;
+    state = createSeedState();
+    showToast("Could not open this device's storage. Changes will not be saved this session.");
   }
-  return createSeedState();
+
+  const persistence = await deviceStorage.requestPersistence();
+  storagePersisted = Boolean(persistence.persisted);
+  deviceStorage.describe().then((info) => {
+    storageEstimate = info;
+  });
+
+  // Writes are issued immediately, so this only catches a snapshot that
+  // arrived while another write was still in flight.
+  window.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") void deviceStorage.flush();
+  });
+  window.addEventListener("beforeunload", () => {
+    void deviceStorage.flush();
+  });
 }
 
 function loadAuth() {
@@ -2812,20 +2870,54 @@ function renderSettings() {
 
       ${currentUser()?.role === "manager" ? renderTeamAccessPanel() : renderAccessSummaryPanel()}
 
-      <section class="panel">
-        <div class="panel-header">
-          <div>
-            <h2>Workspace data</h2>
-            <p>Your records are saved automatically as you work.</p>
-          </div>
-          <span class="status">${offlineMode ? "Offline" : "Online"}</span>
-        </div>
-        <div class="button-row">
-          <button class="btn danger" type="button" data-action="reset-demo">Reset workspace data</button>
-        </div>
-      </section>
+      ${renderDeviceStoragePanel()}
     </section>
   `;
+}
+
+
+// The device now holds the only copy of the shop's records, so where they live
+// and whether the browser may evict them stops being an implementation detail
+// the operator should not have to care about.
+function renderDeviceStoragePanel() {
+  const used = storageEstimate.usage ? formatBytes(storageEstimate.usage) : "";
+  const quota = storageEstimate.quota ? formatBytes(storageEstimate.quota) : "";
+  const persistedLabel = storageUnavailable
+    ? "Not saving"
+    : storagePersisted
+      ? "Protected"
+      : storageEstimate.supported
+        ? "Evictable"
+        : "Unknown";
+  return `
+    <section class="panel">
+      <div class="panel-header">
+        <div>
+          <h2>This device's records</h2>
+          <p>Your records are saved on this device as you work. They are not stored on our servers.</p>
+        </div>
+        <span class="status">${escapeHtml(persistedLabel)}</span>
+      </div>
+      ${storageUnavailable ? `<div class="inline-callout"><div><strong>Changes are not being saved</strong><p class="muted small-text">This browser is blocking local storage, so nothing you enter will survive a reload. Check site permissions, or try a different browser.</p></div></div>` : ""}
+      ${!storageUnavailable && storageEstimate.supported && !storagePersisted ? `<div class="inline-callout"><div><strong>The browser may clear these records</strong><p class="muted small-text">This browser has not granted persistent storage, so it can evict your records if the device runs low on space. Keeping the app installed or revisiting it regularly makes eviction less likely. A backup, coming next, removes the risk.</p></div></div>` : ""}
+      <dl class="meta-grid">
+        <div><dt>Storage</dt><dd>${escapeHtml(storageUnavailable ? "Unavailable" : "On this device")}</dd></div>
+        <div><dt>Connection</dt><dd>${offlineMode ? "Offline" : "Online"}</dd></div>
+        ${used ? `<div><dt>Used</dt><dd>${escapeHtml(used)}${quota ? ` of ${escapeHtml(quota)}` : ""}</dd></div>` : ""}
+        ${storageSource === "recovered" ? `<div><dt>Opened from</dt><dd>Recovery snapshot</dd></div>` : ""}
+      </dl>
+      <div class="button-row">
+        <button class="btn danger" type="button" data-action="reset-demo">Erase this device's records</button>
+      </div>
+    </section>
+  `;
+}
+
+function formatBytes(bytes) {
+  const value = Number(bytes || 0);
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(0)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function renderTeamAccessPanel() {
@@ -3080,6 +3172,7 @@ function renderProfileFields(theme, profile = {}) {
       <label class="field">
         <span>Logo/business mark</span>
         <input name="logo" type="file" accept="image/*">
+        <small class="hint">Resized to ${LOGO_MAX_DIMENSION}px automatically so it does not bloat this device's storage.</small>
       </label>
       <label class="field">
         <span>Logo view</span>
@@ -3480,7 +3573,7 @@ async function handleProfileSubmit(form, isFirstLaunch) {
   const data = new FormData(form);
   const existing = state.profile || {};
   const logoFile = data.get("logo");
-  const logo = logoFile && logoFile.size ? await fileToDataUrl(logoFile) : existing.logo || "";
+  const logo = logoFile && logoFile.size ? await logoToDataUrl(logoFile) : existing.logo || "";
   const businessName = clean(data.get("businessName"));
 
   state.profile = {
@@ -4572,6 +4665,7 @@ async function confirmResetLocalData() {
 }
 
 function eraseLocalBusinessData() {
+  if (deviceStorage) void deviceStorage.erase();
   for (const key of [STORAGE_KEY, VIEW_KEY, WORKSPACE_KEY, STORE_TAG_KEY]) {
     try {
       localStorage.removeItem(key);
@@ -5398,21 +5492,20 @@ function saveAuth() {
 // loss and must be surfaced rather than swallowed. Step 3 moves this onto
 // IndexedDB with persistent-storage permission; the guard exists now because
 // this became the sole path the moment the server sync was removed.
+// The only write path for business records. Nothing here touches the network:
+// there is no server copy after Phase 021, so a failure is real data loss and
+// is surfaced through the onFailure handler rather than swallowed.
 function persistLocalState() {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    if (storageFailureAnnounced) {
-      storageFailureAnnounced = false;
-    }
-    return true;
-  } catch (error) {
-    console.error("Could not save to this device.", error);
+  if (storageUnavailable || !deviceStorage) {
     if (!storageFailureAnnounced) {
       storageFailureAnnounced = true;
-      showToast("This device is out of storage space. Your last change was not saved — free up space, then retry.");
+      showToast("This device is not saving changes. Check browser storage permissions.");
     }
     return false;
   }
+  storageFailureAnnounced = false;
+  void deviceStorage.save(state);
+  return true;
 }
 
 function persistLocalAuth() {
@@ -5460,12 +5553,59 @@ function showToast(message) {
   }, 3200);
 }
 
+const LOGO_MAX_DIMENSION = 512;
+const LOGO_MAX_BYTES = 256 * 1024;
+
 function fileToDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result);
     reader.onerror = reject;
     reader.readAsDataURL(file);
+  });
+}
+
+// A logo rides inside the records document as a base64 data URL, so every
+// save carries it. Before the pivot the server's 5MB body limit put a ceiling
+// on that; with no server there is none, so an unedited phone photo would
+// inflate every write and eat the device's quota. Downscaled rather than
+// refused, so the operator still gets their mark.
+async function logoToDataUrl(file) {
+  const original = await fileToDataUrl(file);
+  if (typeof original !== "string") return "";
+  try {
+    const downscaled = await downscaleImage(original, LOGO_MAX_DIMENSION);
+    if (downscaled && downscaled.length < original.length) return downscaled;
+    return original;
+  } catch (error) {
+    console.warn("Could not downscale the logo; using the original.", error);
+    return original;
+  }
+}
+
+function downscaleImage(dataUrl, maxDimension) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => {
+      const scale = Math.min(1, maxDimension / Math.max(image.width || 1, image.height || 1));
+      const width = Math.max(1, Math.round((image.width || 1) * scale));
+      const height = Math.max(1, Math.round((image.height || 1) * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext("2d");
+      if (!context) {
+        reject(new Error("Canvas unavailable"));
+        return;
+      }
+      context.drawImage(image, 0, 0, width, height);
+      // PNG keeps transparency for marks that need it; JPEG is the fallback
+      // when the PNG is still too heavy for a document written on every edit.
+      const png = canvas.toDataURL("image/png");
+      resolve(png.length <= LOGO_MAX_BYTES ? png : canvas.toDataURL("image/jpeg", 0.82));
+    };
+    image.onerror = () => reject(new Error("Could not read that image"));
+    image.src = dataUrl;
   });
 }
 
