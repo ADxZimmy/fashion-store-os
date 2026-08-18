@@ -6,7 +6,9 @@ const { buildClearSessionCookie, buildSessionCookie } = require("./_crypto");
 const identity = require("./_identity");
 const { sendJson } = require("./_response");
 
-const ACTIONS = {
+// Null-prototype: a plain literal resolves inherited keys, so an action of
+// "constructor" or "toString" would pass the handler lookup and be invoked.
+const ACTIONS = Object.assign(Object.create(null), {
   "signup": identity.signup,
   "signin": identity.signin,
   "signout": (db, request) => identity.signout(db, request),
@@ -14,6 +16,7 @@ const ACTIONS = {
   "redeem-recovery-code": identity.redeemRecoveryCode,
   "create-staff": identity.createStaff,
   "create-staff-invite": identity.createInvite,
+  "cancel-staff-invite": identity.cancelInvite,
   "update-staff-access": identity.updateStaffAccess,
   "create-recovery-code": (db, request) => identity.createRecoveryCode(db, request),
   "reset-user-password": identity.resetUserPassword,
@@ -21,11 +24,11 @@ const ACTIONS = {
   "suspend-staff": identity.suspendStaff,
   "reactivate-staff": identity.reactivateStaff,
   "delete-staff": identity.deleteStaff,
-};
+});
 
 async function handleSessionAction(db, request, response, body) {
   const action = String(body?.action || "").trim();
-  const handler = ACTIONS[action];
+  const handler = typeof ACTIONS[action] === "function" ? ACTIONS[action] : null;
   if (!handler) {
     sendJson(response, 400, { error: "Unknown action" });
     return;

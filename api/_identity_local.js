@@ -76,6 +76,12 @@ function createLocalIdentityStore(dataDir) {
 
     insertStore: async (row) => mutate((data) => void data.stores.push(row)),
     getStore: async (id) => load().stores.find((row) => row.id === id) || null,
+    deleteStore: async (id) =>
+      mutate((data) => {
+        data.stores = data.stores.filter((item) => item.id !== id);
+        data.memberships = data.memberships.filter((item) => item.store_id !== id);
+        data.invites = data.invites.filter((item) => item.store_id !== id);
+      }),
 
     listMembershipsByAccount: async (accountId) => load().memberships.filter((row) => row.account_id === accountId),
     listMembershipsByStore: async (storeId) =>
@@ -84,7 +90,16 @@ function createLocalIdentityStore(dataDir) {
         .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at))),
     getMembership: async (accountId, storeId) =>
       load().memberships.find((row) => row.account_id === accountId && row.store_id === storeId) || null,
-    insertMembership: async (row) => mutate((data) => void data.memberships.push(row)),
+    insertMembership: async (row) =>
+      mutate((data) => {
+        // Mirrors the (account_id, store_id) primary key.
+        if (data.memberships.some((item) => item.account_id === row.account_id && item.store_id === row.store_id)) {
+          const error = new Error("That account is already a member of this store.");
+          error.statusCode = 409;
+          throw error;
+        }
+        data.memberships.push(row);
+      }),
     updateMembership: async (accountId, storeId, patch) =>
       mutate((data) => {
         const row = data.memberships.find((item) => item.account_id === accountId && item.store_id === storeId);
@@ -118,9 +133,26 @@ function createLocalIdentityStore(dataDir) {
       load().invites.filter((row) => row.store_id === storeId && !row.accepted_at),
     findOpenInvite: async (storeId, email) =>
       load().invites.find((row) => row.store_id === storeId && sameEmail(row.email, email) && !row.accepted_at) || null,
-    countOpenInvites: async (storeId) =>
-      load().invites.filter((row) => row.store_id === storeId && !row.accepted_at).length,
-    insertInvite: async (row) => mutate((data) => void data.invites.push(row)),
+    countOpenInvites: async (storeId, nowIso) =>
+      load().invites.filter(
+        (row) => row.store_id === storeId && !row.accepted_at && (!nowIso || row.expires_at > nowIso),
+      ).length,
+    insertInvite: async (row) =>
+      mutate((data) => {
+        // Mirrors the partial unique index on (store_id, lower(email))
+        // where accepted_at is null. Without it, a dev-only race produced two
+        // live invites with two valid tokens where production would refuse.
+        if (
+          data.invites.some(
+            (item) => item.store_id === row.store_id && sameEmail(item.email, row.email) && !item.accepted_at,
+          )
+        ) {
+          const error = new Error("An invite for that email was just created. Refresh and try again.");
+          error.statusCode = 409;
+          throw error;
+        }
+        data.invites.push(row);
+      }),
     updateInvite: async (id, patch) =>
       mutate((data) => {
         const row = data.invites.find((item) => item.id === id);

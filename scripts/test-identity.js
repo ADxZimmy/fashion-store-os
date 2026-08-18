@@ -123,9 +123,106 @@ async function main() {
     const invite = await identity.createInvite(db, req(manager.sessionToken), { name: "T", email: "invitee@example.com", access: ["dashboard", "orders"] });
     ok("manager session passes the gate", invite.status === 201 && Boolean(invite.payload.invite.inviteToken));
 
-    // Same four cases on a second gated action, cheaply.
-    await expectError("suspend-staff without session is 401", identity.suspendStaff(db, req(), { id: "anything" }), 401);
-    await expectError("suspend-staff as staff is 403", identity.suspendStaff(db, req(staffSignin.sessionToken), { id: "anything" }), 403);
+    // Every manager-gated action gets all four cases, not just the one that
+    // happened to be tested. resetUserPassword is the sharpest: unlike the
+    // staff-only actions it can target a fellow manager, so a gate regression
+    // there would be staff-to-manager account takeover. A suite that checked
+    // only createInvite would stay green through exactly that.
+    const emptySystem = freshDb("gate-matrix-empty");
+    const gated = [
+      ["create-staff", (r, b) => identity.createStaff(r, b, { name: "X", email: "x@example.com", password: STRONG })],
+      ["create-staff-invite", (r, b) => identity.createInvite(r, b, { email: "y@example.com" })],
+      ["cancel-staff-invite", (r, b) => identity.cancelInvite(r, b, { id: "invite-x" })],
+      ["update-staff-access", (r, b) => identity.updateStaffAccess(r, b, { id: "staff-x", access: ["dashboard"] })],
+      ["suspend-staff", (r, b) => identity.suspendStaff(r, b, { id: "staff-x" })],
+      ["reactivate-staff", (r, b) => identity.reactivateStaff(r, b, { id: "staff-x" })],
+      ["delete-staff", (r, b) => identity.deleteStaff(r, b, { id: "staff-x" })],
+      ["reset-user-password", (r, b) => identity.resetUserPassword(r, b, { id: "staff-x" })],
+    ];
+    for (const [label, call] of gated) {
+      await expectError(`${label}: empty system + no session is 401`, call(emptySystem, req()), 401);
+      await expectError(`${label}: populated + no session is 401`, call(db, req()), 401);
+      await expectError(`${label}: staff session is 403`, call(db, req(staffSignin.sessionToken)), 403);
+    }
+    // create-recovery-code is auth-gated rather than manager-gated.
+    await expectError("create-recovery-code without a session is 401", identity.createRecoveryCode(emptySystem, req()), 401);
+
+    // A manager cannot be targeted through reset-user-password from a staff
+    // session even by id -- verified above by the 403 -- and the manager path
+    // itself still resolves the right target.
+    const rosterNow = await identity.getIdentity(db, req(manager.sessionToken));
+    const staffAccountId = rosterNow.payload.identity.members.find((m) => m.role === "staff").accountId;
+    const issuedForStaff = await identity.resetUserPassword(db, req(manager.sessionToken), { id: staffAccountId });
+    ok("manager reset-user-password targets the named colleague", issuedForStaff.payload.recovery.email === "staff@example.com");
+  }
+
+  // --- Secret containment -------------------------------------------------------
+  {
+    // No response may ever carry hash material. Checked across every payload
+    // shape, since composeIdentity feeds all of them.
+    const db = freshDb("secrets");
+    const manager = await signupManager(db);
+    await identity.createStaff(db, req(manager.sessionToken), { name: "S", email: "staff@example.com", password: STRONG });
+    const invite = await identity.createInvite(db, req(manager.sessionToken), { email: "invitee@example.com" });
+    const staffSignin = await identity.signin(db, req(), { email: "staff@example.com", password: STRONG });
+    const recovery = await identity.createRecoveryCode(db, req(manager.sessionToken));
+
+    const stored = JSON.parse(fs.readFileSync(path.join(scratchRoot, "secrets", "identity.json"), "utf8"));
+    const secrets = [
+      ...stored.accounts.map((a) => a.password_hash),
+      ...stored.accounts.map((a) => a.password_salt),
+      ...stored.accounts.map((a) => a.recovery_code_hash),
+      ...stored.sessions.map((s) => s.token_hash),
+      ...stored.invites.map((i) => i.token_hash),
+    ].filter(Boolean);
+
+    const payloads = JSON.stringify([
+      manager.payload,
+      invite.payload,
+      staffSignin.payload,
+      recovery.payload,
+      (await identity.getIdentity(db, req(manager.sessionToken))).payload,
+      (await identity.getIdentity(db, req(staffSignin.sessionToken))).payload,
+    ]);
+    const leaked = secrets.filter((secret) => payloads.includes(secret));
+    ok("no password, recovery, session, or invite hash appears in any payload", leaked.length === 0, leaked.join(","));
+    ok("payloads never carry raw password fields", !payloads.includes(STRONG));
+  }
+
+  // --- Hostile input on the session cookie and action dispatch -----------------
+  {
+    const db = freshDb("hostile");
+    const manager = await signupManager(db);
+
+    // A malformed percent-sequence in an unrelated cookie used to throw
+    // URIError out of every identity endpoint -- including signout, so the
+    // browser could not clear the bad cookie and stayed bricked.
+    const badCookie = { headers: { cookie: "promo=50%off; fso_session=abc", "x-forwarded-for": "10.9.9.9" } };
+    const resolved = await identity.getIdentity(db, badCookie);
+    ok("a malformed sibling cookie yields unauthenticated, not an error", resolved.payload.authenticated === false);
+
+    const validWithNeighbour = {
+      headers: {
+        cookie: `promo=50%off; fso_session=${encodeURIComponent(manager.sessionToken)}`,
+        "x-forwarded-for": "10.9.9.10",
+      },
+    };
+    const stillWorks = await identity.getIdentity(db, validWithNeighbour);
+    ok("a valid session survives a malformed neighbouring cookie", stillWorks.payload.authenticated === true);
+
+    // Inherited Object.prototype keys must not resolve as handlers.
+    const { handleSessionAction } = require("../api/_identity_http");
+    for (const action of ["constructor", "toString", "hasOwnProperty", "__proto__"]) {
+      const captured = { statusCode: 0, body: null, headers: {} };
+      const fakeResponse = {
+        setHeader(key, value) { captured.headers[key] = value; },
+        end(payload) { captured.body = payload; },
+        set statusCode(value) { captured.statusCode = value; },
+        get statusCode() { return captured.statusCode; },
+      };
+      await handleSessionAction(db, req(), fakeResponse, { action });
+      ok(`action "${action}" is rejected as unknown`, captured.statusCode === 400 && String(captured.body).includes("Unknown action"));
+    }
   }
 
   // --- Invites -----------------------------------------------------------------
@@ -264,27 +361,64 @@ async function main() {
   {
     const db = freshDb("ratelimit");
     await signupManager(db);
-    const sameClient = "203.0.113.7";
+    const attacker = "203.0.113.7";
     let limited = null;
-    for (let attempt = 0; attempt < 11; attempt += 1) {
+    for (let attempt = 0; attempt < 12; attempt += 1) {
       try {
-        await identity.signin(db, req("", sameClient), { email: "manager@example.com", password: "WrongPass123" });
+        await identity.signin(db, req("", attacker), { email: "manager@example.com", password: "WrongPass123" });
       } catch (error) {
         if (error.statusCode === 429) {
-          limited = { attempt: attempt + 1, error };
+          limited = { attempt: attempt + 1 };
           break;
         }
       }
     }
-    ok("repeated failed sign-ins hit 429 at the email limit", limited !== null && limited.attempt === 11, limited ? `at attempt ${limited.attempt}` : "never limited");
+    ok("repeated failed sign-ins from one client hit 429", limited !== null && limited.attempt === 11, limited ? `at attempt ${limited.attempt}` : "never limited");
 
-    // Backdate the window and confirm recovery of access.
-    const dir = path.join(scratchRoot, "ratelimit", "identity.json");
-    const data = JSON.parse(fs.readFileSync(dir, "utf8"));
-    data.rateEvents = data.rateEvents.map((row) => ({ ...row, created_at: new Date(Date.now() - 10 * 60 * 1000).toISOString() }));
-    fs.writeFileSync(dir, JSON.stringify(data));
-    const afterWindow = await identity.signin(db, req("", sameClient), { email: "manager@example.com", password: STRONG });
+    // The lockout must be the attacker's problem, not the owner's. This is
+    // the regression the pure-email limit caused: 10 wrong guesses from any
+    // address locked the real owner out of their own account.
+    const owner = await identity.signin(db, req("", "198.51.100.4"), { email: "manager@example.com", password: STRONG });
+    ok("owner still signs in from their own client while an attacker is throttled", owner.status === 200);
+
+    const filePath = path.join(scratchRoot, "ratelimit", "identity.json");
+    const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    data.rateEvents = data.rateEvents.map((row) => ({ ...row, created_at: new Date(Date.now() - 20 * 60 * 1000).toISOString() }));
+    fs.writeFileSync(filePath, JSON.stringify(data));
+    const afterWindow = await identity.signin(db, req("", attacker), { email: "manager@example.com", password: STRONG });
     ok("limit clears after the window passes", afterWindow.status === 200);
+  }
+
+  {
+    // Successful sign-ins must not consume the email budget, or a busy day
+    // self-locks the account.
+    const db = freshDb("ratelimit-success");
+    await signupManager(db);
+    let allOk = true;
+    for (let index = 0; index < 20; index += 1) {
+      try {
+        await identity.signin(db, req("", `192.0.2.${index + 1}`), { email: "manager@example.com", password: STRONG });
+      } catch (error) {
+        allOk = false;
+        break;
+      }
+    }
+    ok("20 successful sign-ins never self-throttle", allOk);
+  }
+
+  {
+    // A stolen session must not be an unlimited password-guessing oracle.
+    const db = freshDb("ratelimit-password");
+    const manager = await signupManager(db);
+    let limited = false;
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      try {
+        await identity.changePassword(db, req(manager.sessionToken), { currentPassword: `guess-${attempt}`, password: "NewPassw0rd!X", confirmPassword: "NewPassw0rd!X" });
+      } catch (error) {
+        if (error.statusCode === 429) { limited = true; break; }
+      }
+    }
+    ok("change-password current-password guessing is throttled", limited);
   }
 
   // --- Quotas -------------------------------------------------------------------------
@@ -295,6 +429,70 @@ async function main() {
       await identity.createInvite(db, req(manager.sessionToken), { email: `open${index}@example.com` });
     }
     await expectError("open-invite quota enforced", identity.createInvite(db, req(manager.sessionToken), { email: "toomany@example.com" }), 409);
+
+    // Expired invites are hidden from the manager, so they must not hold
+    // quota -- otherwise the lockout has nothing on screen to cancel.
+    const filePath = path.join(scratchRoot, "quota", "identity.json");
+    const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    data.invites = data.invites.map((row) => ({ ...row, expires_at: new Date(Date.now() - 1000).toISOString() }));
+    fs.writeFileSync(filePath, JSON.stringify(data));
+    const afterExpiry = await identity.createInvite(db, req(manager.sessionToken), { email: "now-allowed@example.com" });
+    ok("expired invites do not consume the invite quota", afterExpiry.status === 201);
+  }
+
+  {
+    // Cancelling an invite frees its slot.
+    const db = freshDb("cancel-invite");
+    const manager = await signupManager(db);
+    const invite = await identity.createInvite(db, req(manager.sessionToken), { email: "cancelme@example.com" });
+    const view = await identity.getIdentity(db, req(manager.sessionToken));
+    const inviteId = view.payload.identity.invites[0].id;
+    const cancelled = await identity.cancelInvite(db, req(manager.sessionToken), { id: inviteId });
+    ok("manager can cancel an open invite", cancelled.status === 200 && cancelled.payload.identity.invites.length === 0);
+    await expectError("a cancelled invite cannot be accepted", identity.acceptInvite(db, req(), { email: "cancelme@example.com", inviteToken: invite.payload.invite.inviteToken, password: STRONG, confirmPassword: STRONG }), 401);
+    await expectError("cancelling an unknown invite is 404", identity.cancelInvite(db, req(manager.sessionToken), { id: "invite-nope" }), 404);
+  }
+
+  // --- Partial-write recovery (fault injection) ------------------------------------
+  {
+    // A killed function or a storage blip between insertAccount and
+    // insertMembership used to leave an orphan account that permanently
+    // bricked the email: signup 409'd, signin 401'd, and nothing could remove
+    // it. The local adapter cannot fail on its own, so faults are injected.
+    const db = freshDb("partial-write");
+    const failing = { ...db, insertStore: async () => { const e = new Error("simulated storage failure"); e.statusCode = 502; throw e; } };
+    await expectError("signup surfaces the storage failure", identity.signup(failing, req(), { email: "victim@example.com", password: STRONG, confirmPassword: STRONG }), 502);
+    ok("compensation removed the half-built account", (await db.findAccountByEmail("victim@example.com")) === null);
+
+    const retry = await identity.signup(db, req(), { email: "victim@example.com", password: STRONG, confirmPassword: STRONG });
+    ok("the email is still usable after a failed signup", retry.status === 201);
+  }
+
+  {
+    // The harder case: the process dies before compensation can run, so the
+    // orphan persists. Signup must adopt it rather than 409 forever.
+    const db = freshDb("orphan-adopt");
+    await db.insertAccount({
+      id: "user-orphan", email: "orphan@example.com", name: "orphan",
+      password_hash: "dead", password_salt: "dead", password_iterations: 120000, password_digest: "sha256",
+      recovery_code_hash: "", created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    });
+    await expectError("an orphan account cannot sign in", identity.signin(db, req(), { email: "orphan@example.com", password: STRONG }), 401);
+    const adopted = await identity.signup(db, req(), { email: "orphan@example.com", password: STRONG, confirmPassword: STRONG });
+    ok("signup adopts a membership-less orphan instead of 409", adopted.status === 201 && adopted.payload.identity.membership.role === "manager");
+    const signin = await identity.signin(db, req(), { email: "orphan@example.com", password: STRONG });
+    ok("the adopted account signs in normally", signin.status === 200);
+    const accounts = JSON.parse(fs.readFileSync(path.join(scratchRoot, "orphan-adopt", "identity.json"), "utf8")).accounts;
+    ok("adoption reuses the row rather than duplicating the email", accounts.filter((a) => a.email === "orphan@example.com").length === 1);
+  }
+
+  {
+    // A live account must never be adoptable -- that would be account takeover.
+    const db = freshDb("no-takeover");
+    await signupManager(db, "live@example.com");
+    await expectError("signup cannot adopt an account that has a membership", identity.signup(db, req(), { email: "live@example.com", password: "Attacker0!Pass", confirmPassword: "Attacker0!Pass" }), 409);
+    const stillOwner = await identity.signin(db, req(), { email: "live@example.com", password: STRONG });
+    ok("the real owner's password still works after the takeover attempt", stillOwner.status === 200);
   }
 
   // --- Retention sweep -----------------------------------------------------------------

@@ -98,13 +98,23 @@ function buildClearSessionCookie(request) {
 
 function readSessionToken(request) {
   const cookieHeader = request?.headers?.cookie || request?.headers?.Cookie || "";
-  const cookies = {};
   for (const part of String(cookieHeader).split(";")) {
     const [key, ...valueParts] = part.trim().split("=");
-    if (!key) continue;
-    cookies[key] = decodeURIComponent(valueParts.join("=") || "");
+    if (key !== SESSION_COOKIE_NAME) continue;
+    const raw = valueParts.join("=") || "";
+    // Only our own cookie is decoded, and a malformed value yields no session
+    // rather than an exception. Decoding every cookie on the origin -- the
+    // inherited behaviour from api/_auth.js -- let one unrelated cookie
+    // containing a stray '%' throw URIError out of every identity endpoint,
+    // turning "unauthenticated" into a persistent 500 the user could not
+    // clear, because even signout went through this function.
+    try {
+      return decodeURIComponent(raw);
+    } catch (error) {
+      return "";
+    }
   }
-  return cookies[SESSION_COOKIE_NAME] || "";
+  return "";
 }
 
 function requestClientKey(request) {

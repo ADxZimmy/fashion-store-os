@@ -68,13 +68,15 @@ module.exports = {
   // Stores.
   insertStore: (row) => insert(T.stores, row),
   getStore: (id) => one(`${T.stores}?id=eq.${q(id)}&select=*`),
+  deleteStore: (id) => remove(`${T.stores}?id=eq.${q(id)}`),
 
   // Memberships.
   listMembershipsByAccount: (accountId) => rows(`${T.memberships}?account_id=eq.${q(accountId)}&select=*`),
   listMembershipsByStore: (storeId) => rows(`${T.memberships}?store_id=eq.${q(storeId)}&select=*&order=created_at.asc`),
   getMembership: (accountId, storeId) =>
     one(`${T.memberships}?account_id=eq.${q(accountId)}&store_id=eq.${q(storeId)}&select=*`),
-  insertMembership: (row) => insert(T.memberships, row),
+  insertMembership: (row) =>
+    insert(T.memberships, row, { conflictMessage: "That account is already a member of this store." }),
   updateMembership: (accountId, storeId, patch) =>
     update(`${T.memberships}?account_id=eq.${q(accountId)}&store_id=eq.${q(storeId)}`, patch),
   deleteMembership: (accountId, storeId) =>
@@ -99,9 +101,13 @@ module.exports = {
   listOpenInvitesByStore: (storeId) => rows(`${T.invites}?store_id=eq.${q(storeId)}&accepted_at=is.null&select=*`),
   findOpenInvite: (storeId, email) =>
     one(`${T.invites}?store_id=eq.${q(storeId)}&email=eq.${q(email)}&accepted_at=is.null&select=*`),
-  countOpenInvites: async (storeId) =>
-    (await rows(`${T.invites}?store_id=eq.${q(storeId)}&accepted_at=is.null&select=id`)).length,
-  insertInvite: (row) => insert(T.invites, row),
+  // nowIso filters to live invites; expired rows must not hold quota.
+  countOpenInvites: async (storeId, nowIso) =>
+    (await rows(
+      `${T.invites}?store_id=eq.${q(storeId)}&accepted_at=is.null${nowIso ? `&expires_at=gt.${q(nowIso)}` : ""}&select=id`,
+    )).length,
+  insertInvite: (row) =>
+    insert(T.invites, row, { conflictMessage: "An invite for that email was just created. Refresh and try again." }),
   updateInvite: (id, patch) => update(`${T.invites}?id=eq.${q(id)}`, patch),
   deleteInvite: (id) => remove(`${T.invites}?id=eq.${q(id)}`),
 
