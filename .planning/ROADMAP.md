@@ -2,17 +2,17 @@
 
 ## Now
 
+- Phase 021: Local-first pivot.
+  Outcome: Each device owns its business data locally; Supabase holds identity (global accounts, memberships, sessions, invites, recovery codes), a transit inbox for provider webhooks, and opaque encrypted backups — nothing else. Offline unlock, encrypted backup/restore onto a new device, and durable identity-plane rate limits ship with it.
+  Status: Owner decision 2026-08-18; plan drafted (`.planning/phases/021-local-first-pivot/`). Step 0 — the anon-grant revoke hotfix migration `20260818090000` — is written and independent of the rest; it should be applied to production immediately.
+
 - Item: Post-launch watch window (14 days from 2026-08-03).
   Outcome: Daily `/api/health` + `/api/readiness` checks, Vercel Cron Jobs and Runtime Log scans, and sev-1..4 triage per the Post-Launch Support section of `docs/operations-runbook.md`.
-  Status: Open. Exit criteria are no unresolved sev-1/sev-2 issues and 7 consecutive successful keepalive cron runs.
+  Status: Window elapsed on 2026-08-17 without its exit criteria being confirmed — the 7-consecutive-keepalive-runs evidence was never gathered (owner-side, Vercel dashboard). Health remained green whenever probed. Close it by confirming the cron history once, then fold monitoring into the Phase 021 rewrite of the runbook.
 
 - Item: Production write-path verification.
   Outcome: `docs/cutover.md` Step 6 browser smoke — manager signup, business setup, refresh persistence, second-browser workspace isolation.
-  Status: Outstanding and owner-side. The first exercise of the write path since the Supabase restore; reads and health endpoints are verified, writes are not.
-
-- Phase 020: Production-readiness remediation.
-  Outcome: Tenancy is account-bound rather than device-bound; writes are conflict-safe and recoverable; permissions are enforced by the server; public endpoints have durable abuse controls; provider webhooks route to an owned workspace with real secrets.
-  Status: Plan drafted (`.planning/phases/020-production-readiness-remediation/`); recommended before broader multi-user production use. Phase 019 now supplies the short-lived code bridge for multi-device access.
+  Status: Never run; superseded in place. Phase 021 removes the server write path this smoke exists to verify, and its absence of real production data is exactly what makes the pivot cheap (confirmed as UAT item 11 before the destructive release). The smoke is rewritten for the local-first model in Phase 021 step 7.
 
 ## Next
 
@@ -71,9 +71,13 @@
 - Phase 015: Observability, backup, and security operations.
   Outcome: `/api/readiness`, local readiness parity, operations runbook, and `npm.cmd run ops:security` were added.
   Status: Complete and deployed; owner-side backup/restore rehearsal pending.
+- Phase 020: Production-readiness remediation.
+  Outcome: Planned account-bound server-owned tenancy, conflict-safe server writes, server-enforced RBAC, durable abuse controls, and provider routing.
+  Status: **Superseded on 2026-08-18 by the Phase 021 local-first pivot**, which inverts its premise. Surviving items were re-homed: abuse controls (rate limits, validation, quotas, retention) into 021 step 1, the anon-grant removal into 021 step 0 (hotfix migration written), CSP/security headers and a CI push gate into 021 step 6. Alerting is deliberately deferred and stays tracked as the Later item below. The plan documents remain as the record of the server-data-plane direction not taken.
+
 - Phase 019: Multi-device workspace access.
   Outcome: Short-lived human-typable workspace codes let a manager open a workspace on a second device, and invites now carry their workspace so they can be accepted from the invitee's own browser.
-  Status: Implemented and verified locally on 2026-08-03; 38 unit assertions plus an API round trip. Migration `20260803120000_create_workspace_codes.sql` was applied to production Supabase on 2026-08-03 and local/remote migration ledgers match. Production join/invite smoke remains outstanding. Account-based tenancy remains deliberately out of scope.
+  Status: Implemented and verified locally on 2026-08-03; 38 unit assertions plus an API round trip. Migration `20260803120000_create_workspace_codes.sql` was applied to production Supabase on 2026-08-03 and local/remote migration ledgers match. Production join/invite smoke remains outstanding. Account-based tenancy remains deliberately out of scope. **Scheduled for retirement in Phase 021**: global accounts make sign-in from any device replace the join-code bridge.
 
 - Phase 018: Account recovery and password reset.
   Outcome: One-time recovery codes issued at manager signup and re-issuable from Settings, manager-issued codes for colleagues, a redeem flow that grants no session, and a documented owner last-resort procedure.

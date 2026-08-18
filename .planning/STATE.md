@@ -1,16 +1,16 @@
 # State
 
-Last updated: 2026-08-03
+Last updated: 2026-08-18
 
 ## Current Focus
 
-Phase 017 cutover executed on 2026-08-03. `v1.0.0` is tagged (annotated `7420d1c` → commit `8b5943e`, the commit confirmed Ready in Vercel), the `/api/health` gate passed, and the public target is the existing `https://fashion-store-os.vercel.app` alias. No custom domain was registered and no DNS was changed, so Steps 3 and 5 of `docs/cutover.md` were not applicable — the alias was already serving, meaning there was no cutover moment and no DNS rollback lever. Rollback is Vercel deployment promotion only.
+**Owner decision 2026-08-18: local-first pivot (Phase 021).** Each device stores its own business data; Supabase shrinks to identity (global accounts, memberships, sessions, invites, recovery codes), a transit inbox for provider webhooks, and opaque encrypted backups. The owner settled the three design forks the same day: data belongs to the device (manager and staff share the shop device, role-gated UI), webhooks land in a pull-and-delete transit inbox, and durability comes from a device-encrypted backup blob the server cannot read. Phase 020 is superseded — its server-data-plane premise is inverted — with its surviving identity-plane items re-homed into 021. Plan at `.planning/phases/021-local-first-pivot/`; the impact map behind it verified every load-bearing claim against the code.
 
-The 14-day watch window is open. The remaining unverified item is the production write path: reads and both health endpoints pass, but no manager signup has been completed against live Supabase since the restore. `docs/cutover.md` Step 6 browser smoke covers it and is owner-side.
+Two facts make the pivot cheap right now: the production write path was never exercised by a real operator, so no real business data is expected server-side, and the frontend's local-fallback era code still works, so local-primary is a trust-direction flip rather than a rebuild.
 
-Real-store pilot UAT was waived by owner decision on 2026-07-31 rather than executed. Its scenarios are reused as the post-cutover smoke set. The production write path is therefore unvalidated by a real operator.
+Immediately actionable regardless of the pivot: migration `20260818090000_revoke_default_workspace_document_api_access.sql` (written, unapplied) revokes the anon-key grant on the documents table that migration 2 added and the migration-3 hardening never covered. Until it is applied, the anon key can read, write, or plant the default workspace's state and auth documents — a standing capability (default was last observed empty on 2026-08-03) rather than a confirmed current exposure, which changes the urgency not at all.
 
-Phase 018 account recovery is deployed from `2a4a696` and awaiting its production recovery round trip. Phase 019 adds a short-lived code bridge for multi-device workspace access and its production migration is applied. Account-bound tenancy, concurrent-write/offline recovery, server-enforced RBAC, durable abuse controls, and channel routing remain Phase 020 work before broader multi-user production use.
+Phase 017 cutover context: `v1.0.0` tagged, `/api/health` green on the `https://fashion-store-os.vercel.app` alias, rollback is Vercel deployment promotion only. The 14-day watch window elapsed on 2026-08-17 without its keepalive-evidence exit criterion being confirmed (owner-side Vercel dashboard check, still worth doing once).
 
 The repo is single-branch: `main` is the working, default, and production branch. Every push to `main` is a production release.
 
@@ -99,12 +99,9 @@ The repo is single-branch: `main` is the working, default, and production branch
 
 ## In Progress
 
-- Item: Phase 017 post-launch watch window (14 days from 2026-08-03), per the Post-Launch Support section of `docs/operations-runbook.md`.
-- Item: Production write-path verification via the `docs/cutover.md` Step 6 browser smoke set (manager signup → business setup → refresh → persistence; second browser for workspace isolation). Owner-side. The first attempt on 2026-08-03 was blocked by the account lockout below and has not been completed.
-- Item: Phase 018 production verification — the recovery round trip is now Step 6 of `docs/production-smoke.md` and runs with the write-path smoke. The owner last-resort procedure is documented but not rehearsed.
-- Item: Phase 019 production verification — schema reachability is confirmed; run a real second-device join and cross-device invite acceptance next.
-- Item: Phase 020 production-readiness remediation — account-bound tenancy, conflict-safe writes, server-enforced authorization, durable abuse controls, and provider routing remain planned before broader multi-user use.
-- Item: Keepalive evidence — Vercel deployment metadata confirms `/api/keepalive` is registered at `0 6 * * *`, but a successful scheduled firing has not been observed.
+- Item: Phase 021 local-first pivot — plan drafted 2026-08-18 (`.planning/phases/021-local-first-pivot/`); step 0 hotfix migration written and awaiting production application; implementation not started.
+- Item: Keepalive evidence — Vercel deployment metadata confirms `/api/keepalive` is registered at `0 6 * * *`, but a successful scheduled firing has never been observed. The watch window elapsed 2026-08-17 with this unconfirmed; one owner-side dashboard check closes it. After the pivot the cron guards the entire identity plane: it resets the idle-pause timer regardless of user traffic, and the risk to avoid is deleting it as "obsolete" — a paused project blocks every sign-in while local work continues.
+- Item: Phase 018/019 production verification — folded into the Phase 021 UAT. The old smoke exercised the server write path and cross-device flows that the pivot removes or replaces; recovery and invite flows are re-verified against the restructured identity plane instead. The owner last-resort procedure remains unrehearsed and gets rewritten in 021 step 7.
 
 ## Known Defects
 
@@ -126,7 +123,7 @@ Historical detail retained below.
 
 ## Next Action
 
-Run the production smoke against `https://fashion-store-os.vercel.app`, including manager signup, persistence, Phase 018 recovery, Phase 019 second-device join, and cross-device invite acceptance. Then confirm `/api/keepalive` shows a successful scheduled run and continue the 14-day watch window.
+Apply the step 0 hotfix (`npx supabase db push` for migration `20260818090000`) — it closes a live anon-key exposure and is independent of everything else. Then begin Phase 021 step 1 (global identity restructure). Owner-side in parallel: confirm one successful `/api/keepalive` cron run in the Vercel dashboard.
 
 ## Verification Snapshot
 
