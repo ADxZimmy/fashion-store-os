@@ -8,6 +8,7 @@ const publicFiles = [
   "index.html",
   "src/app.js",
   "src/storage.js",
+  "src/backup.js",
   "src/styles.css",
   // Offline app shell. Served from the root scope by the copy step below so
   // it can control every route, not just /src.

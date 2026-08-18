@@ -39,11 +39,23 @@ ok("no saveBackendData sync path survives", !appCode.includes("saveBackendData")
 ok("no /api/data export or delete call survives", !/API_DATA_PATH|["'`]\/api\/data/.test(appCode));
 ok("no workspace-code calls survive", !/API_WORKSPACE_CODE_PATH|["'`]\/api\/workspace-code/.test(appCode));
 ok("the client sends no x-workspace-id header", !appCode.includes("x-workspace-id"));
+// The client may only talk to identity endpoints plus the backup endpoint.
+// Backup is the one deliberate exception to "no business data leaves the
+// device", and it is only acceptable because what leaves is ciphertext -- so
+// the exception is paired with the assertion that makes it true, below.
 const fetchTargets = [...appCode.matchAll(/fetch\(\s*([A-Za-z_$][\w$]*)/g)].map((m) => m[1]);
 ok(
-  "every client fetch targets an identity endpoint",
-  fetchTargets.every((name) => ["API_BOOTSTRAP_PATH", "API_SESSION_PATH"].includes(name)),
+  "the client only calls identity and backup endpoints",
+  fetchTargets.every((name) => ["API_BOOTSTRAP_PATH", "API_SESSION_PATH", "API_BACKUP_PATH"].includes(name)),
   fetchTargets.join(","),
+);
+ok(
+  "no request body carries raw records",
+  !/body:\s*JSON\.stringify\(state\)/.test(appCode) && !/body:\s*JSON\.stringify\(\s*state\s*[,)]/.test(appCode),
+);
+ok(
+  "the backup upload sends a sealed envelope, never the records",
+  /body: JSON\.stringify\(envelope\)/.test(appCode) && /backupCrypto\.seal\(/.test(appCode),
 );
 
 // --- Trust direction: an auth answer must never destroy local data ---------

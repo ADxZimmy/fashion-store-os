@@ -9,6 +9,7 @@ const checks = [
   ["Identity plane unit suite", ["run", "test:identity"]],
   ["Local-first boundary guards", ["run", "test:local-first"]],
   ["Device storage suite", ["run", "test:storage"]],
+  ["Encrypted backup suite", ["run", "test:backup"]],
   ["Mobile/accessibility UX audit", ["run", "ux:audit"]],
   ["Security hygiene audit", ["run", "ops:security"]],
   ["Production build", ["run", "build"]],

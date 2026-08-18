@@ -14,6 +14,7 @@ const EMPTY = {
   invites: [],
   rateEvents: [],
   audit: [],
+  backups: [],
 };
 
 function createLocalIdentityStore(dataDir) {
@@ -174,6 +175,17 @@ function createLocalIdentityStore(dataDir) {
         .audit.filter((row) => row.store_id === storeId)
         .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
         .slice(0, Number(limit) || 200),
+
+    getBackup: async (storeId) => load().backups.find((row) => row.store_id === storeId) || null,
+    putBackup: async (row) =>
+      mutate((data) => {
+        data.backups = data.backups.filter((item) => item.store_id !== row.store_id);
+        data.backups.push(row);
+      }),
+    deleteBackup: async (storeId) =>
+      mutate((data) => {
+        data.backups = data.backups.filter((item) => item.store_id !== storeId);
+      }),
 
     sweep: async ({ nowIso, rateCutoffIso, auditCutoffIso }) =>
       mutate((data) => {

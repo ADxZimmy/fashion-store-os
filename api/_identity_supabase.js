@@ -11,6 +11,7 @@ const T = {
   invites: "/fashion_store_os_invites",
   rateEvents: "/fashion_store_os_rate_limit_events",
   audit: "/fashion_store_os_identity_audit",
+  backups: "/fashion_store_os_backups",
 };
 
 const MINIMAL = { Prefer: "return=minimal" };
@@ -121,6 +122,19 @@ module.exports = {
   insertAudit: (row) => insert(T.audit, row),
   listAudit: (storeId, limit) =>
     rows(`${T.audit}?store_id=eq.${q(storeId)}&select=*&order=created_at.desc&limit=${Number(limit) || 200}`),
+
+  // Encrypted backups: one opaque row per store, upserted in place.
+  getBackup: (storeId) => one(`${T.backups}?store_id=eq.${q(storeId)}&select=*`),
+  putBackup: async (row) => {
+    await supabaseRequest(
+      "POST",
+      `${T.backups}?on_conflict=store_id`,
+      [row],
+      { Prefer: "resolution=merge-duplicates,return=minimal" },
+      WRITE_OK,
+    );
+  },
+  deleteBackup: (storeId) => remove(`${T.backups}?store_id=eq.${q(storeId)}`),
 
   // Retention, run by the keepalive cron.
   sweep: async ({ nowIso, rateCutoffIso, auditCutoffIso }) => {

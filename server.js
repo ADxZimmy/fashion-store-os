@@ -5,6 +5,7 @@ const fs = require("fs/promises");
 // here any more. Identity is row-based; the only legacy surface left is the
 // channel webhook's state document, which step 5 replaces with the inbox.
 const { sweepIdentity } = require("./api/_identity");
+const { readBackup, removeBackup, writeBackup } = require("./api/_backup");
 const { handleIdentityGet, handleSessionAction } = require("./api/_identity_http");
 const { createLocalIdentityStore } = require("./api/_identity_local");
 const { appendWebhookMessages } = require("./api/_channel_intake");
@@ -74,6 +75,7 @@ async function routeApi(request, response, url) {
     "/api/inbound": "OPTIONS",
     "/api/keepalive": "GET, OPTIONS",
     "/api/readiness": "GET, OPTIONS",
+    "/api/backup": "GET, PUT, DELETE, OPTIONS",
     "/api/session": "POST, OPTIONS",
     "/api/workspace-code": "OPTIONS",
     "/api/state": "OPTIONS",
@@ -151,6 +153,26 @@ async function routeApi(request, response, url) {
       retired: "Phase 021 moved business data onto the device. This endpoint no longer exists.",
     });
     return;
+  }
+
+  // Encrypted backup: opaque ciphertext in both directions, manager-gated.
+  if (url.pathname === "/api/backup") {
+    if (request.method === "GET") {
+      const result = await readBackup(identityDb, request);
+      sendJson(response, result.status, result.payload);
+      return;
+    }
+    if (request.method === "PUT") {
+      const body = (await readJsonBody(request)) || {};
+      const result = await writeBackup(identityDb, request, body);
+      sendJson(response, result.status, result.payload);
+      return;
+    }
+    if (request.method === "DELETE") {
+      const result = await removeBackup(identityDb, request);
+      sendJson(response, result.status, result.payload);
+      return;
+    }
   }
 
   if (url.pathname === "/api/session" && request.method === "POST") {

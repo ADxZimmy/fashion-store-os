@@ -16,6 +16,7 @@ const IDENTITY_CACHE_KEY = "fashion-studio-os-identity-v1";
 const OFFLINE_GRACE_MS = 1000 * 60 * 60 * 24 * 30;
 const API_BOOTSTRAP_PATH = "/api/bootstrap";
 const API_SESSION_PATH = "/api/session";
+const API_BACKUP_PATH = "/api/backup";
 const MIN_PASSWORD_LENGTH = 8;
 const TEAM_LIMIT = 25;
 let deviceWorkspaceId = "";
@@ -142,6 +143,21 @@ let storageUnavailable = false;
 let storagePersisted = false;
 let storageSource = "empty";
 let storageEstimate = { supported: false, persisted: false, usage: 0, quota: 0 };
+const backupCrypto = typeof window !== "undefined" ? window.FsoBackup || null : null;
+// Cached derived key (never the passphrase) so automatic backups can run
+// without prompting. Accepted trade-off: anyone with device access can already
+// read the plaintext records, so this grants no new reach.
+const BACKUP_KEY_CACHE = "fashion-studio-os-backupkey-v1";
+const BACKUP_META_KEY = "fashion-studio-os-backupmeta-v1";
+// Bounds the base64 payload, matching api/_backup.js. Checked here so the
+// operator hears about their data size rather than a transport error.
+const MAX_BACKUP_CHARS = 4 * 1024 * 1024;
+const AUTO_BACKUP_DELAY_MS = 1000 * 60 * 3;
+let backupBusy = "";
+let backupPrompt = null;
+let autoBackupTimer = null;
+let cachedStoreId = "";
+let lastBackupAt = readBackupMeta();
 let lastInviteResult = null;
 // Recovery codes are returned by the server exactly once. Hold the value only
 // long enough to show it, then clear it — it is never persisted client-side.
@@ -270,6 +286,7 @@ function authFromIdentity(identity) {
 }
 
 function applyIdentity(identity) {
+  cachedStoreId = identity && identity.store ? identity.store.id : "";
   auth = authFromIdentity(identity);
   accessMode = "unlocked";
   storeMismatch = null;
@@ -1795,6 +1812,18 @@ function renderModal() {
     });
   }
 
+  if (modalState.type === "restore-backup") {
+    return renderConfirmModal({
+      title: "Restore from backup?",
+      eyebrow: "Backup",
+      message:
+        "This replaces the records on this device with the backup. If another device is still working from this store, the two will hold different records from now on -- there is no syncing between devices. Download a copy first if you are unsure.",
+      confirmAction: "confirm-restore",
+      confirmLabel: "Restore",
+      tone: "danger",
+    });
+  }
+
   if (modalState.type === "reset-data") {
     return renderConfirmModal({
       title: "Erase this device's records",
@@ -2871,6 +2900,8 @@ function renderSettings() {
       ${currentUser()?.role === "manager" ? renderTeamAccessPanel() : renderAccessSummaryPanel()}
 
       ${renderDeviceStoragePanel()}
+
+      ${currentUser()?.role === "manager" ? renderBackupPanel() : ""}
     </section>
   `;
 }
@@ -2879,6 +2910,370 @@ function renderSettings() {
 // The device now holds the only copy of the shop's records, so where they live
 // and whether the browser may evict them stops being an implementation detail
 // the operator should not have to care about.
+
+// ---------------------------------------------------------------------------
+// Encrypted backup and plain local export (Phase 021 step 4)
+//
+// The device holds the only plaintext copy of the shop's records, so losing it
+// loses the business. The backup is an opaque blob: the passphrase never leaves
+// the device and the server cannot read what it stores. That also means a
+// forgotten passphrase is unrecoverable, which the UI says plainly rather than
+// leaving it to be discovered at restore time.
+// ---------------------------------------------------------------------------
+
+function readCachedBackupKey() {
+  try {
+    const raw = localStorage.getItem(BACKUP_KEY_CACHE);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !parsed.key || !parsed.salt) return null;
+    // A key cached for a different store must never be used: it would seal a
+    // backup nobody can open.
+    if (parsed.storeId && identityStoreId() && parsed.storeId !== identityStoreId()) return null;
+    return parsed;
+  } catch (error) {
+    return null;
+  }
+}
+
+function writeCachedBackupKey(entry) {
+  try {
+    localStorage.setItem(BACKUP_KEY_CACHE, JSON.stringify(entry));
+  } catch (error) {
+    console.warn("Could not cache the backup key; automatic backups are off.", error);
+  }
+}
+
+function clearCachedBackupKey() {
+  try {
+    localStorage.removeItem(BACKUP_KEY_CACHE);
+  } catch (error) {
+    // nothing to clear
+  }
+}
+
+function readBackupMeta() {
+  try {
+    return localStorage.getItem(BACKUP_META_KEY) || "";
+  } catch (error) {
+    return "";
+  }
+}
+
+function writeBackupMeta(iso) {
+  lastBackupAt = iso;
+  try {
+    localStorage.setItem(BACKUP_META_KEY, iso);
+  } catch (error) {
+    // display only
+  }
+}
+
+function identityStoreId() {
+  return clean(cachedStoreId);
+}
+
+function backupAvailable() {
+  return Boolean(backupCrypto && backupCrypto.supported() && identityStoreId());
+}
+
+// One prompt serving whichever operation needs a passphrase, rather than each
+// action carrying its own.
+function promptForPassphrase(intent) {
+  backupPrompt = { intent: intent, confirm: intent === "set" };
+  render();
+}
+
+function dismissBackupPrompt() {
+  backupPrompt = null;
+  render();
+}
+
+async function handleBackupPassphraseSubmit(form) {
+  const data = new FormData(form);
+  const passphrase = String(data.get("passphrase") || "");
+  const confirmPassphrase = String(data.get("confirmPassphrase") || passphrase);
+  const intent = backupPrompt ? backupPrompt.intent : "set";
+
+  if (passphrase.length < 10) {
+    showToast("Use a backup passphrase of at least 10 characters. Write it down somewhere safe.");
+    return;
+  }
+  if (intent === "set" && passphrase !== confirmPassphrase) {
+    showToast("The two passphrases do not match.");
+    return;
+  }
+
+  backupPrompt = null;
+
+  if (intent === "restore") {
+    await restoreFromBackup(passphrase);
+    return;
+  }
+
+  // Setting a passphrase immediately proves it by writing a backup, so nobody
+  // believes they are protected on the strength of a passphrase never used.
+  try {
+    const entry = await backupCrypto.deriveCacheEntry(passphrase, identityStoreId());
+    writeCachedBackupKey(entry.cached);
+    showToast("Backup passphrase saved. Backing up now.");
+    render();
+    await backUpNow();
+  } catch (error) {
+    console.error("Could not set the backup passphrase.", error);
+    showToast("Could not set the backup passphrase.");
+    render();
+  }
+}
+
+async function backUpNow() {
+  if (!backupAvailable()) {
+    showToast("Backups need you to be signed in on a browser that supports encryption.");
+    return;
+  }
+  if (offlineMode) {
+    showToast("Backups need a connection. Your records stay safe on this device meanwhile.");
+    return;
+  }
+  const cached = readCachedBackupKey();
+  if (!cached) {
+    promptForPassphrase("set");
+    return;
+  }
+
+  backupBusy = "backup";
+  render();
+  try {
+    const key = await backupCrypto.importKey(cached.key);
+    const envelope = await backupCrypto.seal({
+      state: state,
+      key: key,
+      salt: cached.salt,
+      storeId: identityStoreId(),
+    });
+    if (envelope.ciphertext.length > MAX_BACKUP_CHARS) {
+      showToast("These records are too large to back up online. Remove some stored images, or use Download a copy instead.");
+      return;
+    }
+    const response = await fetch(API_BACKUP_PATH, {
+      method: "PUT",
+      headers: apiHeaders({ "Content-Type": "application/json" }),
+      credentials: "same-origin",
+      body: JSON.stringify(envelope),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || "Backup failed with " + response.status);
+    writeBackupMeta(new Date().toISOString());
+    showToast("Backup saved.");
+  } catch (error) {
+    console.error("Backup failed.", error);
+    showToast(error.message || "Backup failed.");
+  } finally {
+    backupBusy = "";
+    render();
+  }
+}
+
+// Automatic backup, debounced well clear of individual edits so a busy hour is
+// one upload rather than fifty. Silent on failure: an unprompted background
+// action must not interrupt the operator, and the panel shows the true
+// last-backup time either way.
+function scheduleAutoBackup() {
+  if (!backupAvailable() || offlineMode || !readCachedBackupKey()) return;
+  if (autoBackupTimer) clearTimeout(autoBackupTimer);
+  autoBackupTimer = setTimeout(function () {
+    autoBackupTimer = null;
+    void backUpQuietly();
+  }, AUTO_BACKUP_DELAY_MS);
+}
+
+async function backUpQuietly() {
+  const cached = readCachedBackupKey();
+  if (!cached || offlineMode) return;
+  try {
+    const key = await backupCrypto.importKey(cached.key);
+    const envelope = await backupCrypto.seal({ state: state, key: key, salt: cached.salt, storeId: identityStoreId() });
+    if (envelope.ciphertext.length > MAX_BACKUP_CHARS) return;
+    const response = await fetch(API_BACKUP_PATH, {
+      method: "PUT",
+      headers: apiHeaders({ "Content-Type": "application/json" }),
+      credentials: "same-origin",
+      body: JSON.stringify(envelope),
+    });
+    if (response.ok) {
+      writeBackupMeta(new Date().toISOString());
+      render();
+    }
+  } catch (error) {
+    console.warn("Automatic backup failed; will retry after the next change.", error);
+  }
+}
+
+function startRestore() {
+  if (!backupAvailable()) {
+    showToast("Restoring needs you to be signed in on a browser that supports encryption.");
+    return;
+  }
+  // Restoring replaces this device's records. If another device is still
+  // working from the same store, the two fork from here -- there is no sync in
+  // this model, so say so before rather than explaining afterwards.
+  modalState = { type: "restore-backup" };
+  render();
+}
+
+function confirmRestore() {
+  closeModal(false);
+  promptForPassphrase("restore");
+}
+
+async function restoreFromBackup(passphrase) {
+  backupBusy = "restore";
+  render();
+  try {
+    const response = await fetch(API_BACKUP_PATH, { headers: apiHeaders(), credentials: "same-origin" });
+    const result = await response.json().catch(() => ({}));
+    if (response.status === 404) {
+      showToast("No backup has been saved for this store yet.");
+      return;
+    }
+    if (!response.ok) throw new Error(result.error || "Could not fetch the backup (" + response.status + ")");
+
+    // Decrypt before touching anything local, so a wrong passphrase leaves
+    // this device exactly as it was.
+    const restored = await backupCrypto.open({
+      envelope: result.backup,
+      passphrase: passphrase,
+      storeId: identityStoreId(),
+    });
+
+    state = normalizeState(restored);
+    persistLocalState();
+    selectedClientId = state.clients[0] ? state.clients[0].id : "";
+    draftOrderStyleId = state.styles[0] ? state.styles[0].id : "";
+    // The passphrase just proved itself against this store's backup, so cache
+    // the key it implies and this device can back up automatically from here.
+    const entry = await backupCrypto.deriveCacheEntry(passphrase, identityStoreId());
+    writeCachedBackupKey(entry.cached);
+    showToast("Records restored from the backup.");
+  } catch (error) {
+    console.error("Restore failed.", error);
+    showToast(error.message || "Could not restore that backup.");
+  } finally {
+    backupBusy = "";
+    render();
+  }
+}
+
+function forgetBackupPassphrase() {
+  clearCachedBackupKey();
+  showToast("This device forgot the backup passphrase. Automatic backups are off until you set it again.");
+  render();
+}
+
+// --- Plain local export and import -----------------------------------------
+// Unencrypted, no server involved: the operator's own copy on their own
+// storage. Replaces the retired GET /api/data export, which the frontend never
+// had a button for.
+function exportRecordsFile() {
+  try {
+    const payload = JSON.stringify({ exportedAt: new Date().toISOString(), format: 1, records: state }, null, 2);
+    const blob = new Blob([payload], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const stamp = new Date().toISOString().slice(0, 10);
+    link.href = url;
+    link.download = "fashion-store-os-" + stamp + ".json";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(function () {
+      URL.revokeObjectURL(url);
+    }, 1000);
+    showToast("Downloaded a copy of your records. Keep it safe -- this file is not encrypted.");
+  } catch (error) {
+    console.error("Export failed.", error);
+    showToast("Could not download a copy of your records.");
+  }
+}
+
+async function importRecordsFile(input) {
+  const file = input && input.files ? input.files[0] : null;
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const parsed = JSON.parse(text);
+    const records = parsed && parsed.records && typeof parsed.records === "object" ? parsed.records : parsed;
+    if (!records || typeof records !== "object") throw new Error("That file is not a Fashion Store OS export.");
+    state = normalizeState(records);
+    persistLocalState();
+    selectedClientId = state.clients[0] ? state.clients[0].id : "";
+    draftOrderStyleId = state.styles[0] ? state.styles[0].id : "";
+    showToast("Records loaded from the file. This replaced what was on this device.");
+  } catch (error) {
+    console.error("Import failed.", error);
+    showToast(error.message || "Could not read that file.");
+  } finally {
+    input.value = "";
+    render();
+  }
+}
+
+function renderBackupPanel() {
+  const cached = readCachedBackupKey();
+  const last = clean(lastBackupAt);
+  const status = !backupAvailable() ? "Unavailable" : cached ? "On" : "Not set up";
+  return [
+    '<section class="panel">',
+    '<div class="panel-header"><div><h2>Backup</h2>',
+    "<p>An encrypted copy of your records, stored online. We cannot read it &mdash; only your passphrase can open it.</p>",
+    "</div><span class=\"status\">" + escapeHtml(status) + "</span></div>",
+    !cached && backupAvailable()
+      ? '<div class="inline-callout"><div><strong>No backup passphrase yet</strong><p class="muted small-text">Without one, losing this device loses your records. Set a passphrase and keep it somewhere safe &mdash; if you forget it, nobody can open the backup, including us.</p></div></div>'
+      : "",
+    backupPrompt ? renderBackupPassphraseForm(backupPrompt) : "",
+    '<dl class="meta-grid">',
+    "<div><dt>Last backup</dt><dd>" + (last ? escapeHtml(formatDate(last)) : "Never") + "</dd></div>",
+    "<div><dt>Automatic</dt><dd>" + (cached ? "After each change" : "Off") + "</dd></div>",
+    "</dl>",
+    '<div class="button-row">',
+    '<button class="btn small" type="button" data-action="backup-now"' + (backupBusy ? " disabled" : "") + ">" + (backupBusy === "backup" ? "Backing up&hellip;" : "Back up now") + "</button>",
+    '<button class="btn small secondary" type="button" data-action="backup-restore"' + (backupBusy ? " disabled" : "") + ">" + (backupBusy === "restore" ? "Restoring&hellip;" : "Restore from backup") + "</button>",
+    cached ? '<button class="btn small secondary" type="button" data-action="backup-set-passphrase">Change passphrase</button>' : "",
+    cached ? '<button class="btn small secondary" type="button" data-action="backup-forget">Forget on this device</button>' : "",
+    "</div>",
+    '<div class="panel-header"><div><h2>Your own copy</h2>',
+    "<p>Download an unencrypted file you keep yourself, or load one back in. No server involved.</p>",
+    "</div></div>",
+    '<div class="button-row">',
+    '<button class="btn small secondary" type="button" data-action="export-records">Download a copy</button>',
+    '<label class="btn small secondary" for="importRecordsInput">Load from a file</label>',
+    '<input id="importRecordsInput" class="visually-hidden" type="file" accept="application/json,.json" data-import-records>',
+    "</div>",
+    "</section>",
+  ].join("");
+}
+
+function renderBackupPassphraseForm(prompt) {
+  const restoring = prompt.intent === "restore";
+  return [
+    '<form id="backupPassphraseForm" class="auth-form">',
+    '<label class="field full"><span>' + (restoring ? "Backup passphrase" : "New backup passphrase") + "</span>",
+    '<input name="passphrase" type="password" autocomplete="off" required minlength="10" placeholder="At least 10 characters"></label>',
+    prompt.confirm
+      ? '<label class="field full"><span>Confirm passphrase</span><input name="confirmPassphrase" type="password" autocomplete="off" required minlength="10" placeholder="Repeat the passphrase"></label>'
+      : "",
+    '<div class="auth-note">' +
+      (restoring
+        ? "Enter the passphrase used when this backup was made."
+        : "Write this down. It is the only thing that can open your backup, and it cannot be reset.") +
+      "</div>",
+    '<div class="button-row">',
+    '<button class="btn small" type="submit">' + (restoring ? "Restore" : "Save passphrase") + "</button>",
+    '<button class="btn small secondary" type="button" data-action="backup-cancel">Cancel</button>',
+    "</div></form>",
+  ].join("");
+}
+
 function renderDeviceStoragePanel() {
   const used = storageEstimate.usage ? formatBytes(storageEstimate.usage) : "";
   const quota = storageEstimate.quota ? formatBytes(storageEstimate.quota) : "";
@@ -3348,10 +3743,21 @@ function wireEvents() {
     if (action === "reset-user-password") issueRecoveryCodeForUser(id);
     if (action === "dismiss-recovery-code") dismissRecoveryCode();
     if (action === "reset-demo") resetLocalData();
+    if (action === "backup-now") backUpNow();
+    if (action === "backup-restore") startRestore();
+    if (action === "backup-set-passphrase") promptForPassphrase("set");
+    if (action === "backup-forget") forgetBackupPassphrase();
+    if (action === "backup-cancel") dismissBackupPrompt();
+    if (action === "confirm-restore") confirmRestore();
+    if (action === "export-records") exportRecordsFile();
   };
 
   app.onchange = (event) => {
     const target = event.target;
+    if (target.matches("[data-import-records]")) {
+      void importRecordsFile(target);
+      return;
+    }
     if (target.id === "orderStyle") {
       draftOrderStyleId = target.value;
       render();
@@ -3396,6 +3802,7 @@ function wireEvents() {
     event.preventDefault();
     const form = event.target;
     if (form.id === "signinForm") handleSignIn(form);
+    if (form.id === "backupPassphraseForm") handleBackupPassphraseSubmit(form);
     if (form.id === "signupForm") handleSignUp(form);
     if (form.id === "recoveryForm") handleRecoverySubmit(form);
     if (form.id === "inviteForm") handleInviteAccept(form);
@@ -5465,6 +5872,9 @@ function applyServerSessionResult(result = {}, options = {}) {
 
 function saveState() {
   persistLocalState();
+  // Queue an encrypted backup. Debounced inside, so this is cheap to call from
+  // every mutation site.
+  scheduleAutoBackup();
 }
 
 // Local-dev convenience: load the sample studio from the console. Never wired
