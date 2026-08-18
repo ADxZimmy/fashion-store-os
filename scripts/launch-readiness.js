@@ -10,6 +10,7 @@ const checks = [
   ["Local-first boundary guards", ["run", "test:local-first"]],
   ["Device storage suite", ["run", "test:storage"]],
   ["Encrypted backup suite", ["run", "test:backup"]],
+  ["Transit inbox suite", ["run", "test:inbox"]],
   ["Mobile/accessibility UX audit", ["run", "ux:audit"]],
   ["Security hygiene audit", ["run", "ops:security"]],
   ["Production build", ["run", "build"]],

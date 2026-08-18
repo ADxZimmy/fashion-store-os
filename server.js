@@ -1,20 +1,18 @@
 ﻿const http = require("http");
 const path = require("path");
 const fs = require("fs/promises");
-// Phase 021: api/_auth.js (the per-workspace auth document) has no consumer
-// here any more. Identity is row-based; the only legacy surface left is the
-// channel webhook's state document, which step 5 replaces with the inbox.
+// Phase 021: no legacy document plane remains. Identity, backups, and the
+// transit inbox are all rows; business records live on the device. fs is only
+// used to serve static files now.
 const { sweepIdentity } = require("./api/_identity");
 const { readBackup, removeBackup, writeBackup } = require("./api/_backup");
 const { handleIdentityGet, handleSessionAction } = require("./api/_identity_http");
 const { createLocalIdentityStore } = require("./api/_identity_local");
-const { appendWebhookMessages } = require("./api/_channel_intake");
+const { acceptMessages, acknowledgeMessages, pullMessages } = require("./api/_inbox");
 const { normalizeWebhookPayload, requireWebhookSignatureConfig, verifyWebhookChallenge, verifyWebhookSignature } = require("./api/_channel_webhook");
 
 const ROOT_DIR = __dirname;
 const DATA_DIR = path.join(ROOT_DIR, "data");
-const STATE_FILE = path.join(DATA_DIR, "state.json");
-const AUTH_FILE = path.join(DATA_DIR, "auth.json");
 const PORT = Number(process.env.PORT || 4179);
 const BODY_LIMIT = 1024 * 1024 * 5;
 // Row-based identity, file-backed: data/identity.json mirrors the Supabase
@@ -76,6 +74,7 @@ async function routeApi(request, response, url) {
     "/api/keepalive": "GET, OPTIONS",
     "/api/readiness": "GET, OPTIONS",
     "/api/backup": "GET, PUT, DELETE, OPTIONS",
+    "/api/inbox": "GET, POST, OPTIONS",
     "/api/session": "POST, OPTIONS",
     "/api/workspace-code": "OPTIONS",
     "/api/state": "OPTIONS",
@@ -221,28 +220,29 @@ async function routeApi(request, response, url) {
     }
 
     const messages = normalizeWebhookPayload(payload);
-    const result = await readJsonWithExists(STATE_FILE);
-    const intake = appendWebhookMessages(result.value || {}, messages, {
-      maxMessages: process.env.CHANNEL_WEBHOOK_MAX_MESSAGES,
-    });
-
-    if (intake.accepted.length || intake.duplicates.length || intake.rejected.length || intake.overflow) {
-      await writeJsonAtomic(STATE_FILE, intake.state);
-    }
-
+    const intake = await acceptMessages(identityDb, messages, { maxMessages: process.env.CHANNEL_WEBHOOK_MAX_MESSAGES });
     sendJson(response, intake.accepted.length ? 201 : 202, {
       ok: true,
       accepted: intake.accepted.length,
       duplicates: intake.duplicates.length,
       rejected: intake.rejected.length + intake.overflow,
-      messages: intake.accepted,
     });
     return;
   }
 
-  if (request.method === "GET" && url.pathname === "/api/auth") {
-    await handleIdentityGet(identityDb, request, response);
-    return;
+  // Transit inbox drain: GET pulls, POST acknowledges what the device stored.
+  if (url.pathname === "/api/inbox") {
+    if (request.method === "GET") {
+      const result = await pullMessages(identityDb, request);
+      sendJson(response, result.status, result.payload);
+      return;
+    }
+    if (request.method === "POST") {
+      const body = (await readJsonBody(request)) || {};
+      const result = await acknowledgeMessages(identityDb, request, body);
+      sendJson(response, result.status, result.payload);
+      return;
+    }
   }
 
   sendJson(response, 404, { error: "API route not found" });
@@ -290,25 +290,6 @@ function isPrivatePath(requestPath) {
     "/data/",
     "/node_modules/",
   ].some((prefix) => requestPath === prefix.slice(0, -1) || requestPath.startsWith(prefix));
-}
-
-async function readJsonWithExists(filePath) {
-  try {
-    const content = await fs.readFile(filePath, "utf8");
-    return { exists: true, value: JSON.parse(content) };
-  } catch (error) {
-    if (error.code === "ENOENT") {
-      return { exists: false, value: null };
-    }
-    throw error;
-  }
-}
-
-async function writeJsonAtomic(filePath, value) {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  const tempPath = `${filePath}.tmp`;
-  await fs.writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-  await fs.rename(tempPath, filePath);
 }
 
 async function readJsonBody(request) {

@@ -12,6 +12,7 @@
     "test:local-first": "node scripts/test-local-first.js",
     "test:storage": "node scripts/test-storage.js",
     "test:backup": "node scripts/test-backup.js",
+    "test:inbox": "node scripts/test-inbox.js",
     "ux:audit": "node scripts/ux-audit.js",
     "ops:security": "node scripts/security-audit.js",
     "launch:check": "node scripts/launch-readiness.js",

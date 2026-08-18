@@ -43,11 +43,22 @@ ok("the client sends no x-workspace-id header", !appCode.includes("x-workspace-i
 // Backup is the one deliberate exception to "no business data leaves the
 // device", and it is only acceptable because what leaves is ciphertext -- so
 // the exception is paired with the assertion that makes it true, below.
+// Three endpoint families, each with the reason it does not breach the pivot:
+// identity (no business data at all), backup (ciphertext only), and the inbox
+// (inbound relay -- messages arrive from providers and are deleted once the
+// device stores them, so nothing of the device's is uploaded). The assertions
+// that make the latter two true follow.
 const fetchTargets = [...appCode.matchAll(/fetch\(\s*([A-Za-z_$][\w$]*)/g)].map((m) => m[1]);
 ok(
-  "the client only calls identity and backup endpoints",
-  fetchTargets.every((name) => ["API_BOOTSTRAP_PATH", "API_SESSION_PATH", "API_BACKUP_PATH"].includes(name)),
+  "the client only calls identity, backup, and inbox endpoints",
+  fetchTargets.every((name) =>
+    ["API_BOOTSTRAP_PATH", "API_SESSION_PATH", "API_BACKUP_PATH", "API_INBOX_PATH"].includes(name),
+  ),
   fetchTargets.join(","),
+);
+ok(
+  "the inbox is drained, never fed: the only upload is a list of ids",
+  /body: JSON\.stringify\(\{ inboxIds:/.test(appCode),
 );
 ok(
   "no request body carries raw records",

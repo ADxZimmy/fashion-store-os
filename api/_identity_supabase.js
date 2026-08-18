@@ -12,6 +12,7 @@ const T = {
   rateEvents: "/fashion_store_os_rate_limit_events",
   audit: "/fashion_store_os_identity_audit",
   backups: "/fashion_store_os_backups",
+  inbox: "/fashion_store_os_inbox_messages",
 };
 
 const MINIMAL = { Prefer: "return=minimal" };
@@ -136,12 +137,34 @@ module.exports = {
   },
   deleteBackup: (storeId) => remove(`${T.backups}?store_id=eq.${q(storeId)}`),
 
+  // Transit inbox. The unique index on (store_id, fingerprint) is what makes a
+  // provider retry idempotent, so a 409 here is the duplicate case rather than
+  // an error -- reported as false so the caller can count it.
+  insertInboxMessage: async (row) => {
+    try {
+      await supabaseRequest("POST", T.inbox, [row], MINIMAL, WRITE_OK);
+      return true;
+    } catch (error) {
+      if (error.storageStatus === 409) return false;
+      throw error;
+    }
+  },
+  listInboxMessages: (storeId, limit) =>
+    rows(`${T.inbox}?store_id=eq.${q(storeId)}&select=*&order=received_at.asc&limit=${Number(limit) || 200}`),
+  deleteInboxMessages: async (storeId, ids) => {
+    if (!ids.length) return 0;
+    const list = ids.map((id) => `"${String(id).replace(/"/g, "")}"`).join(",");
+    await remove(`${T.inbox}?store_id=eq.${q(storeId)}&id=in.(${list})`);
+    return ids.length;
+  },
+
   // Retention, run by the keepalive cron.
   sweep: async ({ nowIso, rateCutoffIso, auditCutoffIso }) => {
     await remove(`${T.sessions}?expires_at=lte.${q(nowIso)}`);
     await remove(`${T.invites}?expires_at=lte.${q(nowIso)}&accepted_at=is.null`);
     await remove(`${T.rateEvents}?created_at=lt.${q(rateCutoffIso)}`);
     await remove(`${T.audit}?created_at=lt.${q(auditCutoffIso)}`);
+    await remove(`${T.inbox}?expires_at=lte.${q(nowIso)}`);
     return { ok: true };
   },
 };

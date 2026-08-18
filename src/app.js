@@ -17,6 +17,7 @@ const OFFLINE_GRACE_MS = 1000 * 60 * 60 * 24 * 30;
 const API_BOOTSTRAP_PATH = "/api/bootstrap";
 const API_SESSION_PATH = "/api/session";
 const API_BACKUP_PATH = "/api/backup";
+const API_INBOX_PATH = "/api/inbox";
 const MIN_PASSWORD_LENGTH = 8;
 const TEAM_LIMIT = 25;
 let deviceWorkspaceId = "";
@@ -158,6 +159,8 @@ let backupPrompt = null;
 let autoBackupTimer = null;
 let cachedStoreId = "";
 let lastBackupAt = readBackupMeta();
+let inboxBusy = false;
+let inboxPullTimer = null;
 let lastInviteResult = null;
 // Recovery codes are returned by the server exactly once. Hold the value only
 // long enough to show it, then clear it — it is never persisted client-side.
@@ -204,6 +207,8 @@ async function initializeApp() {
   }
 
   authMode = "signin";
+  // A short delay so the first paint is not competing with a network call.
+  if (accessMode === "unlocked") scheduleInboxPull(4000);
   selectedClientId = state.clients[0]?.id || "";
   draftOrderStyleId = state.styles[0]?.id || "";
   if (isDevHost()) {
@@ -2081,6 +2086,9 @@ function renderInquiries() {
             <h2>Channel message intake</h2>
             <p>Paste WhatsApp, Instagram, web, referral, or walk-in demand before it disappears inside a chat thread.</p>
           </div>
+          <div class="button-row">
+            <button class="btn small secondary" type="button" data-action="check-messages" ${inboxBusy || offlineMode ? "disabled" : ""}>${inboxBusy ? "Checking&hellip;" : "Check for messages"}</button>
+          </div>
         </div>
         <form id="channelMessageForm" class="form-grid">
           <label class="field">
@@ -3218,6 +3226,113 @@ async function importRecordsFile(input) {
   }
 }
 
+
+// ---------------------------------------------------------------------------
+// Transit inbox (Phase 021 step 5)
+//
+// Provider messages cannot be delivered to a device, so the server holds them
+// until this pulls them into local records and acknowledges. Pull, store,
+// then acknowledge -- in that order, so a failure anywhere leaves the message
+// on the server to be pulled again. A repeated enquiry is a nuisance; a lost
+// one is a lost customer.
+// ---------------------------------------------------------------------------
+
+function scheduleInboxPull(delayMs) {
+  if (offlineMode || !currentUser()) return;
+  if (inboxPullTimer) clearTimeout(inboxPullTimer);
+  inboxPullTimer = setTimeout(function () {
+    inboxPullTimer = null;
+    void pullInbox({ silent: true });
+  }, delayMs);
+}
+
+async function pullInbox(options) {
+  const silent = Boolean(options && options.silent);
+  if (inboxBusy || offlineMode || !currentUser()) return;
+  inboxBusy = true;
+  if (!silent) render();
+
+  try {
+    const response = await fetch(API_INBOX_PATH, { headers: apiHeaders(), credentials: "same-origin" });
+    if (!response.ok) {
+      // 401 simply means the session lapsed; the lock screen handles that.
+      if (!silent && response.status !== 401) showToast("Could not check for new messages.");
+      return;
+    }
+    const result = await response.json().catch(function () {
+      return {};
+    });
+    const incoming = Array.isArray(result.messages) ? result.messages : [];
+    if (!incoming.length) {
+      if (!silent) showToast("No new messages.");
+      return;
+    }
+
+    // The client is the last line of defence against duplicates: a crash
+    // between storing and acknowledging means the same message arrives again.
+    const seen = new Set(state.channelMessages.map(inboxFingerprint));
+    const added = [];
+    for (const entry of incoming) {
+      const message = normalizeChannelMessage({
+        ...entry.message,
+        id: clean(entry.message && entry.message.id) || uid("msg"),
+        routingStatus: (entry.message && entry.message.routingStatus) || "New",
+        receivedAt: entry.receivedAt || (entry.message && entry.message.receivedAt) || new Date().toISOString(),
+      });
+      const fingerprint = inboxFingerprint(message);
+      if (seen.has(fingerprint)) continue;
+      seen.add(fingerprint);
+      state.channelMessages.unshift(message);
+      added.push(message);
+    }
+
+    // Store before acknowledging. Acknowledging first would delete the
+    // server's copy of a message this device had not yet written down.
+    if (added.length) {
+      const stored = persistLocalState();
+      if (!stored) {
+        showToast("New messages arrived but could not be saved. They stay on the server until there is space.");
+        return;
+      }
+    }
+
+    await fetch(API_INBOX_PATH, {
+      method: "POST",
+      headers: apiHeaders({ "Content-Type": "application/json" }),
+      credentials: "same-origin",
+      body: JSON.stringify({ inboxIds: incoming.map(function (entry) { return entry.inboxId; }) }),
+    });
+
+    if (added.length) {
+      scheduleAutoBackup();
+      showToast(added.length === 1 ? "1 new message arrived." : added.length + " new messages arrived.");
+    } else if (!silent) {
+      showToast("No new messages.");
+    }
+    render();
+  } catch (error) {
+    console.warn("Could not pull the message inbox.", error);
+    if (!silent) showToast("Could not check for new messages.");
+  } finally {
+    inboxBusy = false;
+    if (!silent) render();
+  }
+}
+
+// Mirrors the server's fingerprint (api/_inbox.js) so both sides agree on what
+// counts as the same message.
+function inboxFingerprint(message) {
+  const providerId = clean(message && (message.providerMessageId || message.id));
+  const channel = clean(message && message.channel).toLowerCase();
+  if (providerId) return channel + "|" + providerId.toLowerCase();
+  return [
+    channel,
+    clean(message && message.contact).toLowerCase(),
+    clean(message && message.message).toLowerCase(),
+    clean(message && message.receivedAt).slice(0, 10),
+  ].join("|");
+}
+
 function renderBackupPanel() {
   const cached = readCachedBackupKey();
   const last = clean(lastBackupAt);
@@ -3750,6 +3865,7 @@ function wireEvents() {
     if (action === "backup-cancel") dismissBackupPrompt();
     if (action === "confirm-restore") confirmRestore();
     if (action === "export-records") exportRecordsFile();
+    if (action === "check-messages") pullInbox({ silent: false });
   };
 
   app.onchange = (event) => {

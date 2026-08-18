@@ -1,7 +1,13 @@
-const { appendWebhookMessages } = require("./_channel_intake");
+// Provider webhook intake, rewritten for Phase 021 step 5.
+//
+// The handshake and HMAC verification are unchanged -- those were never the
+// problem. What changed is the landing spot: messages used to be written into
+// a per-workspace state document, which under local-first does not exist.
+// They now go to the transit inbox, where a signed-in device drains them.
+const { acceptMessages } = require("./_inbox");
 const { normalizeWebhookPayload, requireWebhookSignatureConfig, verifyWebhookChallenge, verifyWebhookSignature } = require("./_channel_webhook");
+const db = require("./_identity_supabase");
 const { handleError, handleOptions, readRawBody, sendJson, sendMethodNotAllowed } = require("./_response");
-const { storeForRequest } = require("./_store");
 
 module.exports = async function handler(request, response) {
   const methods = ["GET", "POST", "OPTIONS"];
@@ -47,22 +53,17 @@ module.exports = async function handler(request, response) {
       }
 
       const messages = normalizeWebhookPayload(payload);
-      const store = storeForRequest(request);
-      const result = await store.getDocument("state");
-      const intake = appendWebhookMessages(result.value || {}, messages, {
-        maxMessages: process.env.CHANNEL_WEBHOOK_MAX_MESSAGES,
-      });
+      const intake = await acceptMessages(db, messages, { maxMessages: process.env.CHANNEL_WEBHOOK_MAX_MESSAGES });
 
-      if (intake.accepted.length || intake.duplicates.length || intake.rejected.length || intake.overflow) {
-        await store.setDocument("state", intake.state);
-      }
-
+      // 201 when something new was queued, 202 when the delivery was
+      // understood but added nothing (all duplicates, or all unroutable).
+      // Providers treat both as success and stop retrying, which is correct:
+      // a retry would not change the outcome.
       sendJson(response, intake.accepted.length ? 201 : 202, {
         ok: true,
         accepted: intake.accepted.length,
         duplicates: intake.duplicates.length,
         rejected: intake.rejected.length + intake.overflow,
-        messages: intake.accepted,
       });
       return;
     }

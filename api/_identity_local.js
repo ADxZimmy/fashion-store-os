@@ -15,6 +15,7 @@ const EMPTY = {
   rateEvents: [],
   audit: [],
   backups: [],
+  inbox: [],
 };
 
 function createLocalIdentityStore(dataDir) {
@@ -176,6 +177,29 @@ function createLocalIdentityStore(dataDir) {
         .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
         .slice(0, Number(limit) || 200),
 
+    // Mirrors the unique index on (store_id, fingerprint): a provider retry
+    // reports as a duplicate rather than inserting twice.
+    insertInboxMessage: async (row) =>
+      mutate((data) => {
+        if (data.inbox.some((item) => item.store_id === row.store_id && item.fingerprint === row.fingerprint)) {
+          return false;
+        }
+        data.inbox.push(row);
+        return true;
+      }),
+    listInboxMessages: async (storeId, limit) =>
+      load()
+        .inbox.filter((row) => row.store_id === storeId)
+        .sort((a, b) => String(a.received_at).localeCompare(String(b.received_at)))
+        .slice(0, Number(limit) || 200),
+    deleteInboxMessages: async (storeId, ids) =>
+      mutate((data) => {
+        const wanted = new Set(ids);
+        const before = data.inbox.length;
+        data.inbox = data.inbox.filter((row) => !(row.store_id === storeId && wanted.has(row.id)));
+        return before - data.inbox.length;
+      }),
+
     getBackup: async (storeId) => load().backups.find((row) => row.store_id === storeId) || null,
     putBackup: async (row) =>
       mutate((data) => {
@@ -193,6 +217,7 @@ function createLocalIdentityStore(dataDir) {
         data.invites = data.invites.filter((row) => row.accepted_at || row.expires_at > nowIso);
         data.rateEvents = data.rateEvents.filter((row) => row.created_at >= rateCutoffIso);
         data.audit = data.audit.filter((row) => row.created_at >= auditCutoffIso);
+        data.inbox = data.inbox.filter((row) => row.expires_at > nowIso);
         return { ok: true };
       }),
   };
