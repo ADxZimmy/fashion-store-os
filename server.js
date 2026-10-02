@@ -7,7 +7,7 @@ const fs = require("fs/promises");
 const { sweepIdentity } = require("./api/_identity");
 const { readBackup, removeBackup, writeBackup } = require("./api/_backup");
 const { handleIdentityGet, handleSessionAction } = require("./api/_identity_http");
-const { createLocalIdentityStore } = require("./api/_identity_local");
+const { openDevDatabase } = require("./db/pglite");
 const { acceptMessages, acknowledgeMessages, pullMessages } = require("./api/_inbox");
 const { normalizeWebhookPayload, requireWebhookSignatureConfig, verifyWebhookChallenge, verifyWebhookSignature } = require("./api/_channel_webhook");
 
@@ -15,9 +15,11 @@ const ROOT_DIR = __dirname;
 const DATA_DIR = path.join(ROOT_DIR, "data");
 const PORT = Number(process.env.PORT || 4179);
 const BODY_LIMIT = 1024 * 1024 * 5;
-// Row-based identity, file-backed: data/identity.json mirrors the Supabase
-// identity tables so local dev exercises the same core as production.
-const identityDb = createLocalIdentityStore(DATA_DIR);
+// Local dev runs the production SQL adapter (api/_identity_pg.js) on PGlite,
+// an embedded Postgres persisted under data/pglite. Same schema, same queries
+// as Neon in production, so local behaviour predicts production behaviour --
+// the file-backed fake this replaced drifted from the real adapter twice.
+const devDatabase = openDevDatabase(path.join(DATA_DIR, "pglite"), (line) => console.log(`[db] ${line}`));
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -64,6 +66,7 @@ async function routeRequest(request, response) {
 }
 
 async function routeApi(request, response, url) {
+  const { db: identityDb } = await devDatabase;
   const optionsAllow = {
     "/api/auth": "GET, OPTIONS",
     "/api/bootstrap": "GET, OPTIONS",
@@ -71,7 +74,7 @@ async function routeApi(request, response, url) {
     "/api/data": "OPTIONS",
     "/api/health": "GET, OPTIONS",
     "/api/inbound": "OPTIONS",
-    "/api/keepalive": "GET, OPTIONS",
+    "/api/maintenance": "GET, OPTIONS",
     "/api/readiness": "GET, OPTIONS",
     "/api/backup": "GET, PUT, DELETE, OPTIONS",
     "/api/inbox": "GET, POST, OPTIONS",
@@ -87,49 +90,43 @@ async function routeApi(request, response, url) {
   }
 
   if (request.method === "GET" && url.pathname === "/api/health") {
-    sendJson(response, 200, { ok: true, storage: "json-file", timestamp: new Date().toISOString() });
+    await identityDb.probe();
+    sendJson(response, 200, { ok: true, storage: "postgres", databaseHost: "pglite (local)", timestamp: new Date().toISOString() });
     return;
   }
 
-  if (request.method === "GET" && url.pathname === "/api/keepalive") {
-    // Local storage is a json file and never pauses, so there is nothing to keep
-    // warm. Runs the identity retention sweep for parity with the deployed cron.
-    let sweep = null;
-    try {
-      sweep = await sweepIdentity(identityDb);
-    } catch (sweepError) {
-      console.error("identity sweep failed", sweepError);
-      sweep = { ok: false, error: sweepError.message };
-    }
-    sendJson(response, 200, {
-      ok: true,
-      storage: "json-file",
-      workspace: process.env.FASHION_STORE_WORKSPACE_ID || "default",
-      sweep,
-      timestamp: new Date().toISOString(),
-    });
+  // Mirrors api/maintenance.js: the daily retention sweep the Vercel cron runs.
+  if (request.method === "GET" && url.pathname === "/api/maintenance") {
+    const sweep = await sweepIdentity(identityDb);
+    sendJson(response, 200, { ok: true, storage: "postgres", databaseHost: "pglite (local)", sweep, timestamp: new Date().toISOString() });
     return;
   }
 
   if (request.method === "GET" && url.pathname === "/api/readiness") {
     const releaseOwner = String(process.env.FASHION_STORE_RELEASE_OWNER || "ADxZimmy").trim();
     const signatureRequired = process.env.CHANNEL_WEBHOOK_REQUIRE_SIGNATURE === "1";
+    await identityDb.probe();
     const checks = [
-      { name: "local storage configured", ok: true, detail: "json-file" },
-      { name: "workspace id valid", ok: true, detail: process.env.FASHION_STORE_WORKSPACE_ID || "default" },
+      { name: "database configured", required: true, ok: true, detail: "pglite (local)" },
+      { name: "database reachable", required: true, ok: true, detail: "Round trip succeeded" },
+      { name: "owner release lane", required: true, ok: releaseOwner === "ADxZimmy", detail: releaseOwner },
       {
-        name: "webhook signatures required in production",
+        name: "webhook signatures required",
+        required: false,
         ok: signatureRequired,
         detail: signatureRequired ? "Required" : "Optional in local development",
       },
-      { name: "owner release lane", ok: releaseOwner === "ADxZimmy", detail: releaseOwner },
-      { name: "operations runbook present", ok: true, detail: "docs/operations-runbook.md" },
+      {
+        name: "channel intake bound to a store",
+        required: false,
+        ok: Boolean(String(process.env.FASHION_STORE_INBOX_STORE_ID || "").trim()),
+        detail: String(process.env.FASHION_STORE_INBOX_STORE_ID || "").trim() || "FASHION_STORE_INBOX_STORE_ID not set",
+      },
     ];
     sendJson(response, 200, {
-      ok: checks.every((check) => check.ok || check.name === "webhook signatures required in production"),
+      ok: checks.filter((check) => check.required).every((check) => check.ok),
       mode: "local",
-      storage: "json-file",
-      workspace: process.env.FASHION_STORE_WORKSPACE_ID || "default",
+      storage: "postgres",
       checks,
       timestamp: new Date().toISOString(),
     });
@@ -288,6 +285,7 @@ function isPrivatePath(requestPath) {
     "/.git/",
     "/.planning/",
     "/data/",
+    "/db/",
     "/node_modules/",
   ].some((prefix) => requestPath === prefix.slice(0, -1) || requestPath.startsWith(prefix));
 }

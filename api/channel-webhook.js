@@ -1,4 +1,4 @@
-// Provider webhook intake, rewritten for Phase 021 step 5.
+﻿// Provider webhook intake, rewritten for Phase 021 step 5.
 //
 // The handshake and HMAC verification are unchanged -- those were never the
 // problem. What changed is the landing spot: messages used to be written into
@@ -6,7 +6,7 @@
 // They now go to the transit inbox, where a signed-in device drains them.
 const { acceptMessages } = require("./_inbox");
 const { normalizeWebhookPayload, requireWebhookSignatureConfig, verifyWebhookChallenge, verifyWebhookSignature } = require("./_channel_webhook");
-const db = require("./_identity_supabase");
+const { db } = require("./_db");
 const { handleError, handleOptions, readRawBody, sendJson, sendMethodNotAllowed } = require("./_response");
 
 module.exports = async function handler(request, response) {

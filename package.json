@@ -8,11 +8,13 @@
     "start": "node server.js",
     "dev": "node server.js",
     "check": "node scripts/check.js",
+    "db:migrate": "node scripts/db-migrate.js",
     "test:identity": "node scripts/test-identity.js",
     "test:local-first": "node scripts/test-local-first.js",
     "test:storage": "node scripts/test-storage.js",
     "test:backup": "node scripts/test-backup.js",
     "test:inbox": "node scripts/test-inbox.js",
+    "test:neon": "node scripts/test-neon.js",
     "ux:audit": "node scripts/ux-audit.js",
     "ops:security": "node scripts/security-audit.js",
     "launch:check": "node scripts/launch-readiness.js",
@@ -22,6 +24,10 @@
     "node": ">=18"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "supabase": "^2.108.0"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.2.0"
   }
 }

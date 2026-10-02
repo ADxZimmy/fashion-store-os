@@ -1,4 +1,4 @@
-// Phase 021 step 5: transit inbox. Exercises the real core against the
+﻿// Phase 021 step 5: transit inbox. Exercises the real core against the
 // file-backed adapter, plus static checks on the client's pull-then-acknowledge
 // ordering -- the property that decides whether a provider message can be lost.
 const fs = require("fs");
@@ -8,7 +8,7 @@ const path = require("path");
 const rootDir = path.resolve(__dirname, "..");
 const inbox = require(path.join(rootDir, "api/_inbox.js"));
 const identity = require(path.join(rootDir, "api/_identity.js"));
-const { createLocalIdentityStore } = require(path.join(rootDir, "api/_identity_local.js"));
+const { openTestDatabase } = require(path.join(rootDir, "db/pglite.js"));
 const appSource = fs.readFileSync(path.join(rootDir, "src/app.js"), "utf8");
 const serverSource = fs.readFileSync(path.join(rootDir, "server.js"), "utf8");
 
@@ -36,11 +36,11 @@ async function expectError(label, promise, statusCode) {
   }
 }
 
-const scratchRoot = fs.mkdtempSync(path.join(os.tmpdir(), "fso-inbox-test-"));
-function freshDb(name) {
-  const dir = path.join(scratchRoot, name);
-  fs.mkdirSync(dir, { recursive: true });
-  return createLocalIdentityStore(dir);
+// One embedded Postgres per suite, emptied between scenarios: starting
+// PGlite costs seconds, truncating costs milliseconds.
+let testDb = null;
+async function freshDb() {
+  return testDb.reset();
 }
 let counter = 0;
 function req(token = "") {
@@ -70,7 +70,7 @@ async function main() {
 
   // --- No bound store: refuse loudly rather than guess or drop --------------
   {
-    const db = freshDb("unbound");
+    const db = await freshDb();
     delete process.env.FASHION_STORE_INBOX_STORE_ID;
     const error = await expectError("an unbound store refuses intake with 503", inbox.acceptMessages(db, [message()]), 503);
     ok("the refusal does not leak configuration detail", error.publicMessage === "Channel intake is not configured.");
@@ -79,14 +79,14 @@ async function main() {
 
   // --- Bound to a store that does not exist ---------------------------------
   {
-    const db = freshDb("missing-store");
+    const db = await freshDb();
     process.env.FASHION_STORE_INBOX_STORE_ID = "store-does-not-exist";
     await expectError("a bound store that does not exist refuses intake", inbox.acceptMessages(db, [message()]), 503);
   }
 
   // --- Accept, pull, acknowledge -------------------------------------------
   {
-    const db = freshDb("happy");
+    const db = await freshDb();
     const manager = await identity.signup(db, req(), { email: "m@example.com", password: STRONG, confirmPassword: STRONG });
     const storeId = manager.payload.identity.store.id;
     process.env.FASHION_STORE_INBOX_STORE_ID = storeId;
@@ -113,7 +113,7 @@ async function main() {
 
   // --- Provider retries -----------------------------------------------------
   {
-    const db = freshDb("dedup");
+    const db = await freshDb();
     const manager = await identity.signup(db, req(), { email: "m@example.com", password: STRONG, confirmPassword: STRONG });
     process.env.FASHION_STORE_INBOX_STORE_ID = manager.payload.identity.store.id;
 
@@ -133,7 +133,7 @@ async function main() {
 
   // --- Validation and batching ---------------------------------------------
   {
-    const db = freshDb("validation");
+    const db = await freshDb();
     const manager = await identity.signup(db, req(), { email: "m@example.com", password: STRONG, confirmPassword: STRONG });
     process.env.FASHION_STORE_INBOX_STORE_ID = manager.payload.identity.store.id;
 
@@ -150,7 +150,7 @@ async function main() {
 
   // --- Access -------------------------------------------------------------
   {
-    const db = freshDb("access");
+    const db = await freshDb();
     const manager = await identity.signup(db, req(), { email: "m@example.com", password: STRONG, confirmPassword: STRONG });
     process.env.FASHION_STORE_INBOX_STORE_ID = manager.payload.identity.store.id;
     await inbox.acceptMessages(db, [message()]);
@@ -175,7 +175,7 @@ async function main() {
 
   // --- Cross-store isolation ------------------------------------------------
   {
-    const db = freshDb("isolation");
+    const db = await freshDb();
     const a = await identity.signup(db, req(), { email: "a@example.com", password: STRONG, confirmPassword: STRONG });
     const b = await identity.signup(db, req(), { email: "b@example.com", password: STRONG, confirmPassword: STRONG });
     process.env.FASHION_STORE_INBOX_STORE_ID = a.payload.identity.store.id;
@@ -193,19 +193,16 @@ async function main() {
 
   // --- Expiry sweep ---------------------------------------------------------
   {
-    const db = freshDb("sweep");
+    const db = await freshDb();
     const manager = await identity.signup(db, req(), { email: "m@example.com", password: STRONG, confirmPassword: STRONG });
     process.env.FASHION_STORE_INBOX_STORE_ID = manager.payload.identity.store.id;
     await inbox.acceptMessages(db, [message()]);
 
-    const filePath = path.join(scratchRoot, "sweep", "identity.json");
-    const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
-    data.inbox = data.inbox.map((row) => ({ ...row, expires_at: new Date(Date.now() - 1000).toISOString() }));
-    fs.writeFileSync(filePath, JSON.stringify(data));
+    await testDb.sql("update fashion_store_os_inbox_messages set expires_at = $1", [new Date(Date.now() - 1000).toISOString()]);
 
     await identity.sweepIdentity(db);
     const afterSweep = await inbox.pullMessages(db, req(manager.sessionToken));
-    ok("undelivered messages expire via the keepalive sweep", afterSweep.payload.messages.length === 0);
+    ok("undelivered messages expire via the daily sweep", afterSweep.payload.messages.length === 0);
   }
 
   if (originalEnv === undefined) delete process.env.FASHION_STORE_INBOX_STORE_ID;
@@ -231,12 +228,16 @@ async function main() {
   ok("the webhook writes to the inbox", fs.readFileSync(path.join(rootDir, "api/channel-webhook.js"), "utf8").includes("acceptMessages"));
 
   console.log(`\n${pass} passed, ${fail} failed`);
-  fs.rmSync(scratchRoot, { recursive: true, force: true });
+  await testDb.close();
   process.exit(fail ? 1 : 0);
 }
 
-main().catch((error) => {
-  console.error(error);
-  fs.rmSync(scratchRoot, { recursive: true, force: true });
-  process.exit(1);
-});
+openTestDatabase()
+  .then((opened) => {
+    testDb = opened;
+    return main();
+  })
+  .catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });

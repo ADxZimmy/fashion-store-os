@@ -1,9 +1,9 @@
 {
-  "buildCommand": "node scripts/build.js",
+  "buildCommand": "node scripts/build.js && node scripts/db-migrate.js",
   "outputDirectory": "dist",
   "crons": [
     {
-      "path": "/api/keepalive",
+      "path": "/api/maintenance",
       "schedule": "0 6 * * *"
     }
   ],

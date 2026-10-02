@@ -7,3 +7,4 @@ data/*.json
 data/*.tmp
 .DS_Store
 Thumbs.db
+data/pglite/

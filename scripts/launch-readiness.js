@@ -1,4 +1,4 @@
-const { execFileSync } = require("child_process");
+﻿const { execFileSync } = require("child_process");
 const path = require("path");
 
 const rootDir = path.resolve(__dirname, "..");
@@ -11,6 +11,7 @@ const checks = [
   ["Device storage suite", ["run", "test:storage"]],
   ["Encrypted backup suite", ["run", "test:backup"]],
   ["Transit inbox suite", ["run", "test:inbox"]],
+  ["Neon migration suite", ["run", "test:neon"]],
   ["Mobile/accessibility UX audit", ["run", "ux:audit"]],
   ["Security hygiene audit", ["run", "ops:security"]],
   ["Production build", ["run", "build"]],

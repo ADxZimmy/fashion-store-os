@@ -1,20 +1,16 @@
-// Unit suite for the Phase 021 row-based identity plane. Runs the real core
-// (api/_identity.js) against the file-backed adapter on a scratch directory,
-// so every assertion exercises the exact code production runs -- only the
-// storage transport differs.
+﻿// Unit suite for the Phase 021 row-based identity plane. Runs the real core
+// (api/_identity.js) through the production SQL adapter (api/_identity_pg.js)
+// on PGlite, a real Postgres embedded in-process. The SQL these assertions
+// exercise is the SQL Neon runs; only the driver underneath differs.
 //
 // The 2026-08-03 lesson is enforced structurally here: every gated action is
 // checked across all four cases (no session on an empty system, no session on
 // a populated system, staff, manager), because the legacy bug passed its test
 // against the single case it did not touch.
-const fs = require("fs");
-const os = require("os");
-const path = require("path");
-
 const identity = require("../api/_identity");
-const { createLocalIdentityStore } = require("../api/_identity_local");
+const { openTestDatabase } = require("../db/pglite");
 
-const scratchRoot = fs.mkdtempSync(path.join(os.tmpdir(), "fso-identity-test-"));
+let testDb = null;
 let pass = 0;
 let fail = 0;
 let clientCounter = 0;
@@ -29,10 +25,11 @@ function ok(label, condition, detail = "") {
   }
 }
 
-function freshDb(name) {
-  const dir = path.join(scratchRoot, name);
-  fs.mkdirSync(dir, { recursive: true });
-  return createLocalIdentityStore(dir);
+// Each scenario starts from empty tables. One database serves the whole
+// suite because starting PGlite costs seconds and truncating costs
+// milliseconds.
+async function freshDb() {
+  return testDb.reset();
 }
 
 // Distinct client IPs by default so unrelated tests never share a rate window.
@@ -68,7 +65,7 @@ async function signupManager(db, email = "manager@example.com", name = "M") {
 async function main() {
   // --- Signup ---------------------------------------------------------------
   {
-    const db = freshDb("signup");
+    const db = await freshDb();
     const result = await signupManager(db);
     ok("signup returns 201 with a session token", result.status === 201 && Boolean(result.sessionToken));
     ok("signup account email is normalized", result.payload.identity.account.email === "manager@example.com");
@@ -85,7 +82,7 @@ async function main() {
 
   // --- Sign-in and sessions --------------------------------------------------
   {
-    const db = freshDb("signin");
+    const db = await freshDb();
     const signup = await signupManager(db);
     const signin = await identity.signin(db, req(), { email: "manager@example.com", password: STRONG });
     ok("signin succeeds with correct password", signin.status === 200 && Boolean(signin.sessionToken));
@@ -109,26 +106,7 @@ async function main() {
 
   // --- The four-case manager gate ---------------------------------------------
   {
-    const emptyDb = freshDb("gate-empty");
-    await expectError("empty system + no session is 401", identity.createInvite(emptyDb, req(), { email: "s@example.com" }), 401);
-
-    const db = freshDb("gate-populated");
-    const manager = await signupManager(db);
-    await expectError("populated system + no session is 401", identity.createInvite(db, req(), { email: "s@example.com" }), 401);
-
-    const staffCreate = await identity.createStaff(db, req(manager.sessionToken), { name: "S", email: "staff@example.com", password: STRONG });
-    ok("manager can create staff directly", staffCreate.status === 201);
-    const staffSignin = await identity.signin(db, req(), { email: "staff@example.com", password: STRONG });
-    await expectError("staff session is 403 on manager actions", identity.createInvite(db, req(staffSignin.sessionToken), { email: "t@example.com" }), 403);
-    const invite = await identity.createInvite(db, req(manager.sessionToken), { name: "T", email: "invitee@example.com", access: ["dashboard", "orders"] });
-    ok("manager session passes the gate", invite.status === 201 && Boolean(invite.payload.invite.inviteToken));
-
-    // Every manager-gated action gets all four cases, not just the one that
-    // happened to be tested. resetUserPassword is the sharpest: unlike the
-    // staff-only actions it can target a fellow manager, so a gate regression
-    // there would be staff-to-manager account takeover. A suite that checked
-    // only createInvite would stay green through exactly that.
-    const emptySystem = freshDb("gate-matrix-empty");
+    const db = await freshDb();
     const gated = [
       ["create-staff", (r, b) => identity.createStaff(r, b, { name: "X", email: "x@example.com", password: STRONG })],
       ["create-staff-invite", (r, b) => identity.createInvite(r, b, { email: "y@example.com" })],
@@ -139,13 +117,35 @@ async function main() {
       ["delete-staff", (r, b) => identity.deleteStaff(r, b, { id: "staff-x" })],
       ["reset-user-password", (r, b) => identity.resetUserPassword(r, b, { id: "staff-x" })],
     ];
+
+    // Case 1, before any account exists: the empty system. This is the case
+    // the 2026-08-03 bug lived in, so it runs for every gated action.
+    await expectError("empty system + no session is 401", identity.createInvite(db, req(), { email: "s@example.com" }), 401);
     for (const [label, call] of gated) {
-      await expectError(`${label}: empty system + no session is 401`, call(emptySystem, req()), 401);
+      await expectError(`${label}: empty system + no session is 401`, call(db, req()), 401);
+    }
+    // create-recovery-code is auth-gated rather than manager-gated.
+    await expectError("create-recovery-code without a session is 401", identity.createRecoveryCode(db, req()), 401);
+
+    const manager = await signupManager(db);
+    await expectError("populated system + no session is 401", identity.createInvite(db, req(), { email: "s@example.com" }), 401);
+
+    const staffCreate = await identity.createStaff(db, req(manager.sessionToken), { name: "S", email: "staff@example.com", password: STRONG });
+    ok("manager can create staff directly", staffCreate.status === 201);
+    const staffSignin = await identity.signin(db, req(), { email: "staff@example.com", password: STRONG });
+    await expectError("staff session is 403 on manager actions", identity.createInvite(db, req(staffSignin.sessionToken), { email: "t@example.com" }), 403);
+    const invite = await identity.createInvite(db, req(manager.sessionToken), { name: "T", email: "invitee@example.com", access: ["dashboard", "orders"] });
+    ok("manager session passes the gate", invite.status === 201 && Boolean(invite.payload.invite.inviteToken));
+
+    // Cases 2 and 3 for every manager-gated action, not just the one that
+    // happened to be tested. resetUserPassword is the sharpest: unlike the
+    // staff-only actions it can target a fellow manager, so a gate regression
+    // there would be staff-to-manager account takeover. A suite that checked
+    // only createInvite would stay green through exactly that.
+    for (const [label, call] of gated) {
       await expectError(`${label}: populated + no session is 401`, call(db, req()), 401);
       await expectError(`${label}: staff session is 403`, call(db, req(staffSignin.sessionToken)), 403);
     }
-    // create-recovery-code is auth-gated rather than manager-gated.
-    await expectError("create-recovery-code without a session is 401", identity.createRecoveryCode(emptySystem, req()), 401);
 
     // A manager cannot be targeted through reset-user-password from a staff
     // session even by id -- verified above by the 403 -- and the manager path
@@ -160,20 +160,22 @@ async function main() {
   {
     // No response may ever carry hash material. Checked across every payload
     // shape, since composeIdentity feeds all of them.
-    const db = freshDb("secrets");
+    const db = await freshDb();
     const manager = await signupManager(db);
     await identity.createStaff(db, req(manager.sessionToken), { name: "S", email: "staff@example.com", password: STRONG });
     const invite = await identity.createInvite(db, req(manager.sessionToken), { email: "invitee@example.com" });
     const staffSignin = await identity.signin(db, req(), { email: "staff@example.com", password: STRONG });
     const recovery = await identity.createRecoveryCode(db, req(manager.sessionToken));
 
-    const stored = JSON.parse(fs.readFileSync(path.join(scratchRoot, "secrets", "identity.json"), "utf8"));
+    const accounts = await testDb.sql("select password_hash, password_salt, recovery_code_hash from fashion_store_os_accounts");
+    const sessions = await testDb.sql("select token_hash from fashion_store_os_sessions");
+    const invites = await testDb.sql("select token_hash from fashion_store_os_invites");
     const secrets = [
-      ...stored.accounts.map((a) => a.password_hash),
-      ...stored.accounts.map((a) => a.password_salt),
-      ...stored.accounts.map((a) => a.recovery_code_hash),
-      ...stored.sessions.map((s) => s.token_hash),
-      ...stored.invites.map((i) => i.token_hash),
+      ...accounts.map((a) => a.password_hash),
+      ...accounts.map((a) => a.password_salt),
+      ...accounts.map((a) => a.recovery_code_hash),
+      ...sessions.map((row) => row.token_hash),
+      ...invites.map((row) => row.token_hash),
     ].filter(Boolean);
 
     const payloads = JSON.stringify([
@@ -191,7 +193,7 @@ async function main() {
 
   // --- Hostile input on the session cookie and action dispatch -----------------
   {
-    const db = freshDb("hostile");
+    const db = await freshDb();
     const manager = await signupManager(db);
 
     // A malformed percent-sequence in an unrelated cookie used to throw
@@ -227,7 +229,7 @@ async function main() {
 
   // --- Invites -----------------------------------------------------------------
   {
-    const db = freshDb("invites");
+    const db = await freshDb();
     const manager = await signupManager(db);
     const first = await identity.createInvite(db, req(manager.sessionToken), { name: "T", email: "invitee@example.com", access: ["dashboard", "orders", "bogus-view"] });
     const token = first.payload.invite.inviteToken;
@@ -254,7 +256,7 @@ async function main() {
 
   // --- Roster visibility ---------------------------------------------------------
   {
-    const db = freshDb("roster");
+    const db = await freshDb();
     const manager = await signupManager(db);
     await identity.createStaff(db, req(manager.sessionToken), { name: "S", email: "staff@example.com", password: STRONG });
     await identity.createInvite(db, req(manager.sessionToken), { email: "open@example.com" });
@@ -273,7 +275,7 @@ async function main() {
 
   // --- Suspend / reactivate / access / delete ---------------------------------
   {
-    const db = freshDb("lifecycle");
+    const db = await freshDb();
     const manager = await signupManager(db);
     await identity.createStaff(db, req(manager.sessionToken), { name: "S", email: "staff@example.com", password: STRONG });
     const staffSignin = await identity.signin(db, req(), { email: "staff@example.com", password: STRONG });
@@ -303,7 +305,7 @@ async function main() {
 
   // --- Cross-store tenancy ------------------------------------------------------
   {
-    const db = freshDb("tenancy");
+    const db = await freshDb();
     const managerA = await signupManager(db, "a@example.com");
     const managerB = await signupManager(db, "b@example.com");
     await identity.createStaff(db, req(managerB.sessionToken), { name: "S", email: "staff-b@example.com", password: STRONG });
@@ -316,7 +318,7 @@ async function main() {
 
   // --- Password change ------------------------------------------------------------
   {
-    const db = freshDb("password");
+    const db = await freshDb();
     const manager = await signupManager(db);
     const second = await identity.signin(db, req(), { email: "manager@example.com", password: STRONG });
     await expectError("wrong current password is 401", identity.changePassword(db, req(manager.sessionToken), { currentPassword: "nope-nope-nope", password: "NewPassw0rd!X", confirmPassword: "NewPassw0rd!X" }), 401);
@@ -332,7 +334,7 @@ async function main() {
 
   // --- Recovery ---------------------------------------------------------------------
   {
-    const db = freshDb("recovery");
+    const db = await freshDb();
     const manager = await signupManager(db);
     const code = manager.payload.recovery.recoveryCode;
 
@@ -359,7 +361,7 @@ async function main() {
 
   // --- Durable rate limiting -----------------------------------------------------
   {
-    const db = freshDb("ratelimit");
+    const db = await freshDb();
     await signupManager(db);
     const attacker = "203.0.113.7";
     let limited = null;
@@ -381,10 +383,9 @@ async function main() {
     const owner = await identity.signin(db, req("", "198.51.100.4"), { email: "manager@example.com", password: STRONG });
     ok("owner still signs in from their own client while an attacker is throttled", owner.status === 200);
 
-    const filePath = path.join(scratchRoot, "ratelimit", "identity.json");
-    const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
-    data.rateEvents = data.rateEvents.map((row) => ({ ...row, created_at: new Date(Date.now() - 20 * 60 * 1000).toISOString() }));
-    fs.writeFileSync(filePath, JSON.stringify(data));
+    await testDb.sql("update fashion_store_os_rate_limit_events set created_at = $1", [
+      new Date(Date.now() - 20 * 60 * 1000).toISOString(),
+    ]);
     const afterWindow = await identity.signin(db, req("", attacker), { email: "manager@example.com", password: STRONG });
     ok("limit clears after the window passes", afterWindow.status === 200);
   }
@@ -392,7 +393,7 @@ async function main() {
   {
     // Successful sign-ins must not consume the email budget, or a busy day
     // self-locks the account.
-    const db = freshDb("ratelimit-success");
+    const db = await freshDb();
     await signupManager(db);
     let allOk = true;
     for (let index = 0; index < 20; index += 1) {
@@ -408,7 +409,7 @@ async function main() {
 
   {
     // A stolen session must not be an unlimited password-guessing oracle.
-    const db = freshDb("ratelimit-password");
+    const db = await freshDb();
     const manager = await signupManager(db);
     let limited = false;
     for (let attempt = 0; attempt < 12; attempt += 1) {
@@ -423,7 +424,7 @@ async function main() {
 
   // --- Quotas -------------------------------------------------------------------------
   {
-    const db = freshDb("quota");
+    const db = await freshDb();
     const manager = await signupManager(db);
     for (let index = 0; index < identity.OPEN_INVITE_LIMIT; index += 1) {
       await identity.createInvite(db, req(manager.sessionToken), { email: `open${index}@example.com` });
@@ -432,17 +433,14 @@ async function main() {
 
     // Expired invites are hidden from the manager, so they must not hold
     // quota -- otherwise the lockout has nothing on screen to cancel.
-    const filePath = path.join(scratchRoot, "quota", "identity.json");
-    const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
-    data.invites = data.invites.map((row) => ({ ...row, expires_at: new Date(Date.now() - 1000).toISOString() }));
-    fs.writeFileSync(filePath, JSON.stringify(data));
+    await testDb.sql("update fashion_store_os_invites set expires_at = $1", [new Date(Date.now() - 1000).toISOString()]);
     const afterExpiry = await identity.createInvite(db, req(manager.sessionToken), { email: "now-allowed@example.com" });
     ok("expired invites do not consume the invite quota", afterExpiry.status === 201);
   }
 
   {
     // Cancelling an invite frees its slot.
-    const db = freshDb("cancel-invite");
+    const db = await freshDb();
     const manager = await signupManager(db);
     const invite = await identity.createInvite(db, req(manager.sessionToken), { email: "cancelme@example.com" });
     const view = await identity.getIdentity(db, req(manager.sessionToken));
@@ -459,7 +457,7 @@ async function main() {
     // insertMembership used to leave an orphan account that permanently
     // bricked the email: signup 409'd, signin 401'd, and nothing could remove
     // it. The local adapter cannot fail on its own, so faults are injected.
-    const db = freshDb("partial-write");
+    const db = await freshDb();
     const failing = { ...db, insertStore: async () => { const e = new Error("simulated storage failure"); e.statusCode = 502; throw e; } };
     await expectError("signup surfaces the storage failure", identity.signup(failing, req(), { email: "victim@example.com", password: STRONG, confirmPassword: STRONG }), 502);
     ok("compensation removed the half-built account", (await db.findAccountByEmail("victim@example.com")) === null);
@@ -471,7 +469,7 @@ async function main() {
   {
     // The harder case: the process dies before compensation can run, so the
     // orphan persists. Signup must adopt it rather than 409 forever.
-    const db = freshDb("orphan-adopt");
+    const db = await freshDb();
     await db.insertAccount({
       id: "user-orphan", email: "orphan@example.com", name: "orphan",
       password_hash: "dead", password_salt: "dead", password_iterations: 120000, password_digest: "sha256",
@@ -482,13 +480,13 @@ async function main() {
     ok("signup adopts a membership-less orphan instead of 409", adopted.status === 201 && adopted.payload.identity.membership.role === "manager");
     const signin = await identity.signin(db, req(), { email: "orphan@example.com", password: STRONG });
     ok("the adopted account signs in normally", signin.status === 200);
-    const accounts = JSON.parse(fs.readFileSync(path.join(scratchRoot, "orphan-adopt", "identity.json"), "utf8")).accounts;
-    ok("adoption reuses the row rather than duplicating the email", accounts.filter((a) => a.email === "orphan@example.com").length === 1);
+    const matching = await testDb.sql("select count(*)::int as count from fashion_store_os_accounts where lower(email) = 'orphan@example.com'");
+    ok("adoption reuses the row rather than duplicating the email", matching[0].count === 1);
   }
 
   {
     // A live account must never be adoptable -- that would be account takeover.
-    const db = freshDb("no-takeover");
+    const db = await freshDb();
     await signupManager(db, "live@example.com");
     await expectError("signup cannot adopt an account that has a membership", identity.signup(db, req(), { email: "live@example.com", password: "Attacker0!Pass", confirmPassword: "Attacker0!Pass" }), 409);
     const stillOwner = await identity.signin(db, req(), { email: "live@example.com", password: STRONG });
@@ -497,35 +495,37 @@ async function main() {
 
   // --- Retention sweep -----------------------------------------------------------------
   {
-    const db = freshDb("sweep");
+    const db = await freshDb();
     const manager = await signupManager(db);
     await identity.createInvite(db, req(manager.sessionToken), { email: "stale@example.com" });
 
     // Backdate everything past its retention horizon.
-    const filePath = path.join(scratchRoot, "sweep", "identity.json");
-    const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
     const past = new Date(Date.now() - 100 * 24 * 60 * 60 * 1000).toISOString();
-    data.sessions = data.sessions.map((row) => ({ ...row, expires_at: past }));
-    data.invites = data.invites.map((row) => ({ ...row, expires_at: past }));
-    data.rateEvents = data.rateEvents.map((row) => ({ ...row, created_at: past }));
-    data.audit = data.audit.map((row) => ({ ...row, created_at: past }));
-    fs.writeFileSync(filePath, JSON.stringify(data));
+    await testDb.sql("update fashion_store_os_sessions set expires_at = $1", [past]);
+    await testDb.sql("update fashion_store_os_invites set expires_at = $1", [past]);
+    await testDb.sql("update fashion_store_os_rate_limit_events set created_at = $1", [past]);
+    await testDb.sql("update fashion_store_os_identity_audit set created_at = $1", [past]);
 
     await identity.sweepIdentity(db);
-    const swept = JSON.parse(fs.readFileSync(filePath, "utf8"));
-    ok("sweep clears expired sessions", swept.sessions.length === 0);
-    ok("sweep clears expired open invites", swept.invites.length === 0);
-    ok("sweep clears old rate events", swept.rateEvents.length === 0);
-    ok("sweep clears old audit rows", swept.audit.length === 0);
+    const remaining = async (table) => (await testDb.sql(`select count(*)::int as count from ${table}`))[0].count;
+    ok("sweep clears expired sessions", (await remaining("fashion_store_os_sessions")) === 0);
+    ok("sweep clears expired open invites", (await remaining("fashion_store_os_invites")) === 0);
+    ok("sweep clears old rate events", (await remaining("fashion_store_os_rate_limit_events")) === 0);
+    ok("sweep clears old audit rows", (await remaining("fashion_store_os_identity_audit")) === 0);
+    ok("sweep keeps live accounts and stores", (await remaining("fashion_store_os_accounts")) === 1 && (await remaining("fashion_store_os_stores")) === 1);
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);
-  fs.rmSync(scratchRoot, { recursive: true, force: true });
+  await testDb.close();
   process.exit(fail ? 1 : 0);
 }
 
-main().catch((error) => {
-  console.error(error);
-  fs.rmSync(scratchRoot, { recursive: true, force: true });
-  process.exit(1);
-});
+openTestDatabase()
+  .then((opened) => {
+    testDb = opened;
+    return main();
+  })
+  .catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });

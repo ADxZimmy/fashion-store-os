@@ -1,4 +1,4 @@
-// Phase 021 step 4: encrypted backup. Runs src/backup.js against Node's real
+﻿// Phase 021 step 4: encrypted backup. Runs src/backup.js against Node's real
 // WebCrypto, so the round trip, wrong-passphrase rejection, tamper detection,
 // and store binding are genuinely exercised rather than asserted from source.
 // The server half is tested through the real core against the file-backed
@@ -11,7 +11,7 @@ const rootDir = path.resolve(__dirname, "..");
 const { createBackupCrypto } = require(path.join(rootDir, "src/backup.js"));
 const backupApi = require(path.join(rootDir, "api/_backup.js"));
 const identity = require(path.join(rootDir, "api/_identity.js"));
-const { createLocalIdentityStore } = require(path.join(rootDir, "api/_identity_local.js"));
+const { openTestDatabase } = require(path.join(rootDir, "db/pglite.js"));
 
 const crypto = createBackupCrypto({ crypto: webcrypto });
 const appSource = fs.readFileSync(path.join(rootDir, "src/app.js"), "utf8");
@@ -48,11 +48,11 @@ const RECORDS = {
   orders: [{ id: "o1", clientId: "c1", total: 45000, status: "In production" }],
 };
 
-const scratchRoot = fs.mkdtempSync(path.join(require("os").tmpdir(), "fso-backup-test-"));
-function freshDb(name) {
-  const dir = path.join(scratchRoot, name);
-  fs.mkdirSync(dir, { recursive: true });
-  return createLocalIdentityStore(dir);
+// One embedded Postgres per suite, emptied between scenarios: starting
+// PGlite costs seconds, truncating costs milliseconds.
+let testDb = null;
+async function freshDb() {
+  return testDb.reset();
 }
 let clientCounter = 0;
 function req(token = "") {
@@ -147,7 +147,7 @@ async function main() {
 
   // --- Server: gating, validation, and storage ------------------------------
   {
-    const db = freshDb("server");
+    const db = await freshDb();
     const manager = await identity.signup(db, req(), { email: "m@example.com", password: STRONG, confirmPassword: STRONG });
     const managerToken = manager.sessionToken;
 
@@ -195,7 +195,7 @@ async function main() {
 
   // --- Cross-store isolation ------------------------------------------------
   {
-    const db = freshDb("isolation");
+    const db = await freshDb();
     const a = await identity.signup(db, req(), { email: "a@example.com", password: STRONG, confirmPassword: STRONG });
     const b = await identity.signup(db, req(), { email: "b@example.com", password: STRONG, confirmPassword: STRONG });
     const storeA = a.payload.identity.store.id;
@@ -235,12 +235,16 @@ async function main() {
   ok("the shell worker precaches backup.js", fs.readFileSync(path.join(rootDir, "src/sw.js"), "utf8").includes("/src/backup.js"));
 
   console.log(`\n${pass} passed, ${fail} failed`);
-  fs.rmSync(scratchRoot, { recursive: true, force: true });
+  await testDb.close();
   process.exit(fail ? 1 : 0);
 }
 
-main().catch((error) => {
-  console.error(error);
-  fs.rmSync(scratchRoot, { recursive: true, force: true });
-  process.exit(1);
-});
+openTestDatabase()
+  .then((opened) => {
+    testDb = opened;
+    return main();
+  })
+  .catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });

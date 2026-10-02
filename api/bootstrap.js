@@ -1,8 +1,8 @@
-// App-open endpoint, rewritten for Phase 021: an identity/session check and
+﻿// App-open endpoint, rewritten for Phase 021: an identity/session check and
 // nothing else. Business state lives on the device now; the trust direction
 // flipped, so an unauthenticated answer here must never cause the client to
 // touch local data -- it only locks the UI.
-const db = require("./_identity_supabase");
+const { db } = require("./_db");
 const { handleIdentityGet } = require("./_identity_http");
 const { handleError, handleOptions, sendMethodNotAllowed } = require("./_response");
 
