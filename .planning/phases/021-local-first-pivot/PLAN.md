@@ -1,4 +1,4 @@
-# Plan
+﻿# Plan
 
 ## Outcome
 
@@ -20,7 +20,9 @@ Excluded:
 - Multi-device sync, CRDTs, or any concurrent-editing story; the model is single-writer by design.
 - Device-side provider polling; more than one bound store for webhook routing.
 - Per-user encryption of local data; billing; UI redesign beyond what the flows above require.
-- Alerting/paging. Deliberately deferred, not re-homed: it stays tracked as the ROADMAP "Later > Alerting" item, and the keepalive cron plus CI gate are the interim signals.
+- Alerting/paging. Deliberately deferred, not re-homed: it stays tracked as the ROADMAP "Later > Alerting" item, and the daily maintenance cron (which fails loudly when the database is unreachable) plus the CI gate are the interim signals.
+
+Server database: **Neon Postgres**, changed from Supabase on 2026-10-02 after Supabase paused the project a second time. See CONTEXT, "Provider change". The steps below keep their numbering; where they name Supabase objects, the Neon equivalent is the schema in `db/migrations/0001_identity.sql`.
 
 ## Steps
 
@@ -38,7 +40,7 @@ Excluded:
 
 5. **Transit inbox.** New `inbox_messages` table bound to a store id; `channel-webhook` keeps its `hub.challenge` handshake and HMAC verification but writes rows to the inbox instead of a state document, deduping at insert by the fingerprint logic ported from `api/_channel_intake.js` (whose state-document remainder is deleted); an authenticated device pulls messages into local state and deletes them server-side, idempotent by message id on the client side. The frontend's duplicate copy of the channel-message normalizer becomes the single client-side implementation once `api/inbound.js` and `api/_inbound.js` are deleted (the endpoint has zero frontend callers today). Undelivered rows expire via the same keepalive-cron sweep as step 1. Mirror in `server.js`.
 
-6. **Cleanup and re-homed hardening.** Remove `GET/PUT /api/state`; shrink `/api/data` to account/store deletion (no business export — that is now the local file download built in step 4); retire `/api/workspace-code` and `api/_workspace_codes.js`; rewrite health and keepalive to probe the identity tables (both currently probe the documents table via `probeStorage`); give readiness the real connectivity probe it lacks today (it is configuration-only); add CSP and standard security headers; add a CI workflow that runs `npm run check` and `npm run launch:check` on every push (the push-is-release lane finally gets a post-push gate); update `scripts/security-audit.js` assertions and `scripts/launch-readiness.js` messaging in the same commits as the code they assert on. Destructive schema changes ship only in Release B: drop the entire legacy schema — `fashion_store_os_documents` (state *and* auth kinds, including every legacy password hash), `fashion_store_os_workspaces`, `fashion_store_os_workspace_codes`, and the dead `audit_events` and `channel_delivery_events` tables. Mirror every route change in `server.js`.
+6. **Cleanup and re-homed hardening.** Remove `GET/PUT /api/state`; shrink `/api/data` to account/store deletion (no business export — that is now the local file download built in step 4); retire `/api/workspace-code` and `api/_workspace_codes.js`; rewrite health and keepalive to probe the identity tables (both currently probe the documents table via `probeStorage`); give readiness the real connectivity probe it lacks today (it is configuration-only); add CSP and standard security headers; add a CI workflow that runs `npm run check` and `npm run launch:check` on every push (the push-is-release lane finally gets a post-push gate); update `scripts/security-audit.js` assertions and `scripts/launch-readiness.js` messaging in the same commits as the code they assert on. The legacy schema (`fashion_store_os_documents` with every legacy password hash, `fashion_store_os_workspaces`, `fashion_store_os_workspace_codes`, and the dead audit and channel-delivery tables) lives only in the old Supabase project; none of it was ever created on Neon. Release B therefore decommissions that project, after UAT item 11 confirms it holds nothing real, instead of dropping tables. Mirror every route change in `server.js`.
 
 7. **Rewrite the model docs and the smoke.** `docs/production-persistence.md` (retire or rewrite), `docs/production-smoke.md` (new smoke: local persistence, offline unlock, backup/restore round trip, recovery round trip, inbox pull), `docs/cutover.md`, `docs/operations-runbook.md` (keepalive rationale rewritten: the cron resets the idle-pause timer regardless of user traffic — the pivot's risk is someone deleting it as "obsolete", because a paused project now blocks the entire identity plane), `docs/release-lane.md`, `docs/channel-integrations.md`, `docs/pilot-uat.md` and `docs/owner-activation-runbook.md` (rewrite or retire with a superseded note — both exercise server-persistence flows), `handover.md`, plus ROADMAP/STATE. UAT per `UAT.md`.
 
@@ -57,14 +59,15 @@ Additive first, destructive last. Per-endpoint disposition in Release A:
 | `DELETE /api/data` | Rewritten: account/store deletion | — |
 | `/api/workspace-code` | `410 Gone` (global sign-in replaces it) | Deleted; table dropped |
 | `/api/channel-webhook` | Rewritten: writes to inbox | — |
-| `/api/health`, `/api/keepalive` | Rewritten: probe identity tables; cron also runs retention sweeps | — |
+| `/api/health` | Rewritten: real database round trip | Unchanged |
+| `/api/maintenance` (was `/api/keepalive`) | Daily cron: retention sweep only, since Neon needs nothing kept alive | Unchanged |
 | `/api/readiness` | Rewritten: identity checks plus a real connectivity probe | — |
 
 Identity cutover at Release A: all existing sessions invalidate and accounts are recreated, per step 1's recorded decision. Old deployed clients get `authenticated: false` from the new bootstrap; their old code path clears the local cache — acceptable only because no real operator data exists locally either, which UAT item 11 confirms *before* Release A goes out, not after.
 
 Existing production business data: none expected (the write path never had a real operator). The owner confirms via a service-role query in the Supabase dashboard listing all `fashion_store_os_documents` rows and inspecting for non-seed content — not via the app (`GET /api/data` 500s on zero-user workspaces, and Release A's bootstrap no longer serves state). Default-workspace webhook rows are discarded: no real provider credentials were ever configured. If anything real turns up, it is exported via the same service-role query before Release B.
 
-**Release B** ships only after every UAT scenario passes: deletes the 410'd endpoints and applies the destructive migration (the full legacy schema drop listed in step 6).
+**Release B** ships only after every UAT scenario passes: deletes the 410'd endpoints and decommissions the legacy Supabase project (step 6). Nothing destructive touches Neon.
 
 ## Verification
 

@@ -1,8 +1,10 @@
-# State
+﻿# State
 
-Last updated: 2026-08-18
+Last updated: 2026-10-02
 
 ## Current Focus
+
+**Status 2026-10-02: Phase 021 steps 1 to 5 are built on branch `phase-021-release-a` (not pushed), and the server database moved from Supabase to Neon.** Production Supabase paused for inactivity a second time (found 2026-10-02: `/api/health` reported `supabase-unreachable` and the project hostname returned NXDOMAIN on public resolvers), despite the daily keepalive cron. The owner chose Neon Postgres, provisioned through the Vercel integration, using Neon's official driver: Neon scales idle compute to zero and wakes it on the next query instead of pausing. The live site on `main` still runs the old server-data model on Supabase and stays down until Release A ships; no real users depend on it. Full record and design changes: Phase 021 CONTEXT, "Provider change".
 
 **Owner decision 2026-08-18: local-first pivot (Phase 021).** Each device stores its own business data; Supabase shrinks to identity (global accounts, memberships, sessions, invites, recovery codes), a transit inbox for provider webhooks, and opaque encrypted backups. The owner settled the three design forks the same day: data belongs to the device (manager and staff share the shop device, role-gated UI), webhooks land in a pull-and-delete transit inbox, and durability comes from a device-encrypted backup blob the server cannot read. Phase 020 is superseded — its server-data-plane premise is inverted — with its surviving identity-plane items re-homed into 021. Plan at `.planning/phases/021-local-first-pivot/`; the impact map behind it verified every load-bearing claim against the code.
 
@@ -99,8 +101,9 @@ The repo is single-branch: `main` is the working, default, and production branch
 
 ## In Progress
 
-- Item: Phase 021 local-first pivot — plan drafted 2026-08-18 (`.planning/phases/021-local-first-pivot/`); step 0 hotfix migration written and awaiting production application; implementation not started.
-- Item: Keepalive evidence — Vercel deployment metadata confirms `/api/keepalive` is registered at `0 6 * * *`, but a successful scheduled firing has never been observed. The watch window elapsed 2026-08-17 with this unconfirmed; one owner-side dashboard check closes it. After the pivot the cron guards the entire identity plane: it resets the idle-pause timer regardless of user traffic, and the risk to avoid is deleting it as "obsolete" — a paused project blocks every sign-in while local work continues.
+- Item: Phase 021 local-first pivot. Step 0 (anon-grant revoke) applied to production on 2026-08-18. Steps 1 to 5 built and review-remediated on `phase-021-release-a`: global identity, local-primary data, IndexedDB device storage, encrypted backup and restore, transit inbox. The server database moved to Neon on 2026-10-02; 196 server assertions now run the production SQL adapter on embedded Postgres, plus a 22-step HTTP round trip through the dev server. Remaining: a browser session over the client flows (they have never run in a real browser), steps 6 and 7, UAT, then Release A.
+- Item: Neon not yet provisioned. Until Neon is added to the Vercel project, `DATABASE_URL` does not exist and a production build of the new code fails by design, keeping the previous deployment live rather than shipping an app that cannot sign anyone in.
+- Item: Legacy Supabase project, paused and restorable for 90 days from its pause date, so until no earlier than about 2026-11-23. Restore it once to run UAT item 11 (confirm the old documents hold nothing real), then decommission it. The keepalive cron that was meant to prevent this pause was replaced by `/api/maintenance`; whether it ever fired was never established.
 - Item: Phase 018/019 production verification — folded into the Phase 021 UAT. The old smoke exercised the server write path and cross-device flows that the pivot removes or replaces; recovery and invite flows are re-verified against the restructured identity plane instead. The owner last-resort procedure remains unrehearsed and gets rewritten in 021 step 7.
 
 ## Known Defects
@@ -123,7 +126,7 @@ Historical detail retained below.
 
 ## Next Action
 
-Apply the step 0 hotfix (`npx supabase db push` for migration `20260818090000`) — it closes a live anon-key exposure and is independent of everything else. Then begin Phase 021 step 1 (global identity restructure). Owner-side in parallel: confirm one successful `/api/keepalive` cron run in the Vercel dashboard.
+Owner: add Neon to the Vercel project (Vercel dashboard, the project's Storage tab, connect Neon), which sets `DATABASE_URL` for every environment. The first production build of Release A then applies the schema automatically. Owner, before about 2026-11-23: restore the legacy Supabase project once so UAT item 11 can confirm it holds nothing real. Engineering next: a browser session over the client flows of steps 2 to 5, then steps 6 and 7.
 
 ## Verification Snapshot
 

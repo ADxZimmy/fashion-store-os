@@ -1,10 +1,10 @@
-# Roadmap
+﻿# Roadmap
 
 ## Now
 
 - Phase 021: Local-first pivot.
-  Outcome: Each device owns its business data locally; Supabase holds identity (global accounts, memberships, sessions, invites, recovery codes), a transit inbox for provider webhooks, and opaque encrypted backups — nothing else. Offline unlock, encrypted backup/restore onto a new device, and durable identity-plane rate limits ship with it.
-  Status: Owner decision 2026-08-18; plan drafted (`.planning/phases/021-local-first-pivot/`). Step 0 — the anon-grant revoke hotfix migration `20260818090000` — is written and independent of the rest; it should be applied to production immediately.
+  Outcome: Each device owns its business data locally; the server database (Neon Postgres since 2026-10-02) holds identity (global accounts, memberships, sessions, invites, recovery codes), a transit inbox for provider webhooks, and opaque encrypted backups, and nothing else. Offline unlock, encrypted backup and restore onto a new device, and durable identity-plane rate limits ship with it.
+  Status: Step 0 hotfix applied to production on 2026-08-18. Steps 1 to 5 built on branch `phase-021-release-a`. The server database moved from Supabase to Neon on 2026-10-02 after a second free-tier pause took production down. Remaining: browser verification of the client flows, steps 6 and 7, UAT, Release A.
 
 - Item: Post-launch watch window (14 days from 2026-08-03).
   Outcome: Daily `/api/health` + `/api/readiness` checks, Vercel Cron Jobs and Runtime Log scans, and sev-1..4 triage per the Post-Launch Support section of `docs/operations-runbook.md`.

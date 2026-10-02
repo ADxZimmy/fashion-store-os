@@ -1,4 +1,4 @@
-# Context
+﻿# Context
 
 ## Decision
 
@@ -55,6 +55,29 @@ Stated plainly rather than discovered later:
 
 - **RBAC on business data becomes advisory.** `allowedViews` gates the UI only; anyone with device access can read or edit the entire local dataset via devtools. Accepted for a trusted shop device. Per-user local encryption is the only stronger mechanism and is out of scope.
 - **Multi-device concurrent editing is impossible by design** — that is how the Phase 020 conflict problem is resolved, not deferred. The backup blob is a restore mechanism, not a sync mechanism; restoring onto a second active device forks the data, and the UI must say so at restore time.
-- **A red Supabase means sign-in, invites, and recovery are down** while local work continues after offline unlock. Health severity semantics change accordingly; a paused free-tier project still needs manual dashboard restoration.
+- **A red database means sign-in, invites, recovery, backups, and the inbox are down** while local work continues after offline unlock. Health severity semantics change accordingly. On Neon an idle database wakes by itself; the failure modes left are a real outage and the free plan's monthly compute cap (see Provider change).
 - **The backup key is cached on the device.** Automatic backup cannot run without key material, so the PBKDF2-derived AES key (never the passphrase) persists locally. Someone with device access can therefore trigger backups or read the key — consistent with the devtools trade-off above, and the passphrase itself stays unrecoverable from the device.
 - **The local plaintext-password auth fallback is deleted, not kept.** It predates server auth, stores plaintext passwords in localStorage (`src/app.js:277`), and would otherwise become load-bearing under "everything local". Offline access is the explicit unlock design in PLAN step 2, not the prototype path.
+
+## Provider change, 2026-10-02
+
+**What happened.** On 2026-10-02 production `/api/health` reported `supabase-unreachable`, and the project hostname returned NXDOMAIN on public resolvers: Supabase had paused the Free project for inactivity a second time (the first was 2026-07-30), despite the daily keepalive cron. Either the cron never fired (a successful run was never observed) or one query a day did not count as "sufficient user database activity". Supabase restores a paused Free project for 90 days from the pause date; healthy on 2026-08-18 and needing about 7 idle days to pause, the window closes no earlier than about 2026-11-23.
+
+**Why it could not stay.** After the pivot the server side is everything a new device needs: sign-in, invites, recovery, encrypted backups, and the inbox. A pause that only a human can undo is an outage of all of it.
+
+**Decision (owner, 2026-10-02).** Move the server database to **Neon Postgres**, provisioned through the Vercel integration, using Neon's official driver (`@neondatabase/serverless`). Neon's free plan scales idle compute to zero and wakes it on the next query, and archives idle branches but unarchives them automatically on access, so an idle week costs a slower first request rather than an outage. Considered and rejected: Turso (its free plan archives databases after 10 idle days and needs a manual unarchive, the same failure), and Supabase Pro (never pauses and needs no code change, but $25 a month, and the owner asked to move).
+
+**What it cost.** No data migration: the identity, backup, and inbox tables had never been applied to Supabase. The step 1 adapter boundary meant the core (`api/_identity.js`, `_backup.js`, `_inbox.js`) did not change at all.
+
+**What changed in the design.**
+
+- One SQL adapter, `api/_identity_pg.js`, replaces both the Supabase adapter and the file-backed fake. Production runs it over Neon's HTTP driver (`api/_db.js`); tests and the local dev server run it over PGlite, a real Postgres embedded in-process (`db/pglite.js`). The step 1 risk "the Supabase adapter has zero test coverage" is closed for the SQL itself; what remains untested is Neon's driver against a live database.
+- The schema lives in `db/migrations/0001_identity.sql` and is applied by `scripts/db-migrate.js` during production builds (skipped on preview builds unless `DB_MIGRATE_ON_PREVIEW=1`), atomically per file. Row-level security and Supabase role grants were dropped: Neon exposes no public data endpoint, so the exposure class the step 0 hotfix closed cannot recur.
+- `/api/keepalive` became `/api/maintenance`. Nothing needs keeping alive; the daily cron runs the retention sweep and fails loudly when the database is unreachable.
+- `/api/health` probes the database; `/api/readiness` gains a real round trip and separates required checks from optional channel checks.
+- The legacy Supabase modules (`_store`, `_auth`, `_workspace_codes`, `_rate_limit`) were deleted, with the never-applied Supabase versions of the phase migrations.
+- The security audit now recognises Neon connection strings and passwords, and scans comments: it previously stripped everything after `//`, which would have hidden the credential half of any `postgresql://` URL.
+
+**New limits to watch.** Neon Free: 1 GB storage, 100 compute-hours a month, 5 GB transfer a month. These are usage caps, not inactivity rules; exhausting compute suspends the database until the next month. One shop is far from them because compute only accrues while serving requests.
+
+**Legacy Supabase project.** Restore it once before the window closes to run UAT item 11 (confirm the old documents hold nothing real), then decommission it. Its five applied migrations stay in `supabase/migrations/` as the record of that project until then.
