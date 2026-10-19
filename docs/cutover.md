@@ -20,7 +20,7 @@ Ordered checklist for releasing Phase 021 (the local-first pivot) to production 
 
 | # | Prerequisite | How to confirm |
 |---|---|---|
-| 1 | Neon added to the Vercel project **[OWNER]** | `vercel env ls` shows `DATABASE_URL`, unprefixed, for Production only. Connected on 2026-10-19 but with a prefix and Preview included, so not yet met; see `docs/owner-activation-runbook.md`, Fixing The Connection. |
+| 1 | Neon added to the Vercel project **[OWNER]** | `vercel env ls` shows `DATABASE_URL`, unprefixed, for Production only. **Met on 2026-10-19** (`docs/owner-activation-runbook.md`). |
 | 2 | `CRON_SECRET` set in Vercel | Settings, Environment Variables. Set since 2026-08-02; confirm it is still there. |
 | 3 | Legacy Supabase holds nothing real **[OWNER]** | Phase 021 UAT item 11. Restore the paused project once (Supabase dashboard), run the query in that item, confirm only test content. Must happen before about 2026-11-23, when the restore window may close. |
 | 4 | Branch reviewed | `phase-021-release-a` merged into `main` locally and `npm.cmd run launch:check` green on the result. |

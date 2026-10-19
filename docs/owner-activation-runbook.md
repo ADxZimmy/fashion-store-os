@@ -6,7 +6,7 @@ Audience: `ADxZimmy`, the owner of the Vercel project. Goal: connect a Neon Post
 
 Time: about 10 minutes. Do it from the owner account: the Vercel project belongs to it, and on the Hobby plan deploys of collaborator-authored commits are refused with `TEAM_ACCESS_REQUIRED`.
 
-Status as of 2026-10-19: **connected, with one fix outstanding.** The database exists and answers: the app's own database code ran against it read-only, and its role may create tables. But the connection was made with the variable prefix `NEON_FASHION_STORE_` and for Preview as well as Production, so it has to be redone (Fixing The Connection, below) before Release A. Production still runs the pre-pivot build on the paused Supabase project.
+Status as of 2026-10-19: **done.** The database exists and answers: the app's own database code ran against it read-only, and its role may create tables. After one redo (the first connection had a variable prefix and included Preview), `vercel env ls` lists `DATABASE_URL` and the other standard names for Production only, and their values are write-only secrets: `vercel env run` receives them empty. Production still runs the pre-pivot build on the paused Supabase project until Release A.
 
 ## Targets
 
@@ -40,13 +40,15 @@ The database is in Frankfurt, which suits a shop in West Africa better than Verc
 
 ## Fixing The Connection
 
-Needed once: the 2026-10-19 connection carries the prefix and includes Preview.
+Needed if the variables ever come out prefixed or reach Preview, as the first connection did on 2026-10-19.
 
 1. Vercel, project, **Storage**, `neon-champagne-river`. Remove **this project's connection** only. Do **not** delete the database itself, which is a separate action.
-2. Connect the project again: **Production** only, prefix **empty**.
-3. Check the result with `vercel env ls`: `DATABASE_URL` is listed for Production only, and no `NEON_FASHION_STORE_` names remain. If any prefixed variables survive the disconnect, delete them under Settings, Environment Variables.
+2. Connect the project again: **Production** only, the **Custom Prefix** field **empty**. Marking the variables **Sensitive** in the advanced options is recommended; the current connection's values are write-only, which is what that option gives.
+3. Check the result with `vercel env ls`: `DATABASE_URL` is listed for Production only, and no prefixed names remain. If any survive the disconnect, delete them under Settings, Environment Variables.
 
-The database is untouched by this, and it is still empty anyway. Neon Auth, which the integration enabled on the database, stays as it is; the app does not use it.
+The database is untouched by this. Neon Auth, which the integration enabled on the database, stays as it is; the app does not use it.
+
+Because the variables are secrets, `vercel env pull` and `vercel env run` receive them empty: only deployments can read them. To query the database by hand, use the Neon console (Step 4).
 
 ## Step 3: Confirm the configuration
 

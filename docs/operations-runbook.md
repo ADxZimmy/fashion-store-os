@@ -118,7 +118,7 @@ Provider messages go to a transit inbox, not straight to a device. `FASHION_STOR
 
 When a maintainer leaves, a secret may have leaked, or a provider credential changes:
 
-1. **Database:** reset the database role's password in the Neon console, then make sure `DATABASE_URL` in Vercel carries the new connection string before redeploying. **Webhooks:** replace `CHANNEL_WEBHOOK_SECRET` and the verify token with the provider. **Cron:** replace `CRON_SECRET`.
+1. **Database:** rotate the credentials through the Neon integration (Vercel's guide to rotating secrets covers marketplace resources), so that `DATABASE_URL` is replaced along with them, then redeploy. If the password is reset in the Neon console instead, make sure Vercel's `DATABASE_URL` carries the new connection string before redeploying. **Webhooks:** replace `CHANNEL_WEBHOOK_SECRET` and the verify token with the provider. **Cron:** replace `CRON_SECRET`.
 2. Redeploy from the Vercel dashboard.
 3. Check `/api/health`, `/api/readiness`, a sign-in, and (for webhook changes) a signed test delivery.
 4. Revoke the old value only after the new deployment passes.
