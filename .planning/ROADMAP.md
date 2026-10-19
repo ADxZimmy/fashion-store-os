@@ -4,17 +4,13 @@
 
 - Phase 021: Local-first pivot.
   Outcome: Each device owns its business data locally; the server database (Neon Postgres since 2026-10-02) holds identity (global accounts, memberships, sessions, invites, recovery codes), a transit inbox for provider webhooks, and opaque encrypted backups, and nothing else. Offline unlock, encrypted backup and restore onto a new device, and durable identity-plane rate limits ship with it.
-  Status: Step 0 hotfix applied to production on 2026-08-18. Steps 1 to 5 built on branch `phase-021-release-a`. The server database moved from Supabase to Neon on 2026-10-02 after a second free-tier pause took production down. Remaining: browser verification of the client flows, steps 6 and 7, UAT, Release A.
-
-- Item: Post-launch watch window (14 days from 2026-08-03).
-  Outcome: Daily `/api/health` + `/api/readiness` checks, Vercel Cron Jobs and Runtime Log scans, and sev-1..4 triage per the Post-Launch Support section of `docs/operations-runbook.md`.
-  Status: Window elapsed on 2026-08-17 without its exit criteria being confirmed — the 7-consecutive-keepalive-runs evidence was never gathered (owner-side, Vercel dashboard). Health remained green whenever probed. Close it by confirming the cron history once, then fold monitoring into the Phase 021 rewrite of the runbook.
-
-- Item: Production write-path verification.
-  Outcome: `docs/cutover.md` Step 6 browser smoke — manager signup, business setup, refresh persistence, second-browser workspace isolation.
-  Status: Never run; superseded in place. Phase 021 removes the server write path this smoke exists to verify, and its absence of real production data is exactly what makes the pivot cheap (confirmed as UAT item 11 before the destructive release). The smoke is rewritten for the local-first model in Phase 021 step 7.
+  Status: Steps 0 to 7 built as of 2026-10-19. Step 0 (hotfix) reached production on 2026-08-18; steps 1 to 7 are on branch `phase-021-release-a`, not pushed. The server database moved from Supabase to Neon on 2026-10-02 after a second free-tier pause took production down, and production stays down until Release A ships. Remaining, in order: the owner adds Neon to the Vercel project (`docs/owner-activation-runbook.md`); the owner runs UAT item 11 on the legacy Supabase project before about 2026-11-23; Release A (`docs/cutover.md`); the Phase 021 UAT; Release B.
 
 ## Next
+
+- Item: Pilot on the local-first model.
+  Outcome: One real store runs a full operating cycle on its shop device (`docs/pilot-uat.md`, rewritten for the local-first model on 2026-10-19).
+  Status: Waiting for Release A and the Phase 021 UAT. The pre-pivot pilot was waived on 2026-07-31.
 
 - Item: Custom domain, if wanted.
   Outcome: A branded domain replaces the `fashion-store-os.vercel.app` alias as the public target.
@@ -49,7 +45,7 @@
   Status: Complete and deployed.
 - Phase 008: Git-connected production persistence activation.
   Outcome: The Git-connected Vercel production project has Supabase env vars, `/api/health` reports Supabase storage, and the live app passes authenticated read/write/reset smoke tests from the GitHub deployment.
-  Status: Complete on 2026-06-29; activated against Supabase project `fashion-store` (`elkpberfbhwbrkawklnk`) and verified on the Vercel production aliases.
+  Status: Complete on 2026-06-29; activated against Supabase project `fashion-store` (`elkpberfbhwbrkawklnk`) and verified on the Vercel production aliases. Superseded by the move to Neon (Phase 021): `docs/owner-activation-runbook.md` now connects Neon instead.
 - Phase 009: Deployment ownership and release lane.
   Outcome: Production releases from GitHub are documented around the `ADxZimmy` owner lane, preflight checks exist, rollback is documented, and collaborator-authored deploy limits are not a build blocker.
   Status: Complete and owner release verified.
@@ -73,19 +69,27 @@
   Status: Complete and deployed; owner-side backup/restore rehearsal pending.
 - Phase 020: Production-readiness remediation.
   Outcome: Planned account-bound server-owned tenancy, conflict-safe server writes, server-enforced RBAC, durable abuse controls, and provider routing.
-  Status: **Superseded on 2026-08-18 by the Phase 021 local-first pivot**, which inverts its premise. Surviving items were re-homed: abuse controls (rate limits, validation, quotas, retention) into 021 step 1, the anon-grant removal into 021 step 0 (hotfix migration written), CSP/security headers and a CI push gate into 021 step 6. Alerting is deliberately deferred and stays tracked as the Later item below. The plan documents remain as the record of the server-data-plane direction not taken.
+  Status: **Superseded on 2026-08-18 by the Phase 021 local-first pivot**, which inverts its premise. Surviving items were re-homed: abuse controls (rate limits, validation, quotas, retention) into 021 step 1, the anon-grant removal into 021 step 0 (applied 2026-08-18), CSP/security headers and a CI push gate into 021 step 6 (built 2026-10-19). Alerting is deliberately deferred and stays tracked as the Later item below. The plan documents remain as the record of the server-data-plane direction not taken.
 
 - Phase 019: Multi-device workspace access.
   Outcome: Short-lived human-typable workspace codes let a manager open a workspace on a second device, and invites now carry their workspace so they can be accepted from the invitee's own browser.
-  Status: Implemented and verified locally on 2026-08-03; 38 unit assertions plus an API round trip. Migration `20260803120000_create_workspace_codes.sql` was applied to production Supabase on 2026-08-03 and local/remote migration ledgers match. Production join/invite smoke remains outstanding. Account-based tenancy remains deliberately out of scope. **Scheduled for retirement in Phase 021**: global accounts make sign-in from any device replace the join-code bridge.
+  Status: Implemented and verified locally on 2026-08-03; 38 unit assertions plus an API round trip. Migration `20260803120000_create_workspace_codes.sql` was applied to production Supabase on 2026-08-03 and local/remote migration ledgers match. Production join/invite smoke remains outstanding. Account-based tenancy remains deliberately out of scope. **Retired in Phase 021**: global accounts made sign-in from any device replace the join-code bridge. `/api/workspace-code` returns 410 until Release B deletes it.
 
 - Phase 018: Account recovery and password reset.
   Outcome: One-time recovery codes issued at manager signup and re-issuable from Settings, manager-issued codes for colleagues, a redeem flow that grants no session, and a documented owner last-resort procedure.
-  Status: Implemented, verified locally, and deployed from `2a4a696` on 2026-08-03. Raised by the production smoke test, where a forgotten manager password made a workspace permanently unreachable. Email-based reset stayed out of scope — no mail capability exists and the project constrains new dependencies. Outstanding: the production recovery round trip (`docs/production-smoke.md` Step 6) and a rehearsal of the owner last-resort procedure.
+  Status: Implemented, verified locally, and deployed from `2a4a696` on 2026-08-03. Raised by the production smoke test, where a forgotten manager password made a workspace permanently unreachable. Email-based reset stayed out of scope: no mail capability exists, and the project constrains new dependencies. Rebuilt on the row-based identity plane in Phase 021. Outstanding: the production recovery round trip (`docs/production-smoke.md` Step 8). The owner last-resort procedure was rewritten for Neon and checked against the real code path on 2026-10-19, locally; it has not been run against production.
 
 - Phase 016: Pilot UAT and launch readiness.
   Outcome: Pilot UAT script, issue triage, and `npm.cmd run launch:check` were added.
-  Status: Complete locally; real-store pilot execution waived on 2026-07-31.
+  Status: Complete locally; real-store pilot execution waived on 2026-07-31. The script was rewritten for the local-first model on 2026-10-19 (see Next).
+
+- Item: v1.0.0 post-launch watch window (14 days from 2026-08-03).
+  Outcome: Daily health and readiness checks, cron and log scans, and sev-1 to sev-4 triage.
+  Status: Superseded. The window elapsed on 2026-08-17 without its exit evidence (seven consecutive cron runs) being gathered, and the deployment it watched has been down since the 2026-10-02 pause. A new 14-day window starts at Release A (`docs/operations-runbook.md`, Post-Launch Support).
+
+- Item: v1.0.0 production write-path verification.
+  Outcome: A browser smoke of manager signup, business setup, and server persistence.
+  Status: Superseded, never run. Phase 021 removed the server write path it existed to verify. The local-first smoke is `docs/production-smoke.md`.
 
 ## Later
 
@@ -95,4 +99,4 @@
 
 - Item: Alerting.
   Outcome: An outage notifies someone instead of waiting to be noticed.
-  Status: Not started. The keepalive cron records failures in the Vercel dashboard but pages nobody — this is the gap that let the 2026-07-30 outage run unnoticed for a month.
+  Status: Not started. The daily maintenance cron records failures in the Vercel dashboard but pages nobody: the gap that let the 2026-07-30 outage run unnoticed for a month. Since Phase 021 a database outage no longer stops signed-in shops, but it still blocks sign-in on new devices, backups, recovery, and the inbox.

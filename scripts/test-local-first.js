@@ -143,6 +143,11 @@ ok("restore onto a new device is offered on the setup screen", /renderSetupResto
 ok("the setup screen can sign out", /data-action="sign-out"/.test(setupBody));
 ok("the setup restore action is wired", /action === "setup-restore"/.test(appCode));
 
+// Only a manager can set up a store or restore it. Staff on an empty device
+// must not get business setup, which would fork the store onto that device.
+ok("staff on an empty device are not offered business setup", /if \(currentUser\(\)\?\.role === "manager"\) renderSetup\(\);\s*else renderNoRecordsHere\(\);/.test(bodyOf("render")));
+ok("the no-records screen can sign out", /data-action="sign-out"/.test(bodyOf("renderNoRecordsHere")));
+
 // A locked device cannot know whether accounts exist.
 ok("the sign-in note no longer claims no account exists", !/No account exists yet/.test(appCode));
 
@@ -167,7 +172,7 @@ ok("manual backup refuses an empty device", /hasRecordsWorthBackingUp\(\)/.test(
 ok("restore cancels anything queued against the replaced records", /cancelAutoBackup\(\)/.test(bodyOf("restoreFromBackup")));
 
 // The owner's writing rule: no em-dashes in UI copy or comments.
-ok("no em-dashes anywhere in the app", !/—|&mdash;/.test(appSource));
+ok("no em-dashes anywhere in the app", !/\u2014|&mdash;/.test(appSource));
 ok("the erase dialog no longer denies the backup exists", !/There is no server copy to restore from/.test(appCode));
 
 // --- Security headers (step 6) ---------------------------------------------

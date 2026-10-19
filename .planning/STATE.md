@@ -1,8 +1,10 @@
 ﻿# State
 
-Last updated: 2026-10-02
+Last updated: 2026-10-19
 
 ## Current Focus
+
+**Status 2026-10-19: Phase 021 steps 1 to 7 are built on branch `phase-021-release-a` (not pushed). What remains is owner-side, then the release.** The owner connects Neon to the Vercel project (`docs/owner-activation-runbook.md`) and runs UAT item 11 on the legacy Supabase project before about 2026-11-23; then Release A follows `docs/cutover.md`. Production stays down until then. Steps 6 and 7 added store deletion, security headers, a CI workflow, and a route parity guard, then rewrote every model doc and the smoke for local-first on Neon. Checking those docs against the running code found one more defect (staff on an empty device were offered business setup), fixed the same day.
 
 **Status 2026-10-02: Phase 021 steps 1 to 5 are built on branch `phase-021-release-a` (not pushed), and the server database moved from Supabase to Neon.** Production Supabase paused for inactivity a second time (found 2026-10-02: `/api/health` reported `supabase-unreachable` and the project hostname returned NXDOMAIN on public resolvers), despite the daily keepalive cron. The owner chose Neon Postgres, provisioned through the Vercel integration, using Neon's official driver: Neon scales idle compute to zero and wakes it on the next query instead of pausing. The live site on `main` still runs the old server-data model on Supabase and stays down until Release A ships; no real users depend on it. Full record and design changes: Phase 021 CONTEXT, "Provider change".
 
@@ -10,7 +12,7 @@ Last updated: 2026-10-02
 
 Two facts make the pivot cheap right now: the production write path was never exercised by a real operator, so no real business data is expected server-side, and the frontend's local-fallback era code still works, so local-primary is a trust-direction flip rather than a rebuild.
 
-Immediately actionable regardless of the pivot: migration `20260818090000_revoke_default_workspace_document_api_access.sql` (written, unapplied) revokes the anon-key grant on the documents table that migration 2 added and the migration-3 hardening never covered. Until it is applied, the anon key can read, write, or plant the default workspace's state and auth documents — a standing capability (default was last observed empty on 2026-08-03) rather than a confirmed current exposure, which changes the urgency not at all.
+Step 0 hotfix, done: migration `20260818090000_revoke_default_workspace_document_api_access.sql` revoked the anon-key grant on the legacy documents table and was applied to production on 2026-08-18. The anon-key refusal probe is still outstanding (Phase 021 VERIFICATION).
 
 Phase 017 cutover context: `v1.0.0` tagged, `/api/health` green on the `https://fashion-store-os.vercel.app` alias, rollback is Vercel deployment promotion only. The 14-day watch window elapsed on 2026-08-17 without its keepalive-evidence exit criterion being confirmed (owner-side Vercel dashboard check, still worth doing once).
 
@@ -98,18 +100,25 @@ The repo is single-branch: `main` is the working, default, and production branch
 - Fast-forwarded local `main` through four owner commits to `origin/main` at `8c8891e` on 2026-08-03 while preserving the uncommitted readiness and handover work.
 - Applied Supabase migration `20260803120000_create_workspace_codes.sql` to linked production project `elkpberfbhwbrkawklnk`; `supabase migration list --linked` confirms all four local and remote versions match.
 - Confirmed Ready Vercel deployment `dpl_8y3EMKfnkkmLR6wPButZuVzEcZNz` was built from `8c8891e`. Live `/api/health` remained green, and an invalid `/api/workspace-code` redemption returned the expected generic 404 rather than a storage error, proving the deployed function can query the new table.
+- Phase 021 steps 1 to 5 (2026-08-18 to 2026-10-02): global identity rows, local-primary records with offline unlock, IndexedDB device storage, encrypted backup and restore, and the transit inbox. Moved the server database from Supabase to Neon on 2026-10-02.
+- Phase 021 browser session (2026-10-19): ten defects found and fixed in the client flows, including an offline sign-out that left the session valid.
+- Phase 021 step 6 (2026-10-19, `2ebdb0c`): store deletion as the `delete-store` action, security headers with a strict CSP, a CI workflow, and a route parity guard.
+- Phase 021 step 7 (2026-10-19): rewrote `docs/production-persistence.md`, `docs/production-smoke.md`, `docs/cutover.md`, `docs/operations-runbook.md`, `docs/release-lane.md`, `docs/channel-integrations.md`, `docs/pilot-uat.md`, `docs/owner-activation-runbook.md` (now Neon activation), and `handover.md` for the local-first model. Fixed staff on an empty device being offered business setup, and made `.gitignore` refuse `.env` files.
 
 ## In Progress
 
-- Item: Phase 021 local-first pivot. Step 0 (anon-grant revoke) applied to production on 2026-08-18. Steps 1 to 5 built and review-remediated on `phase-021-release-a`: global identity, local-primary data, IndexedDB device storage, encrypted backup and restore, transit inbox. The server database moved to Neon on 2026-10-02; 196 server assertions now run the production SQL adapter on embedded Postgres, plus a 22-step HTTP round trip through the dev server. First browser session ran on 2026-10-19: ten defects found and fixed, including a security hole where an offline sign-out left the session valid so the next online start reopened the device as the same user. Remaining: steps 6 and 7, UAT, then Release A.
-- Item: Neon not yet provisioned. Until Neon is added to the Vercel project, `DATABASE_URL` does not exist and a production build of the new code fails by design, keeping the previous deployment live rather than shipping an app that cannot sign anyone in.
-- Item: Legacy Supabase project, paused and restorable for 90 days from its pause date, so until no earlier than about 2026-11-23. Restore it once to run UAT item 11 (confirm the old documents hold nothing real), then decommission it. The keepalive cron that was meant to prevent this pause was replaced by `/api/maintenance`; whether it ever fired was never established.
-- Item: Phase 018/019 production verification — folded into the Phase 021 UAT. The old smoke exercised the server write path and cross-device flows that the pivot removes or replaces; recovery and invite flows are re-verified against the restructured identity plane instead. The owner last-resort procedure remains unrehearsed and gets rewritten in 021 step 7.
+- Item: Phase 021 local-first pivot. Step 0 (anon-grant revoke) applied to production on 2026-08-18. Steps 1 to 7 built on `phase-021-release-a` by 2026-10-19 and verified locally: suites on embedded Postgres, browser sessions in the in-app browser, and HTTP runs of the documented smokes. Nothing after step 0 has run in production. Remaining: Neon, UAT item 11, Release A, the UAT, Release B.
+- Item: Neon not yet provisioned. Until Neon is added to the Vercel project, `DATABASE_URL` does not exist and a production build of the new code fails by design, keeping the previous deployment live rather than shipping an app that cannot sign anyone in. Steps: `docs/owner-activation-runbook.md`.
+- Item: Legacy Supabase project, paused and restorable for 90 days from its pause date, so until no earlier than about 2026-11-23. Restore it once to run UAT item 11 (confirm the old documents hold nothing real), then decommission it in Release B. The keepalive cron that was meant to prevent this pause was replaced by `/api/maintenance`; whether it ever fired was never established.
+- Item: Phase 018/019 production verification, folded into the Phase 021 UAT. The old smoke exercised the server write path and cross-device flows that the pivot removes or replaces; recovery and invite flows are re-verified against the restructured identity plane instead. The owner last-resort procedure was rewritten for Neon in step 7 and checked against the real code path locally; it has not been run in production.
+- Item: Repo-local commit identity is not set in this checkout, so a plain `git commit` would be authored by the machine's global identity and its deploy refused. Command in `docs/release-lane.md`.
 
 ## Known Defects
 
-- ~~Staff invites cannot be accepted from the invitee's own device.~~ **Implemented in Phase 019 and migrated on 2026-08-03; production smoke outstanding.** Invites now carry a workspace code, and acceptance resolves the issuing workspace instead of the invitee's own.
-- ~~A workspace is reachable only from the browser that created it.~~ **Implemented in Phase 019 and migrated on 2026-08-03; production smoke outstanding.** A manager issues a 30-minute single-use workspace code from Settings and redeems it on the other device.
+None open. The two Phase 019 items below were made moot by Phase 021: accounts are global, so signing in works from any device and invites need no workspace code.
+
+- ~~Staff invites cannot be accepted from the invitee's own device.~~ **Implemented in Phase 019 and migrated on 2026-08-03; superseded by Phase 021's global accounts.**
+- ~~A workspace is reachable only from the browser that created it.~~ **Implemented in Phase 019 and migrated on 2026-08-03; superseded by Phase 021, which retired workspace codes.**
 
 Historical detail retained below.
 
@@ -122,11 +131,11 @@ Historical detail retained below.
 
 ## Waived
 
-- Real-store pilot UAT was waived by owner decision on 2026-07-31 rather than executed. `docs/pilot-uat.md` scenarios are reused as the post-cutover smoke set in `docs/cutover.md` Step 6. Consequence: the production write path has not been validated by a real operator since the Supabase restore — reads were verified on 2026-07-31, writes were not.
+- Real-store pilot UAT was waived by owner decision on 2026-07-31 rather than executed. The pre-pivot write path it would have tested no longer exists. `docs/pilot-uat.md` was rewritten for the local-first model on 2026-10-19 and is the pilot to run after Release A and the Phase 021 UAT.
 
 ## Next Action
 
-Owner: add Neon to the Vercel project (Vercel dashboard, the project's Storage tab, connect Neon), which sets `DATABASE_URL` for every environment. The first production build of Release A then applies the schema automatically. Owner, before about 2026-11-23: restore the legacy Supabase project once so UAT item 11 can confirm it holds nothing real. Engineering next: steps 6 and 7 (cleanup and re-homed hardening, then the docs and smoke rewrite).
+Owner: connect Neon to the Vercel project for Production only (`docs/owner-activation-runbook.md`); the first production build of Release A then applies the schema automatically. Owner, before about 2026-11-23: restore the legacy Supabase project once so UAT item 11 can confirm it holds nothing real. Owner: set the repo-local commit identity (`docs/release-lane.md`). Then Release A per `docs/cutover.md`.
 
 ## Verification Snapshot
 
@@ -324,3 +333,6 @@ Owner: add Neon to the Vercel project (Vercel dashboard, the project's Storage t
   Result: Blocked on 2026-08-03. Signup returned "Manager access already exists" because the operator's browser was bound via `localStorage` (`fashion-studio-os-workspace-v1`) to a workspace that already had a manager, and the credentials were unknown. Confirmed not a tenancy defect: `/api/bootstrap` with no `x-workspace-id` header showed the `default` workspace empty (`authExists: false`, 0 users), and `src/app.js:170` correctly generates and persists a per-device id.
   Finding: the workspace was unrecoverable. `sanitizeAuth` blanks `name`/`email` for unauthenticated callers (`api/_auth.js:98-104`, correct — it prevents user enumeration), and no password reset flow exists anywhere in the codebase. A forgotten manager password therefore destroys access to a workspace permanently. Raised as Phase 018.
   Workaround: cleared the browser's workspace and app keys to start a fresh workspace. This orphans the old workspace's Supabase rows with no UI path to reach or delete them; acceptable here because it held only test data.
+- Command/check: Phase 021 steps 6 and 7, local verification
+  Result: Passed on 2026-10-19. `npm.cmd run launch:check` green (identity 136, local-first 90, storage 36, backup 45, inbox 35, Neon 54 assertions, plus the UX and security audits and the build). Browser checks of store deletion, the Content Security Policy, and the staff-device fix; HTTP runs of the documented channel inbox smoke (10 of 10) and of signed delivery (11 of 11). Detail: Phase 021 VERIFICATION.
+  Note: Local only. Nothing after step 0 has run in production.

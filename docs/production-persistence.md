@@ -1,135 +1,94 @@
 # Production Persistence
 
-Fashion Store OS now has Vercel serverless API routes for production persistence.
+Last updated: 2026-10-19
 
-## Current Production Setup
+Where Fashion Store OS keeps what, after the Phase 021 local-first pivot. Business records live on each device. The server holds identity, an encrypted backup it cannot read, and a short-lived inbox for provider messages, all in one Postgres database.
 
-- Previously verified Vercel production project: `nnazimuzoos-projects/fashion-store-os`
-- Previously verified live URL: `https://fashion-store-os-navy.vercel.app`
-- Git-connected Vercel project in this workspace: `sanuske2-2147s-projects/fashion-store-os`
-- Git-connected production alias: `https://fashion-store-os-sanuske2-2147s-projects.vercel.app`
-- Current public Vercel alias: `https://fashion-store-os.vercel.app`
-- Git-connected project ID: `prj_3oNJjdlNXi5yTKkqenDEzY2jVELi`
-- Inspect the current Git-triggered production deployment with `vercel inspect https://fashion-store-os.vercel.app` or `vercel ls fashion-store-os --scope sanuske2-2147s-projects`.
-- Supabase project: `fashion-store`
-- Supabase ref: `elkpberfbhwbrkawklnk`
-- Supabase URL: `https://elkpberfbhwbrkawklnk.supabase.co`
-- Region: `eu-west-3`
+## Status
 
-## Runtime Shape
+- The design below is built on branch `phase-021-release-a` and **not yet deployed**. Production still runs the pre-pivot build, whose Supabase database paused for inactivity and is down (found 2026-10-02).
+- The server database is **Neon Postgres**, chosen on 2026-10-02 after Supabase paused the project a second time. Neon has **not been provisioned** yet: the owner adds it to the Vercel project from the Storage tab, which sets `DATABASE_URL`. See `docs/owner-activation-runbook.md`.
 
-- Browser app keeps calling the existing API contract:
-  - `GET /api/health`
-  - `GET /api/bootstrap`
-  - `GET /api/state`
-  - `PUT /api/state`
-  - `GET /api/auth`
-  - `GET /api/session`
-  - `POST /api/session`
-  - `DELETE /api/data`
-  - `GET /api/inbound`
-  - `POST /api/inbound`
-  - `GET /api/channel-webhook`
-  - `POST /api/channel-webhook`
-  - `GET /api/data`
-- Local development can still run `npm.cmd start` and use `server.js` with JSON files under `data/`.
-- Vercel production uses files under `api/` and stores documents in Supabase.
+## What Lives Where
 
-## Supabase Schema
+### On the device
 
-The schema lives in:
+Business records: profile, clients, inquiries, measurements, orders, styles, inventory, channel messages, settings.
 
-```text
-supabase/migrations/20260611160501_create_fashion_store_os_documents.sql
-supabase/migrations/20260611163000_allow_default_workspace_document_api_access.sql
-supabase/migrations/20260626191000_harden_workspaces_audit_and_channel_events.sql
-```
+| Store | Contents |
+|---|---|
+| IndexedDB database `fashion-studio-os`, object store `records` | `state:current` (the records) and `state:last-known-good` (a recovery snapshot). Written by `src/storage.js`. |
+| Persistent-storage permission | Requested on every start, so the browser stops treating the records as evictable cache. Settings shows whether it was granted. |
+| localStorage, small keys only | The offline identity cache (30 days), the store tag, the cached backup key and its salt (never the passphrase), the last-backup time, a pending-backup marker, a pending-sign-out marker, and the current view. |
 
-It creates:
+The pre-pivot localStorage blob (`fashion-studio-os-state-v1`) is migrated into IndexedDB on first open and removed only after the new copy verifies.
 
-- `public.fashion_store_os_documents`, the compatibility document table keyed by:
-  - `workspace_id`
-  - `document_key`, currently `state` or `auth`
-- `public.fashion_store_os_workspaces`, the workspace registry used before document writes.
-- `public.fashion_store_os_audit_events`, the normalized audit-event table for the next account-lifecycle storage step.
-- `public.fashion_store_os_channel_delivery_events`, the normalized channel delivery log table for webhook rollout.
+Nothing the app saves while working is sent to the server. The only things that leave the device are sign-in traffic, the encrypted backup, and inbox acknowledgements (a list of ids).
 
-RLS is enabled. The newer migration follows Supabase's 2026 explicit-grants direction: new production tables grant access to `service_role` and revoke `anon` / `authenticated`. The original document-table grant remains for compatibility with already-running deployments until they switch to a server-only key.
+### On the server (Neon Postgres)
 
-Recovery note: on 2026-06-25 the earlier Supabase project `duimatbeahwfeghcviju` was found `INACTIVE`, restored, and the committed migrations were reapplied for the older deployment lane. On 2026-06-29 that ref returned a 403 privilege error from this owner workspace, so the Git-connected production lane was activated against `elkpberfbhwbrkawklnk`. If the API host returns DNS failures or Cloudflare upstream errors again, check the active project's status before changing application code.
+Schema: `db/migrations/0001_identity.sql`. Every table is reached only by the app's server code; Neon has no public data endpoint, so there is no row-level security or role-grant layer to get wrong.
 
-## Vercel Environment Variables
+| Table | Holds |
+|---|---|
+| `fashion_store_os_accounts` | One row per person, email unique across the system, PBKDF2 password hash, recovery code hash. |
+| `fashion_store_os_stores` | One row per business. |
+| `fashion_store_os_memberships` | Who belongs to which store, as manager or staff, with their allowed views. |
+| `fashion_store_os_sessions` | Hashed session tokens, 7-day expiry. |
+| `fashion_store_os_invites` | Pending invites, hashed tokens, 3-day expiry. |
+| `fashion_store_os_rate_limit_events` | One row per sign-in, signup, recovery, invite, or password attempt, for durable throttling. |
+| `fashion_store_os_identity_audit` | Per-store identity events, kept 90 days. |
+| `fashion_store_os_backups` | One encrypted backup per store: AES-GCM ciphertext, salt, IV. The key is derived on the device from a passphrase that never leaves it. |
+| `fashion_store_os_inbox_messages` | Provider messages waiting for a device to collect them. Deleted on acknowledgement; anything uncollected expires after 14 days. |
+| `fashion_store_os_schema_migrations` | Which migration files have been applied. |
 
-These are required on any Vercel production project that serves the serverless APIs. On 2026-06-29 the Git-connected `sanuske2-2147s-projects/fashion-store-os` project was updated with the required production env vars for Supabase persistence:
+The session cookie is `fso_session`: HttpOnly, SameSite=Lax, Secure in production.
 
-```text
-SUPABASE_URL
-SUPABASE_SERVICE_ROLE_KEY
-FASHION_STORE_WORKSPACE_ID
-CHANNEL_WEBHOOK_REQUIRE_SIGNATURE
-CHANNEL_WEBHOOK_MAX_MESSAGES
-```
+## Endpoints
 
-Provider-specific webhook secrets are optional until a real WhatsApp/Instagram/provider app is connected:
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/health` | Real database round trip. Always HTTP 200; `ok: false` with `storage: "unconfigured"` or `"database-unreachable"` when it fails. |
+| `GET /api/readiness` | Configuration plus a round trip. Required checks decide `ok`; channel checks are reported but optional. |
+| `GET /api/maintenance` | Daily cron at 06:00 UTC. Sweeps expired sessions, invites, rate-limit rows, audit rows over 90 days, and expired inbox messages. Guarded by `CRON_SECRET` when set. |
+| `GET /api/bootstrap`, `GET /api/auth` | The signed-in viewer's identity: account, store, membership, and role-scoped roster. Never business data. |
+| `POST /api/session` | Every identity action: `signup`, `signin`, `signout`, `accept-invite`, `redeem-recovery-code`, `create-staff`, `create-staff-invite`, `cancel-staff-invite`, `update-staff-access`, `create-recovery-code`, `reset-user-password`, `change-password`, `suspend-staff`, `reactivate-staff`, `delete-staff`, `delete-store`. |
+| `GET` / `PUT` / `DELETE /api/backup` | The store's encrypted backup. Manager only. |
+| `GET` / `POST /api/inbox` | A signed-in device pulls waiting messages, stores them, then acknowledges them. Any member of the store. |
+| `GET` / `POST /api/channel-webhook` | Provider verification handshake and signed message intake into the inbox. |
+| `/api/state`, `/api/data`, `/api/inbound`, `/api/workspace-code` | Retired. Answer `410 Gone` so a browser still running the old build stops trying. Deleted in Release B. |
 
-```text
-CHANNEL_WEBHOOK_VERIFY_TOKEN
-CHANNEL_WEBHOOK_SECRET
-```
+The local dev server (`npm run dev`, `server.js`) mirrors every route; a guard test fails if the two ever differ.
 
-The app is now multi-tenant per device: each browser generates a random workspace id and sends it as the `x-workspace-id` header, and `api/_store.js` scopes every read/write to that workspace via `storeForRequest(request)`. `FASHION_STORE_WORKSPACE_ID` is the **fallback default** workspace used only when no header is present (`/api/health` diagnostics and provider webhooks); keep it `default`. The `fashion_store_os_documents` table has no `workspace_id` CHECK constraint, so the service-role key writes arbitrary per-device ids; the RLS policy scoped to `workspace_id = 'default'` only applies to the disabled public-key fallback, which the production lane does not use.
+## Configuration
 
-`CHANNEL_WEBHOOK_VERIFY_TOKEN` and `CHANNEL_WEBHOOK_SECRET` are optional for local testing but should be set for production webhook subscriptions. The verify token is used for provider challenge checks. The secret verifies `x-hub-signature-256` or `x-fashion-signature` HMAC SHA-256 signatures over the raw request body. Set `CHANNEL_WEBHOOK_REQUIRE_SIGNATURE=1` in production so a missing signing secret fails closed. `CHANNEL_WEBHOOK_MAX_MESSAGES` defaults to `25` and caps one webhook batch.
+| Variable | Required | Purpose |
+|---|---|---|
+| `DATABASE_URL` | Yes | Neon connection string. Set by the Vercel Neon integration; `POSTGRES_URL` is accepted as a fallback. A production build without it fails on purpose, so the previous deployment stays live. |
+| `CRON_SECRET` | Recommended | Bearer token Vercel Cron sends to `/api/maintenance`. |
+| `FASHION_STORE_INBOX_STORE_ID` | For channel intake | The one store that provider messages belong to. Until it is set, webhook deliveries are refused with 503 rather than guessed at. |
+| `CHANNEL_WEBHOOK_VERIFY_TOKEN` | For channel intake | Provider handshake token. |
+| `CHANNEL_WEBHOOK_SECRET` | For channel intake | HMAC SHA-256 secret for `x-hub-signature-256` or `x-fashion-signature`. |
+| `CHANNEL_WEBHOOK_REQUIRE_SIGNATURE` | Production: `1` | Makes a missing secret fail closed. |
+| `CHANNEL_WEBHOOK_MAX_MESSAGES` | No | Batch cap per delivery, default 25, maximum 100. |
+| `DB_MIGRATE_ON_PREVIEW` | No | Set to `1` only once Neon gives each preview deployment its own database branch. |
 
-Use `SUPABASE_SERVICE_ROLE_KEY` for the Vercel/server runtime. Keep it server-side only in Vercel. Do not expose it in frontend code or with a public env var prefix.
+No secret belongs in the repo. The security audit flags anything that looks like a Neon connection string or password, including in comments.
 
-`SUPABASE_REST_API_KEY` remains supported as a legacy server-side variable. A public/publishable-key fallback is disabled unless `FASHION_STORE_ALLOW_PUBLIC_SUPABASE_KEY=1` is set deliberately for an existing deployment. Do not use that fallback for the production-ready lane.
+## Schema Changes
 
-## Verification
+`scripts/db-migrate.js` runs as part of every production build (`vercel.json` `buildCommand`). It applies each pending file in `db/migrations/` in its own transaction and records it in the ledger, so a file lands completely or not at all. Preview builds skip it, because without per-preview branches they share the production database. Run it by hand with `npm run db:migrate` when `DATABASE_URL` is set.
 
-Useful verification commands:
+## Local Development
 
-```powershell
-Invoke-RestMethod https://fashion-store-os.vercel.app/api/health
-Invoke-RestMethod https://fashion-store-os.vercel.app/api/bootstrap
-Invoke-RestMethod https://fashion-store-os-sanuske2-2147s-projects.vercel.app/api/health
-```
+`npm run dev` starts `server.js` on PGlite, a real Postgres embedded in the process, persisted under `data/pglite/` (git-ignored). It runs the same SQL adapter as production, so behaviour seen locally is the behaviour Neon will show. The test suites use an in-memory PGlite per suite.
 
-Expected:
+## Legacy Supabase Project
 
-- `/api/health` returns `ok: true`, `storage: "supabase"`, the redacted `supabaseHost`, and `workspace: "default"`.
-- `/api/bootstrap` returns sanitized auth and only returns state when no accounts exist or the request has a valid session cookie.
-- `/api/session` handles manager signup, signin, signout, and manager-gated staff access changes with HttpOnly cookies.
-- `/api/inbound` requires a session when accounts exist.
-- `/api/channel-webhook` accepts signed provider payloads, deduplicates normalized messages, records delivery status in state, and appends accepted messages to `state.channelMessages`. Its GET route answers provider challenge checks but does not expose the message queue.
-- `GET /api/data` is manager-gated and returns a sanitized workspace export for backup/review. It excludes password hashes and session-token hashes.
-- Creating a manager/profile in the live app persists after refresh and across browsers.
+The pre-pivot database is Supabase project `elkpberfbhwbrkawklnk` (`fashion-store`, `eu-west-3`). It is paused and restorable for 90 days from its pause date, so until no earlier than about 2026-11-23. Its five applied migrations stay in `supabase/migrations/` as the record of that project. Release B decommissions it after Phase 021 UAT item 11 confirms it holds nothing real. Nothing in the new build reads it.
 
-If storage is unreachable, `/api/health` still returns HTTP 200 with `ok: false` and `storage: "supabase-unreachable"` so monitors and humans can distinguish an app outage from an upstream Supabase issue.
+## Vercel Project
 
-Latest verification:
-
-- Supabase CLI owner auth succeeded on 2026-06-29.
-- Active owner Supabase project is `fashion-store` (`elkpberfbhwbrkawklnk`) in `eu-west-3`.
-- Old target `duimatbeahwfeghcviju` returned a Supabase 403 for this owner workspace and is retained here only as historical recovery context.
-- `npx supabase db push` applied the document, default-workspace API, and workspace/audit/channel-delivery migrations to `elkpberfbhwbrkawklnk`.
-- Vercel production env vars are present on the Git-connected project; secret values are not stored in the repo.
-- Vercel production deployment is Ready on the Git-connected project.
-- Current verified production aliases: `https://fashion-store-os.vercel.app` and `https://fashion-store-os-sanuske2-2147s-projects.vercel.app`.
-- Live `/api/health` returns `ok: true`, `storage: "supabase"`, `supabaseHost: "elkpberfbhwbrkawklnk.supabase.co"`, and `workspace: "default"`.
-- Live activation smoke passed on 2026-06-29: temporary manager signup, state write/read, manager export, cleanup, and final empty bootstrap.
-- Supabase document state/auth records were clean after smoke-test cleanup.
-
-## Deployment Caveat
-
-GitHub-triggered deployment is wired to the Git-connected project and `main` is the production branch. Pushes to `main` create Vercel production deployments. A verified owner-authored GitHub deployment with Supabase persistence active is Ready:
-
-```text
-Inspect: vercel inspect https://fashion-store-os.vercel.app
-State: READY on latest production deployment
-Author: ADxZimmy
-```
-
-Collaborator-authored GitHub deploys remain blocked. The Vercel API maps `NnazimuzoO` to Vercel user `nnazimuzoo`, but `nnazimuzoo` is not a confirmed member of the Vercel team/project. Attempting to invite `nnazimuzoo@nitechsoftware.com.ng` failed because the project team is on Vercel Hobby, which does not permit team members. Resolve this by upgrading/enabling collaboration, moving the project to an account/team that can include the commit authors, or making production Git commits from a Vercel owner/member account with contributing access.
-
-Before retiring the older local/CLI deployment, run the pilot UAT script against the Git-connected deployment and keep `/api/health` green on the final public alias.
+- Git-connected project: `sanuske2-2147s-projects/fashion-store-os` (project ID `prj_3oNJjdlNXi5yTKkqenDEzY2jVELi`).
+- Public alias: `https://fashion-store-os.vercel.app`.
+- `main` is the production branch; every push to it deploys. Commits must be authored as `ADxZimmy` or the Hobby-plan deploy is refused; see `docs/release-lane.md`.

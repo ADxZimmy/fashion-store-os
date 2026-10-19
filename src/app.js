@@ -1339,8 +1339,12 @@ function render() {
     return;
   }
 
+  // Only a manager can set up a store or restore its backup. Staff on a device
+  // with no records have nothing to work on here, and offering them setup
+  // would start a separate copy of the store that no manager ever sees.
   if (!state.profile) {
-    renderSetup();
+    if (currentUser()?.role === "manager") renderSetup();
+    else renderNoRecordsHere();
     return;
   }
 
@@ -1410,7 +1414,7 @@ function render() {
 // there is no path here that discards data without the operator saying so.
 function renderStoreMismatch() {
   app.innerHTML = `
-    <main class="onboarding-page">
+    <main class="onboarding-page single-card">
       <section class="auth-panel">
         <div class="auth-card">
           <p class="eyebrow">Different store</p>
@@ -2023,6 +2027,28 @@ function renderSetup() {
           <button class="btn" type="submit">Open Studio OS</button>
         </div>
       </form>
+    </main>
+  `;
+  wireEvents();
+}
+
+// Records never leave the device they were made on except through the
+// manager's encrypted backup, which only a manager can restore. So a staff
+// account on an empty device is pointed back to the shop device.
+function renderNoRecordsHere() {
+  applyTheme();
+  app.innerHTML = `
+    <main class="onboarding-page single-card">
+      <section class="auth-panel">
+        <div class="auth-card">
+          <p class="eyebrow">No records here</p>
+          <h2>Your store's records are not on this device.</h2>
+          <p class="lead">Records stay on the device they were made on. Sign in on your store's shop device to work, or ask a manager to sign in here and restore the store's backup.</p>
+          <div class="form-actions">
+            <button class="btn" type="button" data-action="sign-out">Sign out</button>
+          </div>
+        </div>
+      </section>
     </main>
   `;
   wireEvents();

@@ -225,6 +225,10 @@ async function main() {
         .every((file) => !/require\([^)]*(pglite|db\/pglite)[^)]*\)/i.test(fs.readFileSync(path.join(rootDir, file), "utf8"))),
     );
     ok("the local dev database is git-ignored", /^data\/pglite\/$/m.test(fs.readFileSync(path.join(rootDir, ".gitignore"), "utf8")));
+    // vercel env pull writes the connection string to .env.local, and the
+    // secret scan only reads source extensions, so git must refuse the file.
+    const gitignore = fs.readFileSync(path.join(rootDir, ".gitignore"), "utf8");
+    ok("environment files are git-ignored, except the example", /^\.env\.\*$/m.test(gitignore) && /^!\.env\.example$/m.test(gitignore));
   }
 
   // --- Secret detector: the connection string is the new secret -------------

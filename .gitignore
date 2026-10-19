@@ -8,3 +8,8 @@ data/*.tmp
 .DS_Store
 Thumbs.db
 data/pglite/
+# Environment files can hold the Neon connection string (vercel env pull
+# writes .env.local). Only the placeholder example is tracked.
+.env
+.env.*
+!.env.example

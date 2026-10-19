@@ -1,6 +1,6 @@
 ﻿# Verification
 
-Status: Planned on 2026-08-18. Step 0 executed the same day; steps 1-7 not yet implemented. This file records evidence as steps land; the checks below mirror PLAN.md and must each carry a dated result before the phase closes.
+Status: Planned on 2026-08-18. Step 0 executed the same day. Steps 1 to 7 built by 2026-10-19 on `phase-021-release-a`, not pushed; nothing after step 0 has run in production. This file records evidence as steps land; the checks below mirror PLAN.md and must each carry a dated result before the phase closes.
 
 ## Checks To Run
 
@@ -20,9 +20,12 @@ Status: Planned on 2026-08-18. Step 0 executed the same day; steps 1-7 not yet i
   Result: **Passed in a real browser on 2026-10-19** after fixes, except the oversized case (not exercised). Setting a passphrase backed up immediately; the server blob held no plaintext business field and the passphrase was stored nowhere, only the derived key. A wrong passphrase failed with the generic message and left the local dataset byte-identical. Restoring onto an emptied device brought the profile and clients back. Defects found and fixed: restore was unreachable on a new device (setup screen only, no restore option); offline edits never reached the backup; an erase within three minutes of an edit would have let the queued backup overwrite the store's good backup with an empty one. Each fix was re-run in the browser and is pinned by a static guard.
 - Recovery: full round trip on the row-based plane — issue at signup, redeem without a session, single-use, grants only a password reset.
 - Transit inbox: signed delivery → pull → server deletion → duplicate provider delivery deduped at insert; unsigned delivery refused when signature mode is on; retention sweep removes expired inbox rows and expired sessions/invites/codes/rate-limit rows on the next cron run.
+  Result: **Passed locally over HTTP on 2026-10-19, production verification outstanding (UAT item 8).** Against the dev server: a signed delivery was accepted (201) with either signature header; unsigned, wrongly signed, and altered-after-signing deliveries were refused (401); required mode with no secret failed closed (503); with no bound store every delivery was refused (503); a repeat delivery came back 202 with one duplicate; the device pulled each message once, acknowledged it, and the next pull was empty. The retention sweep is covered by the suites and was not re-run here.
 - Rate limits: durable across instances (verified against deployed serverless, not local memory).
 - Route parity: every endpoint add/change/delete landed in both `api/` and `server.js`, asserted by an updated check script.
+  Result: **Passed on 2026-10-19.** The guard suite derives the endpoint list from `api/` and checks it against the routes in `server.js` in both directions (13 endpoints). Mutation-tested: removing the `/api/backup` route from `server.js` fails it.
 - Suites: `npm run check`, `npm run launch:check` green at every landed step; security-audit assertions updated in the same commits that change the asserted files; the CI workflow observed red on a deliberately broken push once.
+  Result: **Partially passed.** `launch:check` green at steps 6 and 7 on 2026-10-19 (at step 7: identity 136, local-first 90, storage 36, backup 45, inbox 35, Neon 54, plus the UX and security audits and the build). The CI workflow has never run, because the branch has not been pushed; the deliberately broken push is outstanding.
 
 ## Notes
 
@@ -44,3 +47,27 @@ First run of the client flows from steps 2 to 5 in a real browser (the dev serve
 10. Stale and non-compliant copy: the erase dialog still said there was no server copy to restore from, the storage panel promised backups "coming next", the mismatch screen named stores by internal id, and several strings used em-dashes.
 
 Not exercised: the oversized-backup refusal, logo downscaling (needs a file upload), the plain file export (a download), persistent storage being granted (this browser declined, and the "Evictable" warning showed as designed), and the transit inbox beyond an empty pull.
+
+## Step 6, 2026-10-19
+
+Built and committed as `2ebdb0c`. Evidence:
+
+- **Store deletion** (`delete-store` on `/api/session`; see the PLAN deviation note). 136 identity assertions, including all four gate cases (no session on an empty system, no session on a populated one, manager, staff), the cascade checked row by row in SQL, an account that also belongs to another store surviving, the other store untouched, and the email reusable afterwards. In the browser: a wrong password was refused; the right one signed the device out, ended the server session, kept the records on the device, and dropped the cached backup key; the deleted account's sign-in then returned 401.
+- **Security headers.** `api/_security_headers.js` is the source; `server.js` sends it on every response and the guard suite checks `vercel.json`'s copy value for value. In the browser the headers were present and the policy raised no violation across sign-in, setup, dashboard, clients, CRM inbox, orders, production, reports, and settings; fonts loaded, inline style attributes applied, and backup, restore, WebCrypto, and IndexedDB all worked under it.
+- **CI.** `.github/workflows/ci.yml` runs `npm ci` and `npm run launch:check` on every push and pull request. Not yet observed running (see Suites above).
+- **Route parity.** See the check above.
+
+## Step 7, 2026-10-19
+
+The model docs were rewritten for local-first and Neon: `docs/production-persistence.md`, `docs/production-smoke.md`, `docs/cutover.md`, `docs/operations-runbook.md`, `docs/release-lane.md`, `docs/channel-integrations.md`, `docs/pilot-uat.md`, `docs/owner-activation-runbook.md` (now the Neon activation runbook), and `handover.md`, plus ROADMAP and STATE. UAT items 3, 4, 7, 9, and 10 were updated: item 4 inspects the backup in the Neon console, and item 10 states the real throttle.
+
+Where a doc makes a checkable claim, it was checked against the running code rather than the source:
+
+- `docs/channel-integrations.md`, Local Smoke, run as written over HTTP: 10 of 10. The signed-delivery claims: 11 of 11 (see Transit inbox above), and `/api/readiness` lists both channel checks as optional.
+- The owner last-resort recovery in `docs/operations-runbook.md` (writing a code's hash directly in SQL) was run against the real identity core: the code redeemed once and was refused the second time.
+
+One defect found by checking the docs against the code, fixed the same day:
+
+11. A staff account signed in on a device with no records was shown the manager's business setup form. Filling it in would have started a second, separate copy of the store on that device, which no manager would ever see, and given staff a manager-only screen. Staff now get a "No records here" screen pointing them to the shop device, with sign-out. Pinned by a guard, which fails when the fix is reverted. In the browser, on fresh origins: staff accepting an invite on an empty device got the new screen; its sign-out ended the server session; a manager on an empty device still got setup with restore; and staff signed in on the set-up shop device saw only their two assigned views. Deleting the throwaway store afterwards removed both accounts (staff sign-in 401).
+
+Also corrected: the operations runbook said staff accept invites "from their own device", which reads as staff working there; `SHELL_VERSION` was bumped to `fso-shell-v4`, since three earlier commits changed precached files without bumping it against the worker's own rule (no effect yet: no build with the worker has shipped); the two single-card screens (store mismatch, no records here) now center their card instead of leaving half the page empty; and `.gitignore` now refuses `.env` files except the example, because `vercel env pull` writes the Neon connection string to `.env.local` and the secret scan only reads source file extensions (pinned by a guard).

@@ -1,158 +1,163 @@
-# Production Smoke Test — Write Path
+# Production Smoke Test
 
-Last updated: 2026-08-03
+Last updated: 2026-10-19
 
-Self-contained instructions for verifying the Fashion Store OS production **write** path. Hand this to an operator or a coworking agent; it assumes no prior context.
+Self-contained instructions for verifying a production deployment of Fashion Store OS after the Phase 021 local-first pivot. Hand this to an operator or an agent; it assumes no prior context. Run it after every deploy that touches sign-in, storage, backup, or the inbox, and always after Release A.
 
-## Why This Exists
+## What Changed, And Why This Test Changed With It
 
-Fashion Store OS v1.0.0 released on 2026-08-03 to `https://fashion-store-os.vercel.app`. Its Supabase database paused after a month idle and was restored on 2026-07-31.
+Before Phase 021 the server stored every business record, and this test checked that writes reached it. That write path no longer exists. Records now live on the device, and the server holds only identity, an encrypted backup, and a short-lived message inbox. So this test checks four things instead:
 
-Since that restore, only the **read** path has been verified: `/api/health`, `/api/readiness`, and a `/api/bootstrap` read all pass. **No data has been written.** A restored database can serve reads correctly while insert grants or row-level-security write policies are broken, so this gap is real, not theoretical.
-
-Real-store pilot UAT was waived, so this smoke test is the only validation the write path gets.
+1. Records persist on the device and **never reach the server**.
+2. A **lost session never costs data**: signing out or expiring locks the screen and keeps the records.
+3. The **encrypted backup restores onto a new device**, and a wrong passphrase changes nothing.
+4. The app **works offline** and recovers by itself when the connection returns.
 
 ## Read This Before Starting
 
-- **This is live production**, not a staging environment. There is no staging environment.
-- The app is **multi-tenant per device**. Each browser generates a random workspace id, stores it locally, and sends it as an `x-workspace-id` header. A fresh browser profile or a new incognito window therefore gets its **own isolated workspace**. Real users are not affected by what you do in yours.
-- Because of that isolation: **use a fresh incognito window** and do not clear site data mid-test. Clearing storage abandons the workspace — the data stays in the cloud but becomes unreachable from that browser.
-- **Do not touch the `default` workspace.** It is the fallback used by webhooks and health diagnostics, not a user workspace.
-- **Clean up when done** (Step 6). Test data left in production is real data.
+- **This is live production.** There is no staging environment.
+- Use a **fresh browser profile or incognito window** for each device in the test. Each profile is a separate "device" with its own records.
+- Test accounts are global: an email can only be used once across the whole system. Use addresses nobody owns (below).
+- **Clean up when done** (Step 10). A test store left in production is a live store.
 
 ## What The Operator Must Supply
 
-Step 3 creates a manager account, so this test needs credentials. Run it one of two ways.
+The test creates a manager account and sets a backup passphrase.
 
 ### Operator mode
 
-You supply a throwaway email and a password and perform the signup yourself. An agent driving the rest of the test should ask you for them rather than inventing them.
+You supply a throwaway email, a password, and a backup passphrase, and type them yourself. An agent driving the rest should ask for them rather than invent them.
 
 ### Agent mode (end to end, no human in the loop)
 
-An agent may run the whole procedure unattended provided all four of these hold. They are what make the test account safe to create and disposable; skipping any one of them turns a test artifact into a real account.
+An agent may run the whole procedure unattended only if all four of these hold:
 
-1. **Generate both credentials at runtime.** A random address at a domain that receives no mail — `fso-smoke-<random>@example.com` — and a random password of at least 20 characters. Never a hardcoded, guessable, or reused value. The app sends no email of any kind, so the address never needs to be real.
-2. **Treat them as ephemeral.** Hold them in memory for the run only. Do not write either one into the report, the transcript summary, logs, a file, or this repo. They are needed at Step 3, Step 6, and nowhere else.
-3. **Never reuse a real credential.** Do not use the operator's own email or any password that exists elsewhere.
-4. **Complete Step 7.** Cleanup deletes the workspace's `auth` and `state` documents, which destroys the test account. An abandoned test account with a generated password nobody holds is exactly the unrecoverable state Phase 018 exists to prevent.
+1. **Generate every credential at runtime:** an address at a domain that receives no mail (`fso-smoke-<random>@example.com`), a random password of at least 20 characters, and a random backup passphrase of at least 20 characters. The app sends no email, so the address never needs to be real.
+2. **Keep them ephemeral.** Hold them in memory for the run only. Never write them, or the recovery code, into the report, logs, a file, or this repo.
+3. **Never reuse a real credential.**
+4. **Complete Step 10.** It deletes the store and its account. An abandoned account with a generated password nobody holds is unrecoverable by design.
 
 If any of the four cannot be satisfied, stop and hand back to operator mode.
 
 ## Procedure
 
-Record the result of every step. If any step fails, stop and go to **If Something Fails**.
+Record the result of every step. If a step fails, stop and go to **If Something Fails**.
 
-### Step 1 — API baseline
+### Step 1: API baseline
 
 ```powershell
 Invoke-RestMethod https://fashion-store-os.vercel.app/api/health
 Invoke-RestMethod https://fashion-store-os.vercel.app/api/readiness
+Invoke-WebRequest https://fashion-store-os.vercel.app/api/state -SkipHttpErrorCheck | Select-Object StatusCode
 ```
 
-**Pass:** health returns `ok: true` and `storage: "supabase"`. Readiness returns `ok: true` with 6 passing checks.
+**Pass:** health returns `ok: true` and `storage: "postgres"`. Readiness returns `ok: true`; its "database configured" and "database reachable" checks pass (the channel checks may be false until a provider is connected; they are optional). `/api/state` returns **410**.
 
-Do not call `/api/keepalive` as a liveness check. It returns `401` to any caller without the cron bearer token, which is correct behavior and tells you nothing about storage.
+The 410 is the quickest proof the Phase 021 build is live: the pre-pivot build answered that route. If `storage` says `"supabase"`, the old build is still serving.
 
-### Step 2 — Fresh workspace loads
+### Step 2: The app loads clean
 
-Open `https://fashion-store-os.vercel.app` in a **new incognito window**.
+Open `https://fashion-store-os.vercel.app` in a fresh profile ("device A").
 
-**Pass:** the app loads and shows manager signup — not a dashboard, not seed or demo content, no leftover data from another tester. A brand-new workspace is a true clean slate.
+**Pass:** the sign-in screen appears with no business data and no console errors. In DevTools, Application, Service Workers, `/sw.js` is activated.
 
-**Fail signals:** a JavaScript error in the console, a spinner that never resolves, or any pre-existing business data on a first visit.
+### Step 3: Manager signup, recovery code
 
-### Step 3 — Manager signup ← the write path
+Sign up a manager.
 
-Operator mode: the operator performs this step with their own credentials. Agent mode: use the runtime-generated credentials from above.
+**Pass:** you land on business setup, and a **recovery code** is shown there with a "save this now" warning. Copy it before dismissing; Step 8 needs it. If no recovery code appears, that is a failure: it is shown exactly once.
 
-Create the manager account.
+### Step 4: Records stay on the device
 
-**Pass:** signup succeeds and lands on business setup.
+Fill in the business setup, then add one client. Open DevTools, Network, before saving, and keep it open. Then **refresh the page**.
 
-**This is the test.** A failure here — a 500, a "could not save" error, or a hang — most likely means the restored Supabase project is missing write grants or RLS policies. That is the exact failure this smoke test exists to catch. Capture the full error and the browser console output.
+**Pass:**
+- After the refresh you are still signed in and the business profile and client are there.
+- No request carries business data. The only API calls are `/api/bootstrap`, `/api/session`, and `/api/inbox`. A request to `/api/state` or any body containing the client's name is a failure.
 
-### Step 4 — Business setup persists
+### Step 5: Signing out keeps the records
 
-Enter a business name, contact details, units, and brand colors. Save. Then **refresh the page**.
+Sign out. Then sign back in.
 
-**Pass:** the dashboard reopens with the saved business identity intact. The save indicator reads "All changes saved".
+**Pass:** sign-out shows the sign-in screen with the business mark still visible, and signing back in shows the same client. Nothing was lost by signing out.
 
-A refresh is what distinguishes a real server write from something held in browser memory. Do not skip it.
+### Step 6: Encrypted backup
 
-### Step 5 — Workspace isolation
+Settings, Backup, **Back up now**. Set a passphrase (at least 10 characters) when asked.
 
-Open the site in a **second, different browser** (not another tab, not another window of the same profile — a different browser or a separate incognito session).
+**Pass:** the panel shows status **On** and today's date under Last backup.
 
-**Pass:** the second browser shows a clean manager signup with none of the data from Step 4. Two devices must not share a workspace.
+### Step 7: Restore onto a new device
 
-### Step 6 — Recovery code round trip
+Open a second fresh profile ("device B") and sign in with the same account. A new device has no records, so it shows business setup with a **Restoring onto a new device?** option.
 
-At signup (Step 3) the app shows a **recovery code once**, with a "save this now" warning. Copy it before dismissing.
+1. Choose **Restore from backup** and enter a **wrong** passphrase.
+   **Pass:** "That passphrase does not open this backup." and device B is unchanged.
+2. Restore again with the **correct** passphrase.
+   **Pass:** device B opens the dashboard with the business profile and the client from Step 4.
 
-1. Sign out.
-2. On the sign-in screen choose **Forgot password**.
-3. Enter the test email, the saved recovery code, and a new password.
+### Step 8: Recovery round trip
 
-**Pass:** the reset succeeds and returns you to the **sign-in screen** — not the dashboard. You are deliberately not signed in; redeeming grants no session.
+On device A: sign out, choose **Forgot password**, and enter the email, the recovery code from Step 3, and a new password.
 
-4. Sign in with the new password.
+**Pass:** you return to the **sign-in screen**, not the dashboard (redeeming grants no session). Signing in with the new password works, the old password is refused, and using the same recovery code again is rejected.
 
-**Pass:** sign-in succeeds. The old password no longer works.
+### Step 9: Offline and back
 
-5. Try **Forgot password** again with the same code.
+On device A, signed in: DevTools, Network, set **Offline**, then reload.
 
-**Pass:** it is rejected. Recovery codes are single use.
+**Pass:** the app still opens, shows "Offline: working on this device", and the records are there. Add a second client; it saves.
 
-**Fail signals:** landing on the dashboard straight after redeeming (a session was minted when it should not have been), the same code working twice, or the code being rejected immediately after signup.
+Set the network back to **No throttling**.
 
-### Step 7 — Cleanup (mandatory)
+**Pass:** within about a minute the offline chip disappears without a reload, and in Settings, Backup, the last-backup time updates shortly after (the offline change caught up). Sign out while offline once, go online, reload: the app must stay **signed out**.
 
-While still signed in as the manager from Step 3, delete the test workspace's data:
+### Step 10: Cleanup (mandatory)
 
-```
-DELETE https://fashion-store-os.vercel.app/api/data
-```
+On device A, signed in as the manager: Settings, **Delete this store**, enter the password, **Delete store permanently**.
 
-This is manager-gated and requires the authenticated session cookie from the browser you signed in with — easiest from that browser's devtools console:
+**Pass:** you are signed out, and signing in with the test account is refused. Then on each profile used, Settings is no longer reachable, so remove the leftover records by clearing site data for `fashion-store-os.vercel.app` in the browser (or just close the incognito windows).
 
-```javascript
-await fetch('/api/data', { method: 'DELETE', credentials: 'include' }).then(r => r.json())
-```
+Deleting the store removes the account, sessions, invites, the backup, and inbox messages from the server. It does not touch device records, which is why the profiles are cleared separately.
 
-**Pass:** the response is `{"ok": true}`. Refresh: the workspace returns to manager signup.
+### Step 11 (optional): Channel inbox
 
-This removes the `state` and `auth` documents for that workspace only. It does not touch other workspaces.
+Only if a provider is connected and `FASHION_STORE_INBOX_STORE_ID` names a live store. Send one signed test message to `/api/channel-webhook`, then in the app open CRM Inbox and **Check for messages**.
+
+**Pass:** the message appears once; checking again adds nothing.
 
 ## Report Back
 
 ```text
 Date / operator:
 Mode:                     operator / agent
-Workspace id used:
+Deployment checked:       (Vercel deployment URL or commit)
 Step 1 API baseline:      PASS / FAIL
-Step 2 fresh workspace:   PASS / FAIL
-Step 3 manager signup:    PASS / FAIL   <- the write path
-Step 4 persistence:       PASS / FAIL
-Step 5 isolation:         PASS / FAIL
-Step 6 recovery code:     PASS / FAIL
-Step 7 cleanup:           PASS / FAIL
+Step 2 clean load:        PASS / FAIL
+Step 3 signup + code:     PASS / FAIL
+Step 4 local only:        PASS / FAIL
+Step 5 sign-out keeps:    PASS / FAIL
+Step 6 backup:            PASS / FAIL
+Step 7 restore:           PASS / FAIL
+Step 8 recovery:          PASS / FAIL
+Step 9 offline:           PASS / FAIL
+Step 10 cleanup:          PASS / FAIL
+Step 11 inbox:            PASS / FAIL / not run
 Console errors:           none / details
 Notes:
 ```
 
-Do not include the test email, the test password, the recovery code, session cookies, or any customer data in the report. The workspace id is safe to report and is what makes an incomplete cleanup traceable.
-
-If Step 7 did not complete, say so at the top of the report, not in the notes. An undeleted test account is a live account in production.
+Never include the test email, any password or passphrase, the recovery code, session cookies, or customer data. If Step 10 did not complete, say so at the top of the report: an undeleted test store is a live store.
 
 ## If Something Fails
 
 Severity, per `docs/operations-runbook.md`:
 
-- **Step 3 or 4 fails** → sev-1. The production write path is broken. Users cannot sign up or save anything. Work the Incident Checklist in the operations runbook, check the Supabase project's grants and RLS policies against `supabase/migrations/`, and consider rolling back by promoting the previous known-good deployment in Vercel.
-- **Step 5 fails** (workspaces bleeding together) → sev-1. That is a tenant isolation defect and a data-exposure risk. Stop and escalate immediately.
-- **Step 2 fails** → sev-2 unless the app is entirely unreachable, in which case sev-1.
-- **Step 6 fails** → sev-2. Recovery is the only way back into an account with a lost password; if it does not work, a forgotten password means a lost workspace. If redeeming signs the user straight into the dashboard, treat it as sev-2 regardless of the reset succeeding — a session is being minted on a path that must not grant one.
-- **Step 7 fails** → sev-3, but say so explicitly in the report, because it means test data is still sitting in production.
+- **Step 4 shows business data leaving the device** → sev-1. The local-first boundary is broken; that is a data-exposure defect.
+- **Step 5 loses records**, or **Step 9's offline sign-out reopens after reload** → sev-1. Losing records on sign-out destroys the only copy; a sign-out that does not stick hands a shared device to whoever opens it next.
+- **Step 1 fails** with `unconfigured` → sev-1: `DATABASE_URL` is missing. With `database-unreachable` → sev-1 for sign-in, but signed-in devices keep working offline.
+- **Step 3 shows no recovery code, or Step 7 or 8 fails** → sev-2. Backup and recovery are the only ways back after a lost device or password.
+- **Step 2 or 9 fails otherwise** → sev-2 unless the app will not load at all (sev-1).
+- **Step 10 fails** → sev-3, but report it at the top.
 
-Fixes go to `main` as `ADxZimmy` and deploy on push — see `docs/release-lane.md`. There is no staging branch, so every fix is a production release.
+Roll back by promoting the previous known-good deployment in Vercel. Fixes go to `main` as `ADxZimmy` and deploy on push; see `docs/release-lane.md`.

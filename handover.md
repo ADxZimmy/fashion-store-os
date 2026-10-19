@@ -1,445 +1,181 @@
 # Fashion Store OS Handover
 
-Last updated: 2026-08-03
+Last updated: 2026-10-19
 Current repo: `F:\Fashion Store OS`
 
 ## Project Summary
 
-Fashion Store OS is a brand-agnostic, pre-pilot fashion studio operations MVP. It is intended to be a control room for inquiries, clients, measurements, garment orders, style recipes, material reserve, production flow, brand settings, onboarding, and staff access.
+Fashion Store OS is a brand-agnostic operations app for fashion studios: a control room for inquiries, clients, measurements, garment orders, style recipes, material reserve, production flow, reports, brand settings, onboarding, and staff access. No real store has used it yet.
+
+Since Phase 021 (built, not yet released) it is **local-first**. Each store's business records live on its shop device. The server holds only identity, one encrypted backup per store that it cannot read, and a short-lived inbox for provider messages.
 
 This repo is the active workspace. `C:\Users\PC\Documents\Nitech\Personal\Pastry County Kitchen OS` was used only as a reference and should not be edited for this project.
 
+## Read First
+
+| Question | Document |
+| --- | --- |
+| What lives where, endpoints, configuration | `docs/production-persistence.md` |
+| Running it in production | `docs/operations-runbook.md` |
+| How a change reaches production | `docs/release-lane.md` |
+| Releasing Phase 021 (Release A, then B) | `docs/cutover.md` |
+| Connecting the Neon database | `docs/owner-activation-runbook.md` |
+| Testing a deployment | `docs/production-smoke.md` |
+| Provider messages | `docs/channel-integrations.md` |
+| A real-store pilot | `docs/pilot-uat.md` |
+| Phase 021 plan, evidence, and UAT | `.planning/phases/021-local-first-pivot/` |
+| Current status | `.planning/STATE.md`, `.planning/ROADMAP.md` |
+
 ## Stack
 
-- Static HTML/CSS/JavaScript frontend.
-- Dependency-free Node backend in `server.js`.
-- Entry point: `index.html`.
-- App logic: `src/app.js`.
-- Styling: `src/styles.css`.
-- Backend runtime data: ignored JSON files under `data/`.
-- Reference assets and prompt files: `docs/`.
-- Data persistence uses backend JSON files when served through `node server.js`, Supabase document storage on Vercel, and browser `localStorage` as fallback when no backend API is available.
-- Server-backed deployments use hashed passwords, hashed session tokens, HttpOnly cookies, and one-time recovery codes. Email verification, MFA, rate limiting, and server-enforced per-capability authorization are not implemented yet.
+- Static HTML, CSS, and JavaScript, no framework and no bundler: `index.html`, `src/app.js` (the app), `src/storage.js` (IndexedDB device storage), `src/backup.js` (WebCrypto backup), `src/sw.js` (offline app shell), `src/styles.css`.
+- Serverless API on Vercel under `api/`: identity (`_identity.js` core, `_identity_pg.js` SQL adapter, `_identity_http.js` action dispatch), encrypted backups (`_backup.js`), the transit inbox (`_inbox.js`, `_channel_webhook.js`), health, readiness, and the daily maintenance cron.
+- Database: Neon Postgres over its HTTP driver, `@neondatabase/serverless`, the only runtime dependency. The schema is `db/migrations/`, applied by `scripts/db-migrate.js` during production builds.
+- Local development: `server.js` mirrors every API route and runs the same SQL adapter on PGlite, an embedded Postgres stored under `data/pglite/` (git-ignored). The test suites run on PGlite too.
+- Security: PBKDF2 password hashes, hashed session tokens in HttpOnly cookies, one-time recovery codes, durable rate limits, manager gates on team, backup, and store-deletion actions, and a strict Content Security Policy (`api/_security_headers.js`).
+- Not built: email verification, MFA, sync between devices, alerting.
 
 ## How To Run
 
-Recommended productized local run:
+```powershell
+npm.cmd run dev
+```
+
+Then open `http://localhost:4179`. The first start creates the embedded database and applies the schema; no account and no `DATABASE_URL` are needed. Opening `index.html` directly no longer works, because signing in needs the API.
+
+Before committing:
 
 ```powershell
-npm.cmd start
+npm.cmd run launch:check
 ```
 
-Or:
+It runs the syntax check, every test suite, the UX and security audits, and the build. For anything a browser can show, also check it in a browser against the dev server: the first browser session found ten defects the suites had passed.
 
-```powershell
-node server.js
-```
+## Development Rules
 
-Then open:
-
-```text
-http://localhost:4179
-```
-
-Fallback static mode: open `index.html` directly in a browser, or serve the folder with:
-
-```powershell
-python -m http.server 4179
-```
-
-Static mode keeps using browser storage because the backend API is unavailable.
+- Every API route change lands in both `api/` and `server.js`. A guard checks the two match.
+- A schema change is a new file in `db/migrations/`. Never edit an applied one.
+- Bump `SHELL_VERSION` in `src/sw.js` in the same commit as any change to a file it precaches.
+- Security-audit assertions change in the same commit as the code they assert on.
+- Working-tree files use CRLF line endings (Git normalizes them on commit). Any script that edits files must handle CRLF and report each replacement it makes: a CRLF-blind script once reported success while silently skipping its multi-line edits.
+- The owner's writing rule: no em-dashes anywhere, including UI copy, code comments, docs, and commit messages. Write ranges with "to". A guard enforces it for `src/app.js`.
 
 ## Live Deployment
 
-Current Vercel production URL:
+| Thing | Value |
+| --- | --- |
+| Public URL | `https://fashion-store-os.vercel.app` |
+| Vercel project | `sanuske2-2147s-projects/fashion-store-os` |
+| Project ID | `prj_3oNJjdlNXi5yTKkqenDEzY2jVELi` |
+| Team ID | `team_SumcS7BfGXgJWdQc7y2iAxSk` |
+| Production branch | `main`; every push deploys |
+| Release owner | `ADxZimmy`. On the Hobby plan, deploys of collaborator-authored commits (`NnazimuzoO`) fail with `TEAM_ACCESS_REQUIRED`. |
 
-```text
-https://fashion-store-os.vercel.app
-```
+**Status on 2026-10-19: production is down.** `main` still runs the pre-pivot build, which depends on the Supabase project `fashion-store` (`elkpberfbhwbrkawklnk`); that project paused for inactivity on 2026-10-02. No real store uses the app, so nothing real is affected. Production returns with Release A, on Neon.
 
-Deployment target:
+Release A needs, in order: Neon connected to the Vercel project (owner), the legacy Supabase check in Phase 021 UAT item 11 (owner, before about 2026-11-23), then `docs/cutover.md`.
 
-```text
-sanuske2-2147s-projects/fashion-store-os
-```
+## Release Status
 
-Check the current Vercel deployment ID:
-
-```powershell
-vercel inspect https://fashion-store-os.vercel.app
-```
-
-Supabase production project:
-
-```text
-fashion-store
-Project ref: elkpberfbhwbrkawklnk
-URL: https://elkpberfbhwbrkawklnk.supabase.co
-Region: eu-west-3
-```
-
-Important: GitHub is now the intended deployment source. Branch `main` has been promoted from `codex/backend-foundation`, and the Vercel Git integration for `sanuske2-2147s-projects/fashion-store-os` fires production deployments when `main` is pushed. A GitHub-authored owner commit from `ADxZimmy` deployed successfully to production with Supabase persistence active on 2026-06-29. Collaborator-authored commits by `NnazimuzoO` / Vercel user `nnazimuzoo` still block before build with Vercel `TEAM_ACCESS_REQUIRED` because that user is not a member of the Vercel team/project. The team is on the Hobby plan, and `vercel teams invite nnazimuzoo@nitechsoftware.com.ng --scope sanuske2-2147s-projects` failed because Hobby teams do not permit team members. Resolve collaborator deploys by upgrading/enabling collaboration, moving the project under an account that can include the commit authors, or ensuring production pushes are authored by a Vercel owner/member with contributing access.
-
-The Vercel deployment publishes the static frontend from `dist/` and serverless API routes from `api/`. Live production persistence is backed by Supabase through Vercel env vars. See `docs/production-persistence.md`.
-
-Current Git-connected Vercel project accessible from this workspace:
-
-```text
-Project: sanuske2-2147s-projects/fashion-store-os
-Project ID: prj_3oNJjdlNXi5yTKkqenDEzY2jVELi
-Team ID: team_SumcS7BfGXgJWdQc7y2iAxSk
-Production branch: main
-Production alias: https://fashion-store-os-sanuske2-2147s-projects.vercel.app
-Public alias: https://fashion-store-os.vercel.app
-Latest Git-triggered deployment: `dpl_8y3EMKfnkkmLR6wPButZuVzEcZNz` from `8c8891e` (Ready, 2026-08-03)
-```
-
-The Git-connected project has the required Vercel production env vars for Supabase persistence. On 2026-08-03, `/api/health` returned `ok: true`, `storage: "supabase"`, `supabaseHost: "elkpberfbhwbrkawklnk.supabase.co"`, and `workspace: "default"`. `CRON_SECRET` is configured in Production; real provider secrets are not configured yet.
-
-## Cutover Status
-
-Procedure: `docs/cutover.md`. Post-launch support: the Post-Launch Support section of `docs/operations-runbook.md`.
-
-v1.0.0 released 2026-08-03:
-
-```text
-Cutover date: 2026-08-03
-Deployed commit: 8b5943e (confirmed Ready in Vercel before tagging)
-Release tag: v1.0.0 (annotated 7420d1c -> 8b5943e)
-Public target: https://fashion-store-os.vercel.app
-  No custom domain; no DNS change. The alias was already serving, so
-  cutover Steps 3 and 5 were skipped and there is no DNS rollback lever.
-  Rollback = promote the previous known-good Vercel deployment.
-/api/health on final target: PASS (ok:true, storage:"supabase")
-/api/readiness: PASS (6/6)
-Write path: NOT VERIFIED - cutover Step 6 browser smoke outstanding
-Watch window: 2026-08-03 to 2026-08-17
-```
-
-Availability note: the Supabase project paused after ~31 days idle and production returned `storage: "supabase-unreachable"` from roughly 2026-06-29 until it was restored on 2026-07-31. A daily Vercel Cron on `/api/keepalive` now issues a real query to prevent a repeat idle pause. `CRON_SECRET` was set on 2026-08-02; the active deployment confirms the cron is registered at `0 6 * * *`, but a successful scheduled firing has not yet been observed.
+| Release | State |
+| --- | --- |
+| v1.0.0, 2026-08-03 | Released on the Vercel alias; down since the 2026-10-02 Supabase pause. Record: `docs/cutover.md`, History. |
+| Release A (Phase 021, suggested tag `v2.0.0`) | Built, not released. Procedure: `docs/cutover.md`. |
+| Release B | After the Phase 021 UAT: deletes the retired endpoints and decommissions the legacy Supabase project. |
 
 ## Current Git State
 
-Current branch: `main` — the repo's only branch, and the production branch for the Git-connected Vercel project.
+- `main` is production, at `c194b7d`, level with GitHub.
+- `phase-021-release-a` holds Phase 021 steps 1 to 7 and is not pushed. It is fast-forwarded into `main` as Release A (`docs/cutover.md`, Prerequisite 4); pushing that is the release.
+- Local-only leftovers `master`, `codex/backend-foundation`, and `backup/main-before-backend-promotion` still exist in this checkout. GitHub has only `main`.
+- Commits must be authored as `ADxZimmy`. As of 2026-10-19 no repo-local identity is set; `docs/release-lane.md` has the command.
 
-On 2026-07-30 the repo was consolidated to a single branch. `master` (32 commits behind, unreferenced by any deploy config) and `codex/backend-foundation` (identical to `main` at `a911466`) were both deleted locally and on GitHub. Neither held commits that were not already in `main`. Commit directly to `main` and push; see `docs/release-lane.md`.
-
-Recent shipped code commits:
-
-```text
-8c8891e Implement Phase 019: multi-device workspace access
-5f11650 Resolve Phase 019 open questions: 30 min TTL, single use, combined string
-9deec74 Plan Phase 019: multi-device workspace access
-ead9030 Route a refused signup to the sign-in tab so recovery is reachable
-2a4a696 Add agent mode to the production smoke procedure
-42e790b Implement Phase 018: account recovery and password reset
-83f7f62 Resolve Phase 018 open questions: no expiry, redeem returns to sign-in
-3acd4a0 Plan Phase 018: account recovery and password reset
-fc1b21b Add self-contained production write-path smoke procedure
-80cb6a1 Record v1.0.0 cutover on the Vercel alias
-8b5943e Complete Phase 017 repo-side: cutover runbook and post-launch support
-8a7ce32 Add daily keepalive cron to prevent Supabase idle pause
-93af421 Document single-branch main release flow
-a911466 Refresh release/pilot/persistence docs for per-device workspaces
-d55439f Multi-tenant per-device workspaces and multi-user access
-2934811 Author production commits as owner ADxZimmy for auto-deploy
-6df2770 Harden MVP for pilot: clean-slate signup, neutral UI, server-auth gate
-87b12d9 Install Supabase CLI for owner activation
-e12f23b Fix launch gate spawn and draft cutover handoff
-```
-
-Deployment and persistence setup files added in this slice:
+Phase 021 commits so far:
 
 ```text
-.gitignore
-.vercelignore
-.env.example
-package-lock.json
-package.json
-api/
-docs/production-persistence.md
-scripts/build.js
-scripts/check.js
-supabase/migrations/20260611160501_create_fashion_store_os_documents.sql
-supabase/migrations/20260611163000_allow_default_workspace_document_api_access.sql
-supabase/migrations/20260626191000_harden_workspaces_audit_and_channel_events.sql
-supabase/migrations/20260803120000_create_workspace_codes.sql
-vercel.json
+2ebdb0c Phase 021 step 6: store deletion, security headers, CI, route parity
+6be1a05 Record the first browser session
+873c44d Fix the defects the first browser session found
+cfa8a16 Record the second Supabase pause and the move to Neon
+45ea77c Move the server database from Supabase to Neon
+77e7f1d Phase 021 step 5: transit inbox for provider webhooks
+d5782bc Phase 021 step 4: encrypted backup, restore, and local export
+93013a9 Phase 021 step 3: harden device storage
+356d40c Phase 021 step 2: flip the data plane to local-primary
+9d7d91b Record step 1 evidence and the untested-adapter risk
+bc72529 Fix the defects the step 1 review confirmed
+128ae7d Phase 021 step 1: restructure identity into global rows
 ```
 
-Before each new work slice, run:
+Before each work slice, run `git status --short`. Do not overwrite changes you did not make; inspect them and work with them.
 
-```powershell
-git status --short
-```
+## Readiness Assessment (2026-10-19)
 
-Do not overwrite user changes. If there are uncommitted changes you did not make, inspect them and work with them.
+Built and verified locally:
 
-## Production Readiness Assessment (2026-07-31)
+- Global identity on rows, with durable rate limits, request validation, per-store quotas, and retention sweeps.
+- Local-first records: sign-out and session expiry lock the screen without touching data; a signed-in device opens offline for up to 30 days; a device holding another store's records asks before doing anything with them.
+- Encrypted backup and restore onto a new device, plus a plain file download and load.
+- The transit inbox, including signed delivery, deduplication, and acknowledgement.
+- Store deletion, security headers, a CI workflow, and a route parity guard.
+- Browser checks on 2026-10-19 of the client flows above, after which eleven defects were fixed and pinned by guards.
 
-Current stage: feature-complete MVP serving from the stable Vercel alias. The GitHub-to-Vercel deployment lane, Supabase persistence, health/readiness endpoints, daily keepalive, account recovery, and the Phase 019 multi-device code bridge are deployed. It is suitable for controlled testing by one studio, but it is not ready for broad multi-user production.
+Not yet verified:
 
-Verified now:
+- Anything in production: Neon's driver against a live database, the build-time migration, rate limits across serverless instances, and the cron.
+- The CI workflow, which has never run because the branch is not pushed.
+- In a browser: the oversized-backup refusal, logo downscaling, the file download, and persistent storage being granted.
+- The Phase 021 UAT (owner-run, after Release A) and a real-store pilot.
 
-- Local `npm.cmd run launch:check`, release preflight, build, and dependency audit pass; npm reports zero known vulnerabilities.
-- Vercel production deployment `dpl_8y3EMKfnkkmLR6wPButZuVzEcZNz` is Ready at `https://fashion-store-os.vercel.app`; its build log identifies GitHub `main` commit `8c8891e`.
-- Supabase migration `20260803120000_create_workspace_codes.sql` was applied to `elkpberfbhwbrkawklnk`; all four local and remote migration versions match. A live invalid-code redemption returned the expected generic 404 rather than a storage error, confirming the deployed function can reach the new table.
-- Live `/api/health` is green on Supabase storage.
-- GitHub `main` is the default branch, `NnazimuzoO` has write permission, the repo is private, and annotated tag `v1.0.0` points to cutover commit `8b5943e`. The current plan does not provide private-repo branch protection/rulesets, and there is no CI workflow.
+Accepted trade-offs (Phase 021 CONTEXT):
 
-Release blockers:
+- Staff section access is enforced by the app's screens only. Anyone with the shop device's browser can read its records.
+- No sync: one shop device per store. Restoring onto a second device that keeps working forks the records.
+- The derived backup key is cached on the device so automatic backups can run. The passphrase is never stored.
+- A database outage blocks sign-in on new devices, invites, recovery, backups, and the inbox. Signed-in devices keep working offline.
 
-- Tenancy: Phase 019 now bridges devices with short-lived codes, but the underlying workspace id remains device-held rather than account-bound. The full production join/invite smoke is still outstanding.
-- Data integrity: the app saves the entire state document with last-write-wins `PUT`s and has no version check, retry queue, or merge. Concurrent users and failed online saves can lose work.
-- Authorization: staff navigation is filtered in the browser, while `/api/state` gives any authenticated workspace user full-document read/write access.
-- Abuse controls: public signup/sign-in/workspace creation has no rate limiting, lockout, quota, or bot protection.
-- Real channels: Vercel lacks `CHANNEL_WEBHOOK_SECRET` and `CHANNEL_WEBHOOK_VERIFY_TOKEN`; provider traffic also defaults to workspace `default`, not a browser-generated studio workspace.
-- Operational proof: real-store pilot UAT, automated browser/CI regression, backup/restore rehearsal, alerting, custom domain, annotated release tag, and post-launch watch-window evidence remain pending.
+## Device Storage
 
-Recommended order: fix workspace membership and conflict-safe persistence first; enforce permissions and abuse controls at the API; bind provider channels to an owned workspace and configure secrets; add CI/E2E and backup/alerting checks; then run the pilot and execute Phase 017 only after sign-off.
+IndexedDB database `fashion-studio-os`, object store `records`:
 
-## Completed Work
+- `state:current`: the store's records.
+- `state:last-known-good`: the recovery snapshot, used if the current copy cannot be read.
 
-### Pre-Pilot MVP Hardening (2026-06-29)
+localStorage:
 
-- Clean-slate signup: `createSeedState()` in `src/app.js` now returns empty collections, so new workspaces start with no clients/orders/inventory/styles. The demo studio content was preserved as dev-only `createDemoState()` / `loadStudioDemo()` (exposed on `window` only on localhost/file), never shown to testers.
-- Removed backend/storage wording from the UI. The status indicator now shows neutral "All changes saved" / "Saved on this device" / "Getting your workspace ready"; the line naming `node server.js` and other "backend/browser storage" copy were replaced with owner-facing language.
-- Made sign-in server-authoritative: the client reads the bootstrap `authenticated` flag, clears any stale local session pointer when not authenticated, and `persistLocalAuth()` no longer stores the session at rest in server mode. A device without a valid HttpOnly session cookie always lands on the sign-in screen.
-- Verified with `node --check`, full `launch:check`, and a live server smoke (empty fresh bootstrap; signup→authed bootstrap with cookie vs `authenticated:false` without; reset cleanup). Not verified headlessly: the fresh-signup empty-dashboard browser render — confirm via pilot UAT Scenario 1.
+| Key | Holds |
+| --- | --- |
+| `fashion-studio-os-store-v1` | Which store this device's records belong to |
+| `fashion-studio-os-identity-v1` | Last known identity, for opening offline. No secrets: the session stays in the HttpOnly cookie. |
+| `fashion-studio-os-auth-v1` | Team roster cache for rendering, stored without a session pointer |
+| `fashion-studio-os-backupkey-v1` | The derived backup key, never the passphrase |
+| `fashion-studio-os-backupmeta-v1` | Last backup details |
+| `fashion-studio-os-backuppending-v1` | When the latest change not yet in a backup was made |
+| `fashion-studio-os-signout-pending-v1` | A sign-out the server has not heard yet |
+| `fashion-studio-os-view-v1` | The last open view |
+| `fashion-studio-os-state-v1`, `fashion-studio-os-workspace-v1` | Pre-pivot keys. Old records are migrated into IndexedDB on first open and the old key removed once the copy verifies. |
 
-### Studio OS Foundation
+Signing out never touches records. Settings, This device's records, **Erase this device's records** clears them, with confirmation. Server tables are listed in `docs/production-persistence.md`.
 
-- Created a Mo'ora Afrika Fashion House / Studio OS prototype.
-- Added core sections:
-  - Dashboard
-  - CRM Inbox
-  - Clients
-  - Measurements
-  - Garment Orders
-  - Style Recipes
-  - Material Reserve
-  - Production Flow
-  - Settings
-- Seeded local demo data for clients, inquiries, styles, inventory, orders, and usage records.
-- Added localStorage persistence for studio data.
+## Verification
 
-### Visual Direction
+Latest, 2026-10-19:
 
-- Adapted the darker premium Mo'ora Afrika visual language from the provided reference images.
-- Kept the actual app layout functional instead of copying the reference table structure directly.
-- Sidebar behavior was refined to be fixed, collapsed by default, and expandable on hover while the main page adjusts instead of being covered.
-- Removed the lower sidebar account mini-box that was not requested.
-- Added appearance controls for the logo view:
-  - Square / 1:1
-  - Circle
-- Restored the logo handling so the brand mark remains part of the appearance system.
+- `npm.cmd run launch:check` green: identity 136, local-first 90, storage 36, backup 45, inbox 35, and Neon 54 assertions, plus the UX and security audits and the build.
+- Browser sessions in the in-app browser against the dev server: the client flows of steps 2 to 6 and the staff-device fix.
+- HTTP runs against the dev server: the channel inbox local smoke (10 of 10) and signed delivery (11 of 11).
 
-### Onboarding And Access Prototype
+Full record: `.planning/phases/021-local-first-pivot/VERIFICATION.md`. Earlier results: `.planning/STATE.md`, Verification Snapshot.
 
-- Added onboarding flow for first-time use.
-- Added sign-up and sign-in flows.
-- Added local prototype manager account creation.
-- Added sign-out flow.
-- Added staff access management in Settings.
-- Manager can create up to 2 staff accounts.
-- Staff accounts can be assigned access to specific app sections.
-- Staff navigation is filtered by assigned access.
+## Next Steps
 
-Important limitation: this is prototype auth only. Passwords and staff records are stored in localStorage and are not production secure.
-
-### Modal And Popup Cleanup
-
-- Replaced native browser/Windows dialogs with in-app modals.
-- Restock material now uses a styled app modal.
-- Staff deletion now uses a styled app confirmation modal.
-- Reset local data now uses a styled app confirmation modal.
-- App modal includes dialog semantics, close action, Escape close handling, and focused input for restocking.
-- Verified that no `window.prompt`, `window.confirm`, `alert`, `confirm`, or `prompt` calls remain in `index.html`, `src/app.js`, or `src/styles.css`.
-
-### Backend Persistence Foundation
-
-- Added `server.js` as the first backend layer.
-- Added `package.json` with `start`, `dev`, and `check` scripts.
-- Added API endpoints:
-  - `GET /api/health`
-  - `GET /api/bootstrap`
-  - `GET /api/state`
-  - `PUT /api/state`
-  - `GET /api/auth`
-  - `PUT /api/auth`
-  - `DELETE /api/data`
-  - `GET /api/inbound`
-  - `POST /api/inbound`
-- Runtime state/auth JSON files are stored under `data/` and ignored by git.
-- Frontend now checks backend storage on boot.
-- Frontend saves state/auth to backend when available and to localStorage as fallback.
-- Reset workspace data clears backend records when available and browser records locally.
-- First launch is now truly brand-agnostic: if no profile exists, manager signup leads into business setup before the dashboard opens.
-- Added loading and storage-status UI using the UI/UX Pro Max guidance.
-
-### Vercel Live Testing Deployment
-
-- Added `scripts/build.js` to create a clean `dist/` deployment bundle.
-- Added `vercel.json` with `node scripts/build.js` and `dist` as the output directory.
-- Added `.vercelignore` so planning docs, handover docs, runtime data, and large source prompt/deck files are not published.
-- Added `dist/` and `.vercel/` to `.gitignore`.
-- Deployed the app to Vercel production.
-- Verified the live HTML, JavaScript, and CSS assets return 200 responses.
-- Verified Vercel reports the deployment as Ready.
-- Earlier static-only deployment used browser storage fallback; current production deployment now includes serverless API functions.
-
-### Production Persistence Layer
-
-- Added Vercel serverless API routes under `api/`.
-- Added Supabase-backed state/auth document persistence helper.
-- Added `/api/health`, `/api/bootstrap`, `/api/state`, `/api/auth`, and `/api/data` production route equivalents.
-- Created dedicated Supabase project `Fashion Store OS` (`duimatbeahwfeghcviju`) in `us-east-1`.
-- Added Supabase migrations for `public.fashion_store_os_documents` and default-workspace API access.
-- Added `.env.example` and `docs/production-persistence.md`.
-- Updated `npm.cmd run check` to validate every JavaScript file, including API routes.
-- Set Vercel production env vars: `SUPABASE_URL`, `SUPABASE_REST_API_KEY`, and `FASHION_STORE_WORKSPACE_ID`.
-- Deployed production serverless functions from a clean non-Git staging copy made from the local Git commit to avoid Vercel's unverified Git-author block.
-- Verified live Supabase health, bootstrap, write, read, reset, and clean table state.
-
-### Mobile Navigation Drawer
-
-- Replaced the desktop-style mobile header/nav with a compact mobile appbar and off-canvas navigation drawer.
-- Added hamburger open/close controls, backdrop close, Escape close, and drawer focus handling.
-- Live-audited the production mobile viewport at `https://fashion-store-os-navy.vercel.app`; the mobile appbar/drawer assets were present and no horizontal overflow was detected.
-
-### Production Bootstrap Recovery
-
-- Diagnosed live `/api/bootstrap` returning HTTP 500 while `/api/health` incorrectly reported healthy storage.
-- Confirmed the documented Supabase ref `duimatbeahwfeghcviju` existed but had become `INACTIVE`, causing DNS/upstream fetch failures.
-- Restored the Supabase project, reapplied the committed document-table/RLS migrations, and verified REST reads return 200 with the current publishable key.
-- Updated Vercel production env vars for `SUPABASE_URL`, `SUPABASE_REST_API_KEY`, and `FASHION_STORE_WORKSPACE_ID`.
-- Updated API health to perform a real Supabase read probe and report `supabase-unreachable` when the upstream storage layer is down.
-- Updated API error handling so bootstrap/state/auth return safe storage errors instead of a generic 500 for Supabase failures.
-- Deployed the recovered production build from commit `bbb4581`.
-- Verified live `/api/health`, `/api/bootstrap`, API write/read/reset, empty post-test Supabase table, and clean Vercel runtime logs.
-
-### CRM Channel Intake
-
-- Added `channelMessages` to the workspace state model.
-- Added a CRM Inbox channel message intake form for WhatsApp, Instagram, Website, Referral, and Walk-in sources.
-- Added a channel intake queue with source, sender/contact, message, desired garment, occasion, deadline, budget, routing status, and follow-up state.
-- Added route-to-inquiry, archive, reopen, and follow-up update actions.
-- Added `/api/inbound` for local and Vercel production so same-origin JSON posts can append inbound channel messages to persisted state.
-- Updated the dashboard demand metric to count raw channel messages as new leads until they are routed.
-- Deployed the CRM channel intake build from commit `80bb19a`.
-- Verified local endpoint behavior, local mobile/desktop browser flow, live `/api/inbound`, live asset presence, Supabase cleanup, and Vercel runtime logs.
-
-### Owner Activation / Git-Connected Supabase Persistence
-
-- Installed Supabase CLI `2.108.0` as a local dev dependency and verified `npm.cmd run check` plus `npm.cmd run launch:check`.
-- Completed owner Vercel login and Supabase login on 2026-06-29.
-- Confirmed the old runbook target `duimatbeahwfeghcviju` returned a Supabase 403 for this owner account, so it should be treated as historical context for the older deployment lane.
-- Activated the accessible owner Supabase project `fashion-store` (`elkpberfbhwbrkawklnk`, `eu-west-3`) for the Git-connected Vercel production lane.
-- Linked the local Supabase CLI to `elkpberfbhwbrkawklnk` and applied all pending migrations, including document storage and the workspace/audit/channel-delivery hardening migration.
-- Set the Git-connected Vercel production env vars for Supabase persistence and webhook safety without storing secret values in the repo.
-- Promoted `codex/backend-foundation` to `main` at commit `87b12d9`.
-- Verified the Ready production deployment through the Git-connected Vercel project and stable aliases.
-- Verified `/api/health` is green on the deployment URL, `https://fashion-store-os-sanuske2-2147s-projects.vercel.app`, and `https://fashion-store-os.vercel.app`.
-- Ran a live activation smoke: temporary manager signup, state write/read, manager export, cleanup, and final empty bootstrap all passed.
-- Updated `scripts/launch-readiness.js` so the launch gate now says Supabase activation is complete and the remaining gate is live health plus pilot UAT before public cutover.
-
-## Current LocalStorage Keys
-
-The app currently uses these browser storage keys:
-
-```text
-fashion-studio-os-state-v1
-fashion-studio-os-view-v1
-fashion-studio-os-auth-v1
-```
-
-Resetting local data clears app state, selected view, auth records, and staff accounts in the current browser.
-
-Backend mode stores equivalent runtime records in:
-
-```text
-data/state.json
-data/auth.json
-```
-
-Those files are intentionally ignored by git.
-
-## Verification Already Run
-
-Latest checks:
-
-```powershell
-npm.cmd run check
-npm.cmd run launch:check
-npx supabase --version
-npx supabase projects list --output json
-npx supabase link --project-ref elkpberfbhwbrkawklnk --yes
-npx supabase db push
-vercel env ls
-git push origin HEAD:main
-Invoke-RestMethod https://fashion-store-os.vercel.app/api/health
-Invoke-RestMethod https://fashion-store-os-sanuske2-2147s-projects.vercel.app/api/health
-git diff --check
-```
-
-Results:
-
-- JavaScript parse check passed.
-- `server.js` parse check passed.
-- Native dialog scan returned no matches.
-- Chrome manual check confirmed:
-  - Clean first launch shows manager signup.
-  - Manager signup leads to business setup.
-  - Business setup opens the dashboard with Server Storage status.
-  - Backend `/api/bootstrap` receives state/auth records.
-  - Reset workspace data clears backend and browser records back to first launch.
-- Earlier Vercel production deployment confirmed:
-  - URL: `https://fashion-store-os-navy.vercel.app`
-  - Status: Ready
-  - HTML `/`, JS `/src/app.js`, and CSS `/src/styles.css` return 200.
-  - Serverless functions present: `api/auth`, `api/bootstrap`, `api/data`, `api/health`, `api/inbound`, and `api/state`.
-- Production persistence code checks confirmed:
-  - `npm.cmd run check` validates 11 JavaScript files.
-  - `npm.cmd run build` generates the static deployment bundle.
-  - Handler smoke test without Supabase env returns clear unconfigured storage responses.
-- Earlier Supabase production persistence confirmed for the older deployment lane:
-  - Dedicated project `duimatbeahwfeghcviju` created and healthy.
-  - Migrations recorded: `create_fashion_store_os_documents`, `allow_default_workspace_document_api_access`.
-  - RLS enabled and policy scoped to `workspace_id = 'default'` and `document_key in ('state', 'auth')`.
-  - Local store smoke test passed against Supabase: empty, save, read, clear.
-  - Live `/api/health` returns `{ ok: true, storage: "supabase", supabaseHost: "duimatbeahwfeghcviju.supabase.co", workspace: "default" }`.
-  - Live API write/read/delete test passed through `https://fashion-store-os-navy.vercel.app`.
-  - Runtime error scan found no production error/fatal logs in the last hour.
-- Production bootstrap recovery checks confirmed:
-  - `nslookup duimatbeahwfeghcviju.supabase.co 8.8.8.8` now resolves after restore.
-  - REST read probe to `public.fashion_store_os_documents` returns 200 and an empty document list after cleanup.
-  - Supabase security and performance advisors reported no lints.
-  - Handler smoke tests confirmed unconfigured storage returns 503, unreachable Supabase returns 502, and `/api/health` returns HTTP 200 with `ok: false` diagnostics.
-  - `npm.cmd run check` and `npm.cmd run build` passed after the recovery edits.
-  - Vercel production deployment is Ready and aliased to the live URL.
-  - Live smoke test wrote probe state/auth records, read them through bootstrap, reset them, and confirmed the Supabase table returned to 0 documents.
-- CRM channel intake checks confirmed:
-  - `npm.cmd run check` validates 13 JavaScript files after adding `api/_inbound.js` and `api/inbound.js`.
-  - `npm.cmd run build` passes.
-  - Local `/api/inbound` POST normalizes lowercase channel/follow-up values, persists to bootstrap state, and cleans up.
-  - Local browser smoke passed at 390px and 1280px: save channel message, update follow-up, route to inquiry, and no horizontal overflow.
-  - Live `/api/inbound` POST appeared in `/api/inbound` and `/api/bootstrap`, then cleanup returned state/auth to absent.
-  - Live `src/app.js` contains the channel intake queue and route action code.
-  - Vercel runtime error/fatal logs were clean after live smoke testing.
-- Git-connected owner activation checks confirmed:
-  - `npm.cmd run check` passed after the 2026-06-29 fast-forward and Supabase CLI install.
-  - `npm.cmd run launch:check` passed after the 2026-06-29 Supabase CLI install.
-  - Supabase CLI `2.108.0` is installed locally and available through `npx supabase`.
-  - Owner Supabase login can list project `fashion-store` (`elkpberfbhwbrkawklnk`) in `eu-west-3`.
-  - Old target `duimatbeahwfeghcviju` returned a Supabase 403 for API-key/link attempts from this owner workspace.
-  - `npx supabase db push` applied the pending migrations to `elkpberfbhwbrkawklnk`.
-  - Git-connected Vercel production env vars are present; secret values are not stored in repo docs.
-  - `origin/main` was fast-forwarded to `87b12d9`.
-  - Vercel production deployment from the Git-connected project is Ready.
-  - `/api/health` on the deployment URL, project alias, and `https://fashion-store-os.vercel.app` returns Supabase storage on `elkpberfbhwbrkawklnk.supabase.co`.
-  - Live activation round-trip passed: temporary manager signup, state write/read, manager export, cleanup, and final empty bootstrap.
-  - `git diff --check` passed with only expected CRLF normalization warnings.
-  - `npm.cmd run launch:check` passed after the readiness message update and now points to pilot UAT/cutover instead of pending Supabase activation.
+1. Owner: connect Neon to the Vercel project (`docs/owner-activation-runbook.md`).
+2. Owner, before about 2026-11-23: restore the legacy Supabase project and run Phase 021 UAT item 11.
+3. Owner: set the repo-local commit identity (`docs/release-lane.md`).
+4. Release A (`docs/cutover.md`), then the 14-day watch window (`docs/operations-runbook.md`).
+5. The Phase 021 UAT, then Release B.
+6. A pilot with a real store (`docs/pilot-uat.md`).
+7. Later: alerting, a custom domain if wanted, a Vercel plan decision for collaborator deploys, and connecting a real provider.
 
 ## UI/UX Expectations
 
@@ -461,54 +197,6 @@ Key design constraints from the owner:
 - Keep the original logo direction and make the display shape configurable.
 - Use app-native UI for popups, not browser-native dialogs.
 
-## Next Steps
-
-Suggested next work slices:
-
-1. Phase 020 production-readiness remediation — recommended before broader multi-user use
-   - Replace per-device workspace tenancy with account-bound server-owned membership while retaining the Phase 019 code bridge during migration.
-   - Add conflict-safe writes and offline recovery, then enforce role permissions in the API.
-   - Add abuse controls, bind provider traffic to the correct workspace, configure real channel secrets, and add CI/E2E coverage.
-   - The executable plan is `.planning/phases/020-production-readiness-remediation/PLAN.md`.
-
-2. Phase 017 post-launch verification
-   - The alias cutover and `v1.0.0` tag are complete; no custom domain or DNS change was used.
-   - Run `docs/production-smoke.md`, including the manager write path, Phase 018 recovery round trip, and Phase 019 second-device join/invite flow.
-   - Confirm a successful `/api/keepalive` firing under Vercel Settings → Cron Jobs. Registration and `CRON_SECRET` are already confirmed.
-   - Keep the 14-day watch window open through 2026-08-17 and triage per `docs/operations-runbook.md`.
-
-3. Real-store pilot UAT — waived, not done
-   - The owner elected on 2026-07-31 to skip pilot UAT and proceed to cutover.
-   - `docs/pilot-uat.md` is unexecuted. Its scenarios are reused as the post-cutover smoke set in `docs/cutover.md` Step 6.
-   - Consequence to carry: the production **write** path has not been validated by a real operator since the Supabase restore. Reads were verified on 2026-07-31; writes were not.
-
-4. Vercel ownership decision
-   - Owner-authored GitHub commits from `ADxZimmy` deploy successfully to production.
-   - Collaborator-authored deploys still fail on the Hobby plan with `TEAM_ACCESS_REQUIRED`.
-   - Decide whether to upgrade/move the Vercel project so collaborator-authored commits can deploy without owner intervention.
-
-5. Real channel integrations
-   - Wire WhatsApp Business API or Instagram Graph API into `/api/inbound`.
-   - Add provider verify tokens and HMAC secrets in Vercel, not in the repo.
-
-6. Responsive QA pass
-   - Check mobile, tablet, laptop, and desktop widths.
-   - Verify sidebar hover/collapse behavior at each width.
-   - Confirm no text overlap or broken cards.
-
-7. Form validation and empty states
-   - Tighten validation for orders, measurements, inventory, and staff creation.
-   - Add helpful empty states for a fresh workspace with no seed data.
-
-8. Accessibility and keyboard pass
-   - Verify keyboard navigation.
-   - Verify modal focus flow.
-   - Check labels, contrast, focus states, and Escape behavior.
-
-9. Test strategy
-   - Add lightweight automated checks if the project remains static.
-   - At minimum, keep using `npm.cmd run launch:check` and live `/api/health` checks before releases.
-
 ## Handover Update Protocol
 
 Every contributor should update this file after each meaningful slice, milestone, checkpoint, or handoff.
@@ -516,17 +204,18 @@ Every contributor should update this file after each meaningful slice, milestone
 When updating, add or change these sections:
 
 - `Last updated`
-- `Completed Work`
 - `Current Git State`
-- `Verification Already Run`
+- `Readiness Assessment`
+- `Verification`
 - `Next Steps`
 - `Open Questions`
 - `Known Risks`
+- `History`
 
 Use this checkpoint template:
 
 ```markdown
-### YYYY-MM-DD - Short Milestone Name
+### YYYY-MM-DD: Short Milestone Name
 
 Owner:
 Files changed:
@@ -539,28 +228,197 @@ Commit:
 
 ## Open Questions
 
-- The workspace user cap is currently 25; confirm the commercial plan and whether limits should be enforced per subscription tier.
+- A store allows 25 members including open invites; confirm the commercial plan and whether limits should vary by subscription tier.
 - Should Mo'ora Afrika branding assets be replaced with final production files later?
-- Vercel deployments should be driven by GitHub integration; owner-authored pushes now work, while collaborator-authored pushes need a Vercel access/plan decision.
-- What custom domain should be used for Phase 017 cutover, and who owns the DNS zone?
-- Which real provider app should connect first: WhatsApp Business API, Instagram Graph API, or a simpler inbound webhook bridge?
+- Should a store ever work from more than one device at once? Today it cannot, by design: there is no sync.
+- Collaborator-authored commits cannot deploy on the Vercel Hobby plan; upgrade, move the project, or keep owner-authored releases?
+- If a custom domain is wanted, which one, and who owns the DNS zone?
+- Which real provider should connect first: WhatsApp Business API, Instagram Graph API, or a simpler webhook bridge?
 
 ## Known Risks
 
-- JSON-file persistence is local-only; Vercel production uses Supabase document persistence.
-- localStorage can be cleared by the browser or overwritten by reset.
-- There is no migration system for future localStorage schema changes.
-- No automated browser regression suite exists yet.
-- Static HTML/CSS/JS is simple and fast, but larger features may need modularization.
-- Per-device workspace ids do not provide a cross-device workspace join path, so staff invites only work from a browser that already has the manager's workspace id.
-- Whole-document saves are last-write-wins and have no offline retry/conflict recovery; concurrent users can overwrite one another.
-- Staff permissions are not enforced on individual server operations; any authenticated workspace user can read/write the complete state document.
-- Public auth/workspace endpoints have no rate limiting, lockout, workspace quota, or bot protection.
-- The production webhook is signature-required but has no configured signing/verification secrets, and provider traffic defaults to the `default` workspace.
-- Security response headers beyond HSTS are not configured on the production frontend.
-- GitHub-triggered production deployments are wired and fire on `main`, but the current Git-connected project blocks collaborator-authored deploys with `TEAM_ACCESS_REQUIRED` on the Hobby plan.
-- Supabase projects can become inactive; `/api/health` detects upstream failure and a daily keepalive now reduces idle pauses, but backup/restore has not been rehearsed.
-- Server-backed auth hashes passwords and sessions and supports one-time recovery codes, but email verification, MFA, rate limiting, and server-enforced per-capability authorization remain production work.
+- Losing or wiping the shop device loses every change since the last backup, and a lost backup passphrase makes the backup unopenable by anyone. Managers must set up the backup on day one; downloaded copies are a second line.
+- Without persistent storage, the browser may evict records under storage pressure. The app warns when persistence was not granted.
+- Staff section access is UI-only.
+- Two devices working on one store diverge, with no merge.
+- Nothing about Phase 021 has run in production yet, and the first Release A deploy has no working deployment to roll back to: fix forward.
+- CI runs after a push but does not block the deploy; every push to `main` is a release.
+- Nothing pages anyone during an outage. A failed maintenance cron shows only in the Vercel dashboard.
+- Neon's Free plan suspends the database for the rest of the month if its compute allowance runs out.
+- Channel intake serves one store per deployment (`FASHION_STORE_INBOX_STORE_ID`).
+- Accepted from the legacy plane, and throttled: an unverified signup can claim a global email, and the "accept your invite first" sign-in hint reveals that an address has a pending invite.
+- No email verification or MFA.
+- The legacy Supabase project is restorable only until about 2026-11-23; UAT item 11 needs it before then.
+
+## History
+
+### 2026-10-19: Phase 021 Local-First Pivot, Steps 1 to 7
+
+Owner: `ADxZimmy`, decision of 2026-08-18. Plan, evidence, and UAT: `.planning/phases/021-local-first-pivot/`.
+
+- Step 0 (2026-08-18, in production): revoked the anon-key grant on the legacy documents table.
+- Step 1: identity restructured into global rows (accounts, stores, memberships, sessions, invites, recovery codes), with durable rate limits, request validation, per-store quotas, and retention sweeps. Existing accounts are not migrated: everyone signs up again at Release A.
+- Step 2: records became local-primary. Failed sessions lock the screen without touching data; offline unlock from a cached identity; a service-worker app shell; each device tagged with its store, with an explicit choice on mismatch. Workspace codes, the plaintext local-password fallback, and the dual storage paths were removed.
+- Step 3: records moved from localStorage to IndexedDB, with persistent storage requested, guarded writes that surface quota failures, logo downscaling, and a last-known-good snapshot.
+- Step 4: encrypted backup (a PBKDF2-derived AES-GCM key, the store id bound into the ciphertext) that runs automatically a few minutes after changes, restore onto a new device, and a plain file download and load.
+- Step 5: the transit inbox. Provider webhooks land in a server-side inbox for one bound store; devices pull, store, then acknowledge, which deletes the server copy.
+- 2026-10-02: Supabase paused production a second time, and the server database moved to Neon. One SQL adapter runs on Neon in production and on PGlite locally and in tests.
+- 2026-10-19, browser session: ten defects the suites had passed, among them a security hole where an offline sign-out left the session valid. All fixed and guarded.
+- Step 6: store deletion (the `delete-store` action), security headers with a strict CSP, a CI workflow, and a route parity guard.
+- Step 7: the model docs and smoke rewritten. Checking the docs against the code found staff on an empty device being offered business setup; fixed.
+
+The pivot resolves the 2026-07-31 readiness assessment's blockers by design: tenancy (global accounts), data integrity (one writer per store), authorization (the server holds no business data), abuse controls (durable rate limits), and channel binding (one bound store).
+
+### 2026-08-03: v1.0.0
+
+Released on the existing `https://fashion-store-os.vercel.app` alias from `8b5943e`, tag `v1.0.0`. The write path was never verified by a real operator, and the real-store pilot was waived on 2026-07-31. The Supabase project behind it paused for inactivity on 2026-07-30 (restored 2026-07-31) and again on 2026-10-02. Full record: `docs/cutover.md`, History.
+
+### Earlier Work, Pre-Pivot (2026-06 To 2026-08)
+
+These sections describe the pre-pivot model, in which business data lived on the server. They are kept as the record; none of them describes how the app works now.
+
+#### Pre-Pilot MVP Hardening (2026-06-29)
+
+- Clean-slate signup: `createSeedState()` in `src/app.js` now returns empty collections, so new workspaces start with no clients/orders/inventory/styles. The demo studio content was preserved as dev-only `createDemoState()` / `loadStudioDemo()` (exposed on `window` only on localhost/file), never shown to testers.
+- Removed backend/storage wording from the UI. The status indicator now shows neutral "All changes saved" / "Saved on this device" / "Getting your workspace ready"; the line naming `node server.js` and other "backend/browser storage" copy were replaced with owner-facing language.
+- Made sign-in server-authoritative: the client reads the bootstrap `authenticated` flag, clears any stale local session pointer when not authenticated, and `persistLocalAuth()` no longer stores the session at rest in server mode. A device without a valid HttpOnly session cookie always lands on the sign-in screen.
+- Verified with `node --check`, full `launch:check`, and a live server smoke (empty fresh bootstrap; signup→authed bootstrap with cookie vs `authenticated:false` without; reset cleanup). Not verified headlessly: the fresh-signup empty-dashboard browser render, left to pilot UAT Scenario 1.
+
+#### Studio OS Foundation
+
+- Created a Mo'ora Afrika Fashion House / Studio OS prototype.
+- Added core sections:
+  - Dashboard
+  - CRM Inbox
+  - Clients
+  - Measurements
+  - Garment Orders
+  - Style Recipes
+  - Material Reserve
+  - Production Flow
+  - Settings
+- Seeded local demo data for clients, inquiries, styles, inventory, orders, and usage records.
+- Added localStorage persistence for studio data.
+
+#### Visual Direction
+
+- Adapted the darker premium Mo'ora Afrika visual language from the provided reference images.
+- Kept the actual app layout functional instead of copying the reference table structure directly.
+- Sidebar behavior was refined to be fixed, collapsed by default, and expandable on hover while the main page adjusts instead of being covered.
+- Removed the lower sidebar account mini-box that was not requested.
+- Added appearance controls for the logo view:
+  - Square / 1:1
+  - Circle
+- Restored the logo handling so the brand mark remains part of the appearance system.
+
+#### Onboarding And Access Prototype
+
+- Added onboarding flow for first-time use.
+- Added sign-up and sign-in flows.
+- Added local prototype manager account creation.
+- Added sign-out flow.
+- Added staff access management in Settings.
+- Manager can create up to 2 staff accounts.
+- Staff accounts can be assigned access to specific app sections.
+- Staff navigation is filtered by assigned access.
+
+Important limitation at the time: this was prototype auth only. Passwords and staff records were stored in localStorage and were not production secure. Phase 021 deleted this path.
+
+#### Modal And Popup Cleanup
+
+- Replaced native browser/Windows dialogs with in-app modals.
+- Restock material now uses a styled app modal.
+- Staff deletion now uses a styled app confirmation modal.
+- Reset local data now uses a styled app confirmation modal.
+- App modal includes dialog semantics, close action, Escape close handling, and focused input for restocking.
+- Verified that no `window.prompt`, `window.confirm`, `alert`, `confirm`, or `prompt` calls remain in `index.html`, `src/app.js`, or `src/styles.css`.
+
+#### Backend Persistence Foundation
+
+- Added `server.js` as the first backend layer.
+- Added `package.json` with `start`, `dev`, and `check` scripts.
+- Added API endpoints:
+  - `GET /api/health`
+  - `GET /api/bootstrap`
+  - `GET /api/state`
+  - `PUT /api/state`
+  - `GET /api/auth`
+  - `PUT /api/auth`
+  - `DELETE /api/data`
+  - `GET /api/inbound`
+  - `POST /api/inbound`
+- Runtime state/auth JSON files are stored under `data/` and ignored by git.
+- Frontend now checks backend storage on boot.
+- Frontend saves state/auth to backend when available and to localStorage as fallback.
+- Reset workspace data clears backend records when available and browser records locally.
+- First launch is now truly brand-agnostic: if no profile exists, manager signup leads into business setup before the dashboard opens.
+- Added loading and storage-status UI using the UI/UX Pro Max guidance.
+
+#### Vercel Live Testing Deployment
+
+- Added `scripts/build.js` to create a clean `dist/` deployment bundle.
+- Added `vercel.json` with `node scripts/build.js` and `dist` as the output directory.
+- Added `.vercelignore` so planning docs, handover docs, runtime data, and large source prompt/deck files are not published.
+- Added `dist/` and `.vercel/` to `.gitignore`.
+- Deployed the app to Vercel production.
+- Verified the live HTML, JavaScript, and CSS assets return 200 responses.
+- Verified Vercel reports the deployment as Ready.
+- Earlier static-only deployment used browser storage fallback; the later production deployment included serverless API functions.
+
+#### Production Persistence Layer
+
+- Added Vercel serverless API routes under `api/`.
+- Added Supabase-backed state/auth document persistence helper.
+- Added `/api/health`, `/api/bootstrap`, `/api/state`, `/api/auth`, and `/api/data` production route equivalents.
+- Created dedicated Supabase project `Fashion Store OS` (`duimatbeahwfeghcviju`) in `us-east-1`.
+- Added Supabase migrations for `public.fashion_store_os_documents` and default-workspace API access.
+- Added `.env.example` and `docs/production-persistence.md`.
+- Updated `npm.cmd run check` to validate every JavaScript file, including API routes.
+- Set Vercel production env vars: `SUPABASE_URL`, `SUPABASE_REST_API_KEY`, and `FASHION_STORE_WORKSPACE_ID`.
+- Deployed production serverless functions from a clean non-Git staging copy made from the local Git commit to avoid Vercel's unverified Git-author block.
+- Verified live Supabase health, bootstrap, write, read, reset, and clean table state.
+
+#### Mobile Navigation Drawer
+
+- Replaced the desktop-style mobile header/nav with a compact mobile appbar and off-canvas navigation drawer.
+- Added hamburger open/close controls, backdrop close, Escape close, and drawer focus handling.
+- Live-audited the production mobile viewport at `https://fashion-store-os-navy.vercel.app`; the mobile appbar/drawer assets were present and no horizontal overflow was detected.
+
+#### Production Bootstrap Recovery
+
+- Diagnosed live `/api/bootstrap` returning HTTP 500 while `/api/health` incorrectly reported healthy storage.
+- Confirmed the documented Supabase ref `duimatbeahwfeghcviju` existed but had become `INACTIVE`, causing DNS/upstream fetch failures.
+- Restored the Supabase project, reapplied the committed document-table/RLS migrations, and verified REST reads return 200 with the current publishable key.
+- Updated Vercel production env vars for `SUPABASE_URL`, `SUPABASE_REST_API_KEY`, and `FASHION_STORE_WORKSPACE_ID`.
+- Updated API health to perform a real Supabase read probe and report `supabase-unreachable` when the upstream storage layer is down.
+- Updated API error handling so bootstrap/state/auth return safe storage errors instead of a generic 500 for Supabase failures.
+- Deployed the recovered production build from commit `bbb4581`.
+- Verified live `/api/health`, `/api/bootstrap`, API write/read/reset, empty post-test Supabase table, and clean Vercel runtime logs.
+
+#### CRM Channel Intake
+
+- Added `channelMessages` to the workspace state model.
+- Added a CRM Inbox channel message intake form for WhatsApp, Instagram, Website, Referral, and Walk-in sources.
+- Added a channel intake queue with source, sender/contact, message, desired garment, occasion, deadline, budget, routing status, and follow-up state.
+- Added route-to-inquiry, archive, reopen, and follow-up update actions.
+- Added `/api/inbound` for local and Vercel production so same-origin JSON posts can append inbound channel messages to persisted state.
+- Updated the dashboard demand metric to count raw channel messages as new leads until they are routed.
+- Deployed the CRM channel intake build from commit `80bb19a`.
+- Verified local endpoint behavior, local mobile/desktop browser flow, live `/api/inbound`, live asset presence, Supabase cleanup, and Vercel runtime logs.
+
+#### Owner Activation / Git-Connected Supabase Persistence
+
+- Installed Supabase CLI `2.108.0` as a local dev dependency and verified `npm.cmd run check` plus `npm.cmd run launch:check`.
+- Completed owner Vercel login and Supabase login on 2026-06-29.
+- Confirmed the old runbook target `duimatbeahwfeghcviju` returned a Supabase 403 for this owner account, so it should be treated as historical context for the older deployment lane.
+- Activated the accessible owner Supabase project `fashion-store` (`elkpberfbhwbrkawklnk`, `eu-west-3`) for the Git-connected Vercel production lane.
+- Linked the local Supabase CLI to `elkpberfbhwbrkawklnk` and applied all pending migrations, including document storage and the workspace/audit/channel-delivery hardening migration.
+- Set the Git-connected Vercel production env vars for Supabase persistence and webhook safety without storing secret values in the repo.
+- Promoted `codex/backend-foundation` to `main` at commit `87b12d9`.
+- Verified the Ready production deployment through the Git-connected Vercel project and stable aliases.
+- Verified `/api/health` is green on the deployment URL, `https://fashion-store-os-sanuske2-2147s-projects.vercel.app`, and `https://fashion-store-os.vercel.app`.
+- Ran a live activation smoke: temporary manager signup, state write/read, manager export, cleanup, and final empty bootstrap all passed.
+- Updated `scripts/launch-readiness.js` so the launch gate now says Supabase activation is complete and the remaining gate is live health plus pilot UAT before public cutover.
 
 ## GSD Hybrid Skill Transfer
 
