@@ -170,7 +170,7 @@ Record: date, reporter, device and browser, whether the device was online, the s
 3. Read Vercel Runtime Logs for 5xx, and the latest Cron Jobs result.
 4. If the database is the problem: check the Neon console for the project's status and compute usage, and that `DATABASE_URL` is still set in Vercel.
 5. Remember that signed-in devices keep working offline. Tell shops not to sign out or clear site data until sign-in works again.
-6. If a release caused it, promote the previous known-good deployment in Vercel. For the first Release A deploy there is none; fix forward (see `docs/cutover.md`, Rollback).
+6. If a release caused it, promote the previous known-good deployment in Vercel. For the first Release A deploy, prefer fixing forward: its predecessor is the pre-pivot build, which runs the old model and works only while the legacy Supabase project is active (see `docs/cutover.md`, Rollback).
 7. Record the incident below.
 
 ## Incident Log
@@ -178,4 +178,4 @@ Record: date, reporter, device and browser, whether the device was online, the s
 | Date found | What happened | Resolution |
 | --- | --- | --- |
 | 2026-07-30 | Supabase free project paused after about a month idle; `/api/health` reported `supabase-unreachable`; readiness stayed green. | Restored 2026-07-31. Daily keepalive cron added. |
-| 2026-10-02 | Supabase paused again despite the keepalive cron; the project hostname stopped resolving. | Server database moved to Neon (Phase 021). The legacy project is decommissioned in Release B. |
+| 2026-10-02 | Supabase paused again despite the keepalive cron; the project hostname stopped resolving. | Server database moved to Neon (Phase 021). The owner restored the legacy project by 2026-10-19 for Phase 021 UAT item 11, which brought the pre-pivot site back until Release A. The legacy project is decommissioned in Release B. |

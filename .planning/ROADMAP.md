@@ -4,7 +4,7 @@
 
 - Phase 021: Local-first pivot.
   Outcome: Each device owns its business data locally; the server database (Neon Postgres since 2026-10-02) holds identity (global accounts, memberships, sessions, invites, recovery codes), a transit inbox for provider webhooks, and opaque encrypted backups, and nothing else. Offline unlock, encrypted backup and restore onto a new device, and durable identity-plane rate limits ship with it.
-  Status: Steps 0 to 7 built as of 2026-10-19. Step 0 (hotfix) reached production on 2026-08-18; steps 1 to 7 are on branch `phase-021-release-a`, not pushed. The server database moved from Supabase to Neon on 2026-10-02 after a second free-tier pause took production down, and production stays down until Release A ships. Remaining, in order: the owner adds Neon to the Vercel project (`docs/owner-activation-runbook.md`); the owner runs UAT item 11 on the legacy Supabase project before about 2026-11-23; Release A (`docs/cutover.md`); the Phase 021 UAT; Release B.
+  Status: Steps 0 to 7 built as of 2026-10-19. Step 0 (hotfix) reached production on 2026-08-18; steps 1 to 7 are on branch `phase-021-release-a`, not pushed. The server database moved from Supabase to Neon on 2026-10-02 after a second free-tier pause took production down, and production stays down until Release A ships. On 2026-10-19 the owner connected Neon (Frankfurt), and UAT item 11's first confirmation passed: the legacy Supabase project holds no business data and no accounts. Remaining, in order: Release A (`docs/cutover.md`); the Phase 021 UAT; Release B.
 
 ## Next
 

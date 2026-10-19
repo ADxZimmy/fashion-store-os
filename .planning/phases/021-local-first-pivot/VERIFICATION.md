@@ -49,6 +49,18 @@ First run of the client flows from steps 2 to 5 in a real browser (the dev serve
 
 Not exercised: the oversized-backup refusal, logo downscaling (needs a file upload), the plain file export (a download), persistent storage being granted (this browser declined, and the "Evictable" warning showed as designed), and the transit inbox beyond an empty pull.
 
+## UAT item 11, first confirmation, 2026-10-19
+
+**Passed.** The owner restored the legacy Supabase project `fashion-store` (`elkpberfbhwbrkawklnk`), which then reported `ACTIVE_HEALTHY`. It was queried read-only through `supabase db query --linked` (the Management API), as `postgres`: that role owns the tables and bypasses row-level security, and RLS is not forced on any of them, so the counts are complete.
+
+- `fashion_store_os_documents`: **0 rows**, so no `state` documents (no business data) and no `auth` documents (no accounts).
+- `fashion_store_os_workspaces`: 2 rows, both test registrations from 2026-06-29, neither with documents: `default` ("Default workspace") and `ws-test-1782732395-aaa`.
+- Audit events, channel delivery events, workspace codes, Supabase Auth users, and storage objects: 0 each.
+- Table statistics read zero everywhere, even for the 2 workspace rows, so the pause and restore reset them; they are not evidence either way.
+- The orphaned test workspace recorded on 2026-08-03 (STATE, Verification Snapshot) is gone too. Nothing in this repo records what removed it; the outcome is the same.
+
+Caveat: while the project is active, the pre-pivot production build serves from it again, so new rows could appear until Release A replaces that build. `docs/cutover.md` Step 0 re-runs the count just before the push. The second confirmation, before Release B, still applies.
+
 ## Step 6, 2026-10-19
 
 Built and committed as `2ebdb0c`. Evidence:

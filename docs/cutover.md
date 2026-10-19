@@ -21,8 +21,8 @@ Ordered checklist for releasing Phase 021 (the local-first pivot) to production 
 | # | Prerequisite | How to confirm |
 |---|---|---|
 | 1 | Neon added to the Vercel project **[OWNER]** | `vercel env ls` shows `DATABASE_URL`, unprefixed, for Production only. **Met on 2026-10-19** (`docs/owner-activation-runbook.md`). |
-| 2 | `CRON_SECRET` set in Vercel | Settings, Environment Variables. Set since 2026-08-02; confirm it is still there. |
-| 3 | Legacy Supabase holds nothing real **[OWNER]** | Phase 021 UAT item 11. Restore the paused project once (Supabase dashboard), run the query in that item, confirm only test content. Must happen before about 2026-11-23, when the restore window may close. |
+| 2 | `CRON_SECRET` set in Vercel | Settings, Environment Variables. Set since 2026-08-02; still present on 2026-10-19. |
+| 3 | Legacy Supabase holds nothing real **[OWNER]** | Phase 021 UAT item 11. **Met on 2026-10-19:** the restored project's documents table is empty (Phase 021 VERIFICATION). Step 0 re-runs the count just before the push. |
 | 4 | Branch reviewed | `phase-021-release-a` merged into `main` locally and `npm.cmd run launch:check` green on the result. |
 
 Prerequisite 3 gates the identity cutover. If it finds a real account or real records, stop: the release needs a migration plan first.
@@ -35,6 +35,14 @@ npm.cmd run release:preflight
 ```
 
 Both must pass. `release:preflight` fails on a dirty worktree and warns when the latest commit is not owner-authored, which would not deploy.
+
+Then re-check the legacy project, because the pre-pivot build keeps serving from it until this release replaces that build. With the Supabase CLI logged in:
+
+```powershell
+npx supabase db query --linked "select count(*) from public.fashion_store_os_documents"
+```
+
+**Pass:** `0`. Anything else means someone used the old build since the UAT item 11 check: stop and inspect those rows before releasing.
 
 ## Step 1: Push and watch the build [OWNER]
 
@@ -79,7 +87,7 @@ Follow **Post-Launch Support** in `docs/operations-runbook.md`.
 
 ## Rollback
 
-- **First Release A deploy:** there is **no working deployment to roll back to.** The previous production build is the pre-pivot one, and it depends on the paused Supabase project, so promoting it restores nothing. Fix forward on `main`.
+- **First Release A deploy:** prefer fixing forward on `main`. The previous production build is the pre-pivot one, and it works only while the legacy Supabase project is active (restored for UAT item 11 on 2026-10-19; a free project pauses again after about a week idle). Promoting it does bring a working site back, but on the old server-data model: records made under the new build stay in each browser's IndexedDB, which the old build cannot read, and reappear when the new build returns. With no real users yet, use the promotion only to get a working site back quickly while the fix is made.
 - **Later deploys:** promote the previous known-good deployment in Vercel. Do not reset Git.
 - **Schema:** forward-only. Never edit an applied file in `db/migrations/`; add a new one. Neon can restore the database to an earlier point within its history window by branching from a timestamp; the other projects on this Neon account show a 6-hour window, so confirm the new project's setting once it exists. This covers identity, backups, and the inbox, never device records.
 - Record any rollback in the incident log of `docs/operations-runbook.md`.
@@ -109,7 +117,7 @@ Fill this in at release and keep it in the repo:
 | `/api/readiness` | |
 | `/api/state` returns 410 | |
 | Smoke test (`docs/production-smoke.md`) | |
-| Legacy Supabase check (UAT item 11) | |
+| Legacy Supabase check (UAT item 11) | Passed 2026-10-19: 0 documents, 2 test workspace rows. Recheck at Step 0: |
 | Operator | |
 
 ## History: v1.0.0 Cutover (2026-08-03)

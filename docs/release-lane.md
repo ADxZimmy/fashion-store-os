@@ -52,4 +52,4 @@ The `SUPABASE_*` and `FASHION_STORE_WORKSPACE_ID` variables are unused since Pha
 
 Promote the previous known-good deployment in Vercel. Do not reset the Git branch; revert with a new commit so the release trail stays auditable. Schema changes are forward-only: add a new migration rather than editing an applied one.
 
-One exception: the first Phase 021 deployment has no working predecessor, because the pre-pivot build depends on the paused Supabase project. For that release, fix forward. See `docs/cutover.md`.
+One exception: the first Phase 021 deployment's predecessor is the pre-pivot build, which works only while the legacy Supabase project is active and runs the old model. For that release, prefer fixing forward. See `docs/cutover.md`, Rollback.

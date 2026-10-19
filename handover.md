@@ -71,9 +71,9 @@ It runs the syntax check, every test suite, the UX and security audits, and the 
 | Production branch | `main`; every push deploys |
 | Release owner | `ADxZimmy`. On the Hobby plan, deploys of collaborator-authored commits (`NnazimuzoO`) fail with `TEAM_ACCESS_REQUIRED`. |
 
-**Status on 2026-10-19: production is down.** `main` still runs the pre-pivot build, which depends on the Supabase project `fashion-store` (`elkpberfbhwbrkawklnk`); that project paused for inactivity on 2026-10-02. No real store uses the app, so nothing real is affected. Production returns with Release A, on Neon.
+**Status on 2026-10-19: production is up again on the pre-pivot build.** `main` still runs that build, which depends on the Supabase project `fashion-store` (`elkpberfbhwbrkawklnk`). The project paused for inactivity on 2026-10-02, and the owner restored it for UAT item 11, so `/api/health` reports `storage: "supabase"` again. It will pause again after about a week idle. No real store uses the app. Release A replaces this build with the local-first one on Neon.
 
-Release A needs, in order: the legacy Supabase check in Phase 021 UAT item 11 (owner, before about 2026-11-23), then `docs/cutover.md`.
+Release A is unblocked: Neon is connected and Phase 021 UAT item 11's first confirmation passed on 2026-10-19 (the legacy Supabase project holds no business data and no accounts). Next is `docs/cutover.md`. The legacy project is active again, so the pre-pivot build serves until Release A replaces it.
 
 Database: Neon project `steep-smoke-31370127` (Vercel resource `neon-champagne-river`), Frankfurt, PostgreSQL 18.6, connected 2026-10-19 and still empty. `DATABASE_URL` is set for Production only, as a write-only secret. Functions are pinned to Frankfurt (`fra1`) in `vercel.json` to sit next to it. The Neon organization is managed by Vercel: open it from Vercel's Storage tab.
 
@@ -81,7 +81,7 @@ Database: Neon project `steep-smoke-31370127` (Vercel resource `neon-champagne-r
 
 | Release | State |
 | --- | --- |
-| v1.0.0, 2026-08-03 | Released on the Vercel alias; down since the 2026-10-02 Supabase pause. Record: `docs/cutover.md`, History. |
+| v1.0.0, 2026-08-03 | Released on the Vercel alias. Down from the 2026-10-02 Supabase pause until the owner restored the project (by 2026-10-19). Record: `docs/cutover.md`, History. |
 | Release A (Phase 021, suggested tag `v2.0.0`) | Built, not released. Procedure: `docs/cutover.md`. |
 | Release B | After the Phase 021 UAT: deletes the retired endpoints and decommissions the legacy Supabase project. |
 
@@ -172,13 +172,12 @@ Full record: `.planning/phases/021-local-first-pivot/VERIFICATION.md`. Earlier r
 
 ## Next Steps
 
-1. Owner, before about 2026-11-23: restore the legacy Supabase project and run Phase 021 UAT item 11.
-2. Release A (`docs/cutover.md`), then the 14-day watch window (`docs/operations-runbook.md`).
-3. The Phase 021 UAT, then Release B.
-4. A pilot with a real store (`docs/pilot-uat.md`).
-5. Later: alerting, a custom domain if wanted, a Vercel plan decision for collaborator deploys, and connecting a real provider.
+1. Release A (`docs/cutover.md`), then the 14-day watch window (`docs/operations-runbook.md`).
+2. The Phase 021 UAT, then Release B.
+3. A pilot with a real store (`docs/pilot-uat.md`).
+4. Later: alerting, a custom domain if wanted, a Vercel plan decision for collaborator deploys, and connecting a real provider.
 
-Done on 2026-10-19: Neon connected to the Vercel project (`docs/owner-activation-runbook.md`), and this checkout's repo-local commit identity set to `ADxZimmy`.
+Done on 2026-10-19: Neon connected to the Vercel project (`docs/owner-activation-runbook.md`), this checkout's repo-local commit identity set to `ADxZimmy`, and Phase 021 UAT item 11's first confirmation passed.
 
 ## UI/UX Expectations
 
@@ -244,14 +243,14 @@ Commit:
 - Without persistent storage, the browser may evict records under storage pressure. The app warns when persistence was not granted.
 - Staff section access is UI-only.
 - Two devices working on one store diverge, with no merge.
-- Nothing about Phase 021 has run in production yet, and the first Release A deploy has no working deployment to roll back to: fix forward.
+- Nothing about Phase 021 has run in production yet. The first Release A deploy's only rollback target is the pre-pivot build, which runs the old model and works only while the legacy Supabase project is active, so fix forward by preference.
 - CI runs after a push but does not block the deploy; every push to `main` is a release.
 - Nothing pages anyone during an outage. A failed maintenance cron shows only in the Vercel dashboard.
 - Neon's Free plan suspends the database for the rest of the month if its compute allowance runs out.
 - Channel intake serves one store per deployment (`FASHION_STORE_INBOX_STORE_ID`).
 - Accepted from the legacy plane, and throttled: an unverified signup can claim a global email, and the "accept your invite first" sign-in hint reveals that an address has a pending invite.
 - No email verification or MFA.
-- The legacy Supabase project is restorable only until about 2026-11-23; UAT item 11 needs it before then.
+- The legacy Supabase project is active again, so the pre-pivot build accepts sign-ups and writes there until Release A replaces it. `docs/cutover.md` Step 0 re-checks that its documents table is still empty.
 
 ## History
 

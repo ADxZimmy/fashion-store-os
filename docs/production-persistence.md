@@ -85,7 +85,7 @@ No secret belongs in the repo. The security audit flags anything that looks like
 
 ## Legacy Supabase Project
 
-The pre-pivot database is Supabase project `elkpberfbhwbrkawklnk` (`fashion-store`, `eu-west-3`). It is paused and restorable for 90 days from its pause date, so until no earlier than about 2026-11-23. Its five applied migrations stay in `supabase/migrations/` as the record of that project. Release B decommissions it after Phase 021 UAT item 11 confirms it holds nothing real. Nothing in the new build reads it.
+The pre-pivot database is Supabase project `elkpberfbhwbrkawklnk` (`fashion-store`, `eu-west-3`). The owner restored it from its 2026-10-02 pause by 2026-10-19 for Phase 021 UAT item 11, whose first confirmation passed that day: its documents table is empty, so it holds no business data and no accounts. While it is active, the pre-pivot production build serves from it again, until Release A replaces that build. If it pauses again, it stays restorable for 90 days from that pause. Its five applied migrations stay in `supabase/migrations/` as the record of that project. Release B decommissions it after UAT item 11's second confirmation. Nothing in the new build reads it.
 
 ## Vercel Project
 
