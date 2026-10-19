@@ -42,6 +42,8 @@ Server database: **Neon Postgres**, changed from Supabase on 2026-10-02 after Su
 
 6. **Cleanup and re-homed hardening.** Remove `GET/PUT /api/state`; shrink `/api/data` to account/store deletion (no business export — that is now the local file download built in step 4); retire `/api/workspace-code` and `api/_workspace_codes.js`; rewrite health and keepalive to probe the identity tables (both currently probe the documents table via `probeStorage`); give readiness the real connectivity probe it lacks today (it is configuration-only); add CSP and standard security headers; add a CI workflow that runs `npm run check` and `npm run launch:check` on every push (the push-is-release lane finally gets a post-push gate); update `scripts/security-audit.js` assertions and `scripts/launch-readiness.js` messaging in the same commits as the code they assert on. The legacy schema (`fashion_store_os_documents` with every legacy password hash, `fashion_store_os_workspaces`, `fashion_store_os_workspace_codes`, and the dead audit and channel-delivery tables) lives only in the old Supabase project; none of it was ever created on Neon. Release B therefore decommissions that project, after UAT item 11 confirms it holds nothing real, instead of dropping tables. Mirror every route change in `server.js`.
 
+   **Built 2026-10-19, with one deviation.** Store deletion is a `delete-store` action on `/api/session` rather than `DELETE /api/data`: every identity action already dispatches there, so it inherits the same gates, throttles, and test harness, and `/api/data` stays 410 until Release B deletes it. The action is manager-only, asks for the password again, and runs as one transaction (store, accounts that belong only to it, sessions, invites, backup, inbox, audit). Security headers live in `api/_security_headers.js`; `vercel.json` carries a copy that a test checks value for value. CI runs `npm run launch:check` on every push via `.github/workflows/ci.yml`; it does not block Vercel's deploy. Route parity between `api/` and `server.js` is checked by the guard suite.
+
 7. **Rewrite the model docs and the smoke.** `docs/production-persistence.md` (retire or rewrite), `docs/production-smoke.md` (new smoke: local persistence, offline unlock, backup/restore round trip, recovery round trip, inbox pull), `docs/cutover.md`, `docs/operations-runbook.md` (keepalive rationale rewritten: the cron resets the idle-pause timer regardless of user traffic — the pivot's risk is someone deleting it as "obsolete", because a paused project now blocks the entire identity plane), `docs/release-lane.md`, `docs/channel-integrations.md`, `docs/pilot-uat.md` and `docs/owner-activation-runbook.md` (rewrite or retire with a superseded note — both exercise server-persistence flows), `handover.md`, plus ROADMAP/STATE. UAT per `UAT.md`.
 
 ## Release Sequencing
@@ -56,7 +58,7 @@ Additive first, destructive last. Per-endpoint disposition in Release A:
 | `GET/PUT /api/state` | `410 Gone` | Deleted |
 | `GET/POST /api/inbound` | `410 Gone` | Deleted |
 | `GET /api/data` | `410 Gone` (export is local now) | Deleted |
-| `DELETE /api/data` | Rewritten: account/store deletion | — |
+| `DELETE /api/data` | `410 Gone`; store deletion moved to the `delete-store` action on `/api/session` (see step 6) | Deleted |
 | `/api/workspace-code` | `410 Gone` (global sign-in replaces it) | Deleted; table dropped |
 | `/api/channel-webhook` | Rewritten: writes to inbox | — |
 | `/api/health` | Rewritten: real database round trip | Unchanged |

@@ -639,6 +639,40 @@ async function changePassword(db, request, body) {
   return { status: 200, payload };
 }
 
+// The server half of the reset split (Phase 021 step 6). Erasing a device's
+// records is local and lives in the client; this removes the store from the
+// server: the store, every account that belongs only to it, their sessions,
+// pending invites, the encrypted backup, undelivered inbox messages, and the
+// identity audit trail. Records on devices are untouched, deliberately: the
+// two operations used to be one button that could half-fail across two
+// systems.
+//
+// Manager-only and password-confirmed. A signed-in session alone is not
+// enough for an irreversible action, because the shop device is shared and may
+// be left unlocked; the password check shares the change-password throttle so
+// it cannot become a guessing oracle either.
+async function deleteStore(db, request, body) {
+  const { account, store } = await requireManager(db, request);
+  const currentPassword = String(body.currentPassword || "");
+
+  await consumeRateLimit(db, "password:account", account.id);
+  if (!verifyPasswordRecord(accountPasswordRecord(account), currentPassword)) {
+    throwPublicError("Current password does not match.", 401);
+  }
+
+  const memberships = await db.listMembershipsByStore(store.id);
+  await db.deleteStoreCascade(
+    store.id,
+    memberships.map((membership) => membership.account_id),
+  );
+
+  return {
+    status: 200,
+    payload: { ok: true, authenticated: false, identity: null, storeDeleted: true },
+    clearSession: true,
+  };
+}
+
 // Recovery codes are the way back in when a password is lost. Deliberately
 // NOT time-limited: a recovery code is only ever used long after it was
 // issued, so a TTL would reliably leave it dead at the moment it is needed.
@@ -926,6 +960,7 @@ module.exports = {
   createRecoveryCode,
   createStaff,
   deleteStaff,
+  deleteStore,
   getIdentity,
   reactivateStaff,
   redeemRecoveryCode,

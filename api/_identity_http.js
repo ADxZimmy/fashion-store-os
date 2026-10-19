@@ -24,6 +24,7 @@ const ACTIONS = Object.assign(Object.create(null), {
   "suspend-staff": identity.suspendStaff,
   "reactivate-staff": identity.reactivateStaff,
   "delete-staff": identity.deleteStaff,
+  "delete-store": identity.deleteStore,
 });
 
 async function handleSessionAction(db, request, response, body) {

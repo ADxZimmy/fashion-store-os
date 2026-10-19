@@ -65,7 +65,10 @@ const ACCOUNT_COLUMNS = [
   "updated_at",
 ];
 
-function createPgIdentityStore({ query }) {
+// `transaction([[text, params], ...])` runs statements atomically. It is
+// optional only so a read-only caller can omit it; deleteStoreCascade needs it
+// and refuses to run without it rather than deleting piecemeal.
+function createPgIdentityStore({ query, transaction }) {
   if (typeof query !== "function") {
     throw new Error("createPgIdentityStore needs a query(text, params) function");
   }
@@ -137,6 +140,30 @@ function createPgIdentityStore({ query }) {
     insertStore: (row) => insert(T.stores, ["id", "name", "created_by", "created_at", "updated_at"], row),
     getStore: (id) => one(`select * from ${T.stores} where id = $1`, [id]),
     deleteStore: (id) => query(`delete from ${T.stores} where id = $1`, [id]),
+
+    // Deletes a store and everything that belongs only to it, in one
+    // transaction: the store row (cascading memberships, invites, the backup,
+    // and inbox messages), every listed account left with no other membership
+    // (cascading their sessions), and the store's audit trail. All or nothing,
+    // because a half-finished delete could leave a store with no account that
+    // can sign in to finish the job. The membership guard on the account delete
+    // means an account that also belongs to another store is never removed,
+    // even if it was listed.
+    deleteStoreCascade: async (storeId, accountIds) => {
+      if (typeof transaction !== "function") {
+        throw new Error("deleteStoreCascade requires a transactional driver");
+      }
+      await transaction([
+        [`delete from ${T.stores} where id = $1`, [storeId]],
+        [
+          `delete from ${T.accounts}
+           where id in (select jsonb_array_elements_text($1::jsonb))
+             and not exists (select 1 from ${T.memberships} where account_id = ${T.accounts}.id)`,
+          [JSON.stringify(accountIds || [])],
+        ],
+        [`delete from ${T.audit} where store_id = $1`, [storeId]],
+      ]);
+    },
 
     // --- Memberships ----------------------------------------------------
     listMembershipsByAccount: (accountId) =>

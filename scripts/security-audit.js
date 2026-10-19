@@ -47,6 +47,9 @@ function runAudit() {
     ["No server-side business state writes", !stateSource.includes("setDocument")],
     ["Database credentials come from the environment", dbSource.includes("process.env.DATABASE_URL")],
     ["No Supabase client left in runtime code", runtimeSources.every((source) => !/supabaseRequest|SUPABASE_SERVICE_ROLE_KEY|\.supabase\.co/.test(source))],
+    // Presence only; scripts/test-local-first.js checks the policy itself and
+    // that vercel.json matches api/_security_headers.js value for value.
+    ["Production sends a Content Security Policy", fs.readFileSync(path.join(rootDir, "vercel.json"), "utf8").includes("Content-Security-Policy")],
     ["Release owner lane mentions ADxZimmy", fs.readFileSync(path.join(rootDir, "scripts/release-preflight.js"), "utf8").includes("ADxZimmy")],
   ];
 

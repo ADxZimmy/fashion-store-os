@@ -6,6 +6,7 @@ const fs = require("fs/promises");
 // used to serve static files now.
 const { sweepIdentity } = require("./api/_identity");
 const { readBackup, removeBackup, writeBackup } = require("./api/_backup");
+const { SECURITY_HEADERS } = require("./api/_security_headers");
 const { handleIdentityGet, handleSessionAction } = require("./api/_identity_http");
 const { openDevDatabase } = require("./db/pglite");
 const { acceptMessages, acknowledgeMessages, pullMessages } = require("./api/_inbox");
@@ -38,6 +39,11 @@ const mimeTypes = {
 };
 
 const server = http.createServer(async (request, response) => {
+  // Same headers production sends (vercel.json carries a checked copy), set
+  // before routing so every response gets them, error responses included.
+  for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
+    response.setHeader(name, value);
+  }
   try {
     await routeRequest(request, response);
   } catch (error) {

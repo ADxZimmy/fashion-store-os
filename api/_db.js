@@ -76,6 +76,6 @@ const driver = {
   },
 };
 
-const db = createPgIdentityStore({ query: driver.query });
+const db = createPgIdentityStore({ query: driver.query, transaction: driver.transaction });
 
 module.exports = { databaseSummary, db, driver };

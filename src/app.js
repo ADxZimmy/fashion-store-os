@@ -3659,7 +3659,37 @@ function renderAccountSecurityPanel() {
         </div>
       </form>
       ${renderRecoveryCodePanel(user)}
+      ${user.role === "manager" ? renderDeleteStorePanel() : ""}
     </section>
+  `;
+}
+
+// The server half of the reset split. Erasing this device's records is a
+// separate button in "This device's records"; this deletes the store itself,
+// and with it every team account, the encrypted backup, and pending messages.
+// The password is asked again because the shop device is shared and may be
+// left unlocked.
+function renderDeleteStorePanel() {
+  return `
+    <div class="panel-header">
+      <div>
+        <h2>Delete this store</h2>
+        <p>Permanently deletes the store from our servers: every team account, pending invites, the encrypted backup, and undelivered messages. This cannot be undone.</p>
+        <p class="muted small-text">Records on this device are not deleted, but once the store is gone nobody can sign in to open them here. Download a copy first if you might need them; it can be loaded into a new store later.</p>
+      </div>
+    </div>
+    <div class="button-row">
+      <button class="btn small secondary" type="button" data-action="export-records">Download a copy first</button>
+    </div>
+    <form id="deleteStoreForm" class="form-grid">
+      <label class="field">
+        <span>Your password</span>
+        <input name="currentPassword" type="password" autocomplete="current-password" required>
+      </label>
+      <div class="field">
+        <button class="btn small danger" type="submit">Delete store permanently</button>
+      </div>
+    </form>
   `;
 }
 
@@ -4104,6 +4134,7 @@ function wireEvents() {
     if (form.id === "staffForm") handleStaffSubmit(form);
     if (form.id === "staffInviteForm") handleStaffInviteSubmit(form);
     if (form.id === "passwordForm") handlePasswordSubmit(form);
+    if (form.id === "deleteStoreForm") handleDeleteStoreSubmit(form);
     if (form.dataset.staffAccess) handleStaffAccessSubmit(form);
     if (form.id === "channelMessageForm") handleChannelMessageSubmit(form);
     if (form.id === "inquiryForm") handleInquirySubmit(form);
@@ -4459,6 +4490,29 @@ async function handleStaffInviteSubmit(form) {
   });
   if (result?.invite) {
     lastInviteResult = result.invite;
+    render();
+  }
+}
+
+async function handleDeleteStoreSubmit(form) {
+  if (currentUser()?.role !== "manager") {
+    showToast("Only a manager can delete the store.");
+    return;
+  }
+  if (offlineMode) {
+    showToast("Deleting the store needs a connection.");
+    return;
+  }
+  const currentPassword = String(new FormData(form).get("currentPassword") || "");
+  const result = await runServerAuthAction("delete-store", { currentPassword }, {
+    successMessage: "The store was deleted. Records on this device were kept.",
+  });
+  if (result?.storeDeleted) {
+    // The backup went with the store. Drop the key and anything queued, so
+    // nothing tries to upload to a store that no longer exists.
+    cancelAutoBackup();
+    clearBackupPending();
+    clearCachedBackupKey();
     render();
   }
 }

@@ -37,7 +37,10 @@ if (failed) {
 } else {
   console.log("");
   console.log("PASS Launch readiness checks completed locally.");
-  console.log("Local gates only. Pilot UAT was waived on 2026-07-31, so re-check live /api/health and follow docs/cutover.md before any DNS change.");
+  // These gates run against PGlite and static analysis. What they cannot
+  // prove is the live deployment: that Neon is reachable, that the build
+  // applied the schema, and that the client flows work in a real browser.
+  console.log("Local gates only. After a deploy, check live /api/health and /api/readiness, then run docs/production-smoke.md.");
 }
 
 function runNpm(args) {

@@ -170,6 +170,57 @@ ok("restore cancels anything queued against the replaced records", /cancelAutoBa
 ok("no em-dashes anywhere in the app", !/—|&mdash;/.test(appSource));
 ok("the erase dialog no longer denies the backup exists", !/There is no server copy to restore from/.test(appCode));
 
+// --- Security headers (step 6) ---------------------------------------------
+// vercel.json cannot import code, so it carries a copy; these fail the moment
+// the copy and the source of truth disagree.
+{
+  const { SECURITY_HEADERS, PRODUCTION_ONLY_HEADERS, CONTENT_SECURITY_POLICY } = require(path.join(rootDir, "api/_security_headers.js"));
+  const vercel = JSON.parse(fs.readFileSync(path.join(rootDir, "vercel.json"), "utf8"));
+  const block = (vercel.headers || []).find((entry) => entry.source === "/(.*)");
+  const deployed = Object.fromEntries((block ? block.headers : []).map((header) => [header.key, header.value]));
+  const expected = { ...SECURITY_HEADERS, ...PRODUCTION_ONLY_HEADERS };
+  const drift = Object.keys(expected).filter((name) => deployed[name] !== expected[name]);
+  ok("vercel.json carries every security header, value for value", drift.length === 0, drift.join(","));
+  ok("production keeps the no-store cache policy", deployed["Cache-Control"] === "no-store");
+  ok("the dev server applies the same security headers", /Object\.entries\(SECURITY_HEADERS\)[\s\S]{0,80}setHeader/.test(serverCode));
+  ok("HSTS is production-only", !Object.prototype.hasOwnProperty.call(SECURITY_HEADERS, "Strict-Transport-Security"));
+  // The strict part of the policy, asserted on its own so a later loosening
+  // has to change a test, not just a string.
+  const directive = (name) => (CONTENT_SECURITY_POLICY.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${name} `)) || "");
+  ok("scripts may only come from this origin", directive("script-src") === "script-src 'self'");
+  ok("no inline script or eval is allowed", !/unsafe-inline|unsafe-eval/.test(directive("script-src")));
+  ok("the app cannot be framed", directive("frame-ancestors") === "frame-ancestors 'none'");
+  ok("plugins are blocked", directive("object-src") === "object-src 'none'");
+  ok("the client only talks to its own origin", directive("connect-src") === "connect-src 'self'");
+  // The policy may only stay this strict while the app keeps no inline script
+  // and no inline handlers; this is what would break first.
+  const htmlSource = fs.readFileSync(path.join(rootDir, "index.html"), "utf8");
+  ok("index.html has no inline script", !/<script(?![^>]*\bsrc=)[^>]*>/i.test(htmlSource));
+  ok("templates use no inline event handlers", !/\son(click|change|submit|input|load|error|keydown|keyup)="/i.test(appSource + htmlSource));
+  ok("no eval or Function constructor in the client", !/\beval\(|new Function\(/.test(appCode));
+}
+
+// --- Route parity (step 6) --------------------------------------------------
+// Every serverless endpoint has a dev-server route and vice versa, checked
+// rather than inspected: the dev server is where behaviour is verified, so a
+// missing mirror means verifying something production does not run.
+{
+  const endpoints = fs
+    .readdirSync(path.join(rootDir, "api"))
+    .filter((name) => name.endsWith(".js") && !name.startsWith("_"))
+    .map((name) => `/api/${name.replace(/\.js$/, "")}`);
+  const mirrored = new Set([...serverCode.matchAll(/["'](\/api\/[a-z-]+)["']/g)].map((match) => match[1]));
+  const unmirrored = endpoints.filter((route) => !mirrored.has(route));
+  const orphaned = [...mirrored].filter((route) => !endpoints.includes(route));
+  ok("every api/ endpoint has a dev-server route", unmirrored.length === 0, unmirrored.join(","));
+  ok("every dev-server route has an api/ endpoint", orphaned.length === 0, orphaned.join(","));
+}
+
+// --- Store deletion UI (step 6) ---------------------------------------------
+ok("managers can delete the store from Settings", /renderDeleteStorePanel\(\)/.test(appCode) && /form\.id === "deleteStoreForm"/.test(appCode));
+ok("store deletion asks for the password again", /deleteStoreForm[\s\S]{0,400}name="currentPassword"/.test(appCode));
+ok("a deleted store drops the backup key and queued backups", /storeDeleted[\s\S]{0,300}cancelAutoBackup\(\)[\s\S]{0,80}clearBackupPending\(\)[\s\S]{0,80}clearCachedBackupKey\(\)/.test(appCode));
+
 // --- Server mirror ----------------------------------------------------------
 ok("dev server gates the retired endpoints", /\/api\/state[\s\S]{0,200}410/.test(serverCode));
 ok("dev server no longer serves business state", !/url\.pathname === "\/api\/state"[\s\S]{0,200}writeJsonAtomic/.test(serverCode));

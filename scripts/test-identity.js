@@ -493,6 +493,75 @@ async function main() {
     ok("the real owner's password still works after the takeover attempt", stillOwner.status === 200);
   }
 
+  // --- Store deletion (Phase 021 step 6) ----------------------------------------------
+  {
+    const db = await freshDb();
+    const count = async (sql, params = []) => (await testDb.sql(sql, params))[0].count;
+
+    // All four gate cases, starting from the empty system the 2026-08-03 bug
+    // lived in.
+    await expectError("delete-store on an empty system with no session is 401", identity.deleteStore(db, req(), { currentPassword: STRONG }), 401);
+
+    const doomed = await signupManager(db, "doomed@example.com");
+    const doomedStore = doomed.payload.identity.store.id;
+    const survivor = await signupManager(db, "survivor@example.com");
+    const survivorStore = survivor.payload.identity.store.id;
+
+    await expectError("delete-store with no session is 401", identity.deleteStore(db, req(), { currentPassword: STRONG }), 401);
+    await identity.createStaff(db, req(doomed.sessionToken), { name: "S", email: "doomed-staff@example.com", password: STRONG });
+    const staff = await identity.signin(db, req(), { email: "doomed-staff@example.com", password: STRONG });
+    await expectError("staff cannot delete the store", identity.deleteStore(db, req(staff.sessionToken), { currentPassword: STRONG }), 403);
+    await expectError("a wrong password does not delete the store", identity.deleteStore(db, req(doomed.sessionToken), { currentPassword: "not-the-password" }), 401);
+    ok("a refused delete leaves the store in place", (await count("select count(*)::int as count from fashion_store_os_stores where id = $1", [doomedStore])) === 1);
+
+    // Give the doomed store something in every dependent table.
+    await identity.createInvite(db, req(doomed.sessionToken), { email: "pending@example.com" });
+    await db.putBackup({
+      store_id: doomedStore, ciphertext: "QUJD", salt: "c2FsdA==", iv: "aXY=", format: 1, byte_size: 4,
+      created_by: doomed.payload.identity.account.id, created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    });
+    await db.insertInboxMessage({
+      id: "inbox-doomed", store_id: doomedStore, fingerprint: "whatsapp|m1", payload: { message: "hi" },
+      received_at: new Date().toISOString(), expires_at: new Date(Date.now() + 86400000).toISOString(),
+    });
+    // And one account that also belongs to the surviving store: deleting the
+    // doomed store must not take it. v1's API cannot create this, so it is
+    // inserted directly to prove the guard rather than assume it.
+    const now = new Date().toISOString();
+    await db.insertAccount({ id: "user-shared", email: "shared@example.com", name: "Shared", password_hash: "x", password_salt: "y", created_at: now, updated_at: now });
+    await db.insertMembership({ account_id: "user-shared", store_id: doomedStore, role: "staff", status: "active", allowed_views: ["dashboard"], created_at: now, updated_at: now });
+    await db.insertMembership({ account_id: "user-shared", store_id: survivorStore, role: "staff", status: "active", allowed_views: ["dashboard"], created_at: now, updated_at: now });
+
+    const deleted = await identity.deleteStore(db, req(doomed.sessionToken), { currentPassword: STRONG });
+    ok("a manager can delete the store with their password", deleted.status === 200 && deleted.payload.storeDeleted === true);
+    ok("deleting the store ends the caller's session", deleted.clearSession === true);
+
+    const inStore = (table, column = "store_id") => count(`select count(*)::int as count from ${table} where ${column} = $1`, [doomedStore]);
+    ok("the store row is gone", (await inStore("fashion_store_os_stores", "id")) === 0);
+    ok("its memberships are gone", (await inStore("fashion_store_os_memberships")) === 0);
+    ok("its invites are gone", (await inStore("fashion_store_os_invites")) === 0);
+    ok("its encrypted backup is gone", (await inStore("fashion_store_os_backups")) === 0);
+    ok("its undelivered inbox messages are gone", (await inStore("fashion_store_os_inbox_messages")) === 0);
+    ok("its audit trail is gone", (await inStore("fashion_store_os_identity_audit")) === 0);
+    ok(
+      "accounts that belonged only to it are gone",
+      (await count("select count(*)::int as count from fashion_store_os_accounts where lower(email) in ('doomed@example.com', 'doomed-staff@example.com')")) === 0,
+    );
+    ok(
+      "their sessions are gone",
+      (await identity.getIdentity(db, req(doomed.sessionToken))).payload.authenticated === false &&
+        (await identity.getIdentity(db, req(staff.sessionToken))).payload.authenticated === false,
+    );
+    ok("an account that also belongs to another store survives", (await count("select count(*)::int as count from fashion_store_os_accounts where id = 'user-shared'")) === 1);
+    ok("its other membership survives", (await count("select count(*)::int as count from fashion_store_os_memberships where account_id = 'user-shared'")) === 1);
+    const survivorView = await identity.getIdentity(db, req(survivor.sessionToken));
+    ok("another store is untouched", survivorView.payload.authenticated === true && survivorView.payload.identity.store.id === survivorStore);
+
+    await expectError("the deleted manager can no longer sign in", identity.signin(db, req(), { email: "doomed@example.com", password: STRONG }), 401);
+    const reused = await signupManager(db, "doomed@example.com");
+    ok("the deleted email can sign up again as a new store", reused.status === 201 && reused.payload.identity.store.id !== doomedStore);
+  }
+
   // --- Retention sweep -----------------------------------------------------------------
   {
     const db = await freshDb();

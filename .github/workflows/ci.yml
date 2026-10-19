@@ -1,0 +1,38 @@
+# Every push to main is a production release on Vercel, so these gates used to
+# run only when someone remembered `npm run launch:check` before pushing. This
+# runs the same gates on every push and pull request.
+#
+# It does not block a deploy: Vercel builds main in parallel and does not wait
+# for this check unless the project is set to. Treat a red run on main as a
+# broken release to roll back (Vercel deployment promotion), not a warning.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  launch-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Syntax, the identity / local-first / storage / backup / inbox / Neon
+      # suites (the server ones on embedded Postgres, no database needed), the
+      # UX and security audits, and the production build.
+      - run: npm run launch:check

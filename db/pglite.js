@@ -33,7 +33,7 @@ async function openDevDatabase(dataDir, log = () => {}) {
   const driver = createPgliteDriver(dataDir);
   await driver.pg.waitReady;
   await migrate(driver, { log });
-  return { driver, db: createPgIdentityStore({ query: driver.query }) };
+  return { driver, db: createPgIdentityStore({ query: driver.query, transaction: driver.transaction }) };
 }
 
 // One in-memory database per test suite. Starting PGlite costs seconds, so a
@@ -43,7 +43,7 @@ async function openTestDatabase() {
   const driver = createPgliteDriver();
   await driver.pg.waitReady;
   await migrate(driver);
-  const db = createPgIdentityStore({ query: driver.query });
+  const db = createPgIdentityStore({ query: driver.query, transaction: driver.transaction });
   const tables = Object.values(TABLES).join(", ");
   return {
     driver,
