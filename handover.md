@@ -7,7 +7,7 @@ Current repo: `F:\Fashion Store OS`
 
 Fashion Store OS is a brand-agnostic operations app for fashion studios: a control room for inquiries, clients, measurements, garment orders, style recipes, material reserve, production flow, reports, brand settings, onboarding, and staff access. No real store has used it yet.
 
-Since Phase 021 (built, not yet released) it is **local-first**. Each store's business records live on its shop device. The server holds only identity, one encrypted backup per store that it cannot read, and a short-lived inbox for provider messages.
+Since Phase 021 (Release A, `v2.0.0`, live since 2026-10-19) it is **local-first**. Each store's business records live on its shop device. The server holds only identity, one encrypted backup per store that it cannot read, and a short-lived inbox for provider messages.
 
 This repo is the active workspace. `C:\Users\PC\Documents\Nitech\Personal\Pastry County Kitchen OS` was used only as a reference and should not be edited for this project.
 
@@ -72,9 +72,9 @@ It runs the syntax check, every test suite, the UX and security audits, and the 
 | Production branch | `main`; every push deploys |
 | Release owner | `ADxZimmy`. On the Hobby plan, deploys of collaborator-authored commits (`NnazimuzoO`) fail with `TEAM_ACCESS_REQUIRED`. |
 
-**Status on 2026-10-19: production is up again on the pre-pivot build.** `main` still runs that build, which depends on the Supabase project `fashion-store` (`elkpberfbhwbrkawklnk`). The project paused for inactivity on 2026-10-02, and the owner restored it for UAT item 11, so `/api/health` reports `storage: "supabase"` again. It will pause again after about a week idle. No real store uses the app. Release A replaces this build with the local-first one on Neon.
+**Status on 2026-10-19: Release A is live.** Production runs the local-first build, `v2.0.0` (commit `584277b`), on Neon: `/api/health` reports `storage: "postgres"`, and the retired endpoints answer 410. Smoke Steps 1 and 2 passed; Steps 3 to 10 (operator mode) are pending. The 14-day watch window runs from 2026-10-19. Record: `docs/cutover.md`, Release A Record.
 
-Release A is unblocked: Neon is connected and Phase 021 UAT item 11's first confirmation passed on 2026-10-19 (the legacy Supabase project holds no business data and no accounts). Next is `docs/cutover.md`. The legacy project is active again, so the pre-pivot build serves until Release A replaces it.
+The legacy Supabase project `fashion-store` (`elkpberfbhwbrkawklnk`) is no longer read by production. It was restored for UAT item 11 (first confirmation passed: no business data, no accounts) and will pause again after about a week idle; Release B decommissions it after the second confirmation.
 
 Database: Neon project `steep-smoke-31370127` (Vercel resource `neon-champagne-river`), Frankfurt, PostgreSQL 18.6, connected 2026-10-19 and still empty. `DATABASE_URL` is set for Production only, as a write-only secret. Functions are pinned to Frankfurt (`fra1`) in `vercel.json` to sit next to it. The Neon organization is managed by Vercel: open it from Vercel's Storage tab.
 
@@ -83,19 +83,25 @@ Database: Neon project `steep-smoke-31370127` (Vercel resource `neon-champagne-r
 | Release | State |
 | --- | --- |
 | v1.0.0, 2026-08-03 | Released on the Vercel alias. Down from the 2026-10-02 Supabase pause until the owner restored the project (by 2026-10-19). Record: `docs/cutover.md`, History. |
-| Release A (Phase 021, suggested tag `v2.0.0`) | Built, not released. Procedure: `docs/cutover.md`. |
+| Release A (Phase 021), `v2.0.0` | Released 2026-10-19 from `584277b`. Smoke Steps 3 to 10 pending (operator). Record: `docs/cutover.md`. |
 | Release B | After the Phase 021 UAT: deletes the retired endpoints and decommissions the legacy Supabase project. |
 
 ## Current Git State
 
-- `main` is production, at `c194b7d`, level with GitHub.
-- `phase-021-release-a` holds Phase 021 steps 1 to 7 and is not pushed. It is fast-forwarded into `main` as Release A (`docs/cutover.md`, Prerequisite 4); pushing that is the release.
+- `main` is production. Release A is `584277b`, tagged `v2.0.0` and pushed on 2026-10-19; later commits on `main` are documentation of the release.
+- `phase-021-release-a` was fast-forwarded into `main` for Release A and is fully merged. It exists only locally and can be deleted.
 - Local-only leftovers `master`, `codex/backend-foundation`, and `backup/main-before-backend-promotion` still exist in this checkout. GitHub has only `main`.
 - Commits must be authored as `ADxZimmy`. This checkout's repo-local identity has been set to that since 2026-10-19; a fresh clone needs the command in `docs/release-lane.md`.
 
-Phase 021 commits so far:
+Phase 021 commits in Release A:
 
 ```text
+584277b Serve the retired endpoints from one function
+0177f90 Record UAT item 11's first confirmation
+b1078ac Record the repo-local commit identity
+6c3d87c Record the corrected Neon connection
+4b22179 Pin functions to Frankfurt and record the Neon connection
+a6685e3 Phase 021 step 7: rewrite the model docs and the smoke
 2ebdb0c Phase 021 step 6: store deletion, security headers, CI, route parity
 6be1a05 Record the first browser session
 873c44d Fix the defects the first browser session found
@@ -114,7 +120,7 @@ Before each work slice, run `git status --short`. Do not overwrite changes you d
 
 ## Readiness Assessment (2026-10-19)
 
-Built and verified locally:
+Built, verified locally, and released (Release A, 2026-10-19):
 
 - Global identity on rows, with durable rate limits, request validation, per-store quotas, and retention sweeps.
 - Local-first records: sign-out and session expiry lock the screen without touching data; a signed-in device opens offline for up to 30 days; a device holding another store's records asks before doing anything with them.
@@ -125,8 +131,8 @@ Built and verified locally:
 
 Not yet verified:
 
-- Anything in production: Neon's driver against a live database, the build-time migration, rate limits across serverless instances, and the cron.
-- The CI workflow, which has never run because the branch is not pushed.
+- In production: a write (smoke Steps 3 to 10, operator mode), rate limits across serverless instances, and a scheduled maintenance run. Verified at release: the build-time migration, live database round trips from the functions, the retired endpoints, the security headers, and CI.
+- CI going red on a deliberately broken push.
 - In a browser: the oversized-backup refusal, logo downscaling, the file download, and persistent storage being granted.
 - The Phase 021 UAT (owner-run, after Release A) and a real-store pilot.
 
@@ -173,12 +179,13 @@ Full record: `.planning/phases/021-local-first-pivot/VERIFICATION.md`. Earlier r
 
 ## Next Steps
 
-1. Release A (`docs/cutover.md`), then the 14-day watch window (`docs/operations-runbook.md`).
-2. The Phase 021 UAT, then Release B.
-3. A pilot with a real store (`docs/pilot-uat.md`).
-4. Later: alerting, a custom domain if wanted, a Vercel plan decision for collaborator deploys, and connecting a real provider.
+1. Owner: the production smoke, `docs/production-smoke.md` Steps 3 to 10, in operator mode.
+2. The 14-day watch window from 2026-10-19 (`docs/operations-runbook.md`, Post-Launch Support).
+3. The Phase 021 UAT, then Release B.
+4. A pilot with a real store (`docs/pilot-uat.md`).
+5. Later: alerting, a custom domain if wanted, a Vercel plan decision for collaborator deploys, and connecting a real provider.
 
-Done on 2026-10-19: Neon connected to the Vercel project (`docs/owner-activation-runbook.md`), this checkout's repo-local commit identity set to `ADxZimmy`, and Phase 021 UAT item 11's first confirmation passed.
+Done on 2026-10-19: Neon connected to the Vercel project (`docs/owner-activation-runbook.md`), this checkout's repo-local commit identity set to `ADxZimmy`, Phase 021 UAT item 11's first confirmation passed, and Release A shipped as `v2.0.0`.
 
 ## UI/UX Expectations
 
@@ -244,14 +251,14 @@ Commit:
 - Without persistent storage, the browser may evict records under storage pressure. The app warns when persistence was not granted.
 - Staff section access is UI-only.
 - Two devices working on one store diverge, with no merge.
-- Nothing about Phase 021 has run in production yet. The first Release A deploy's only rollback target is the pre-pivot build, which runs the old model and works only while the legacy Supabase project is active, so fix forward by preference.
+- Release A's only rollback target is the pre-pivot build, which runs the old model and works only while the legacy Supabase project is active, so fix forward by preference.
 - CI runs after a push but does not block the deploy; every push to `main` is a release.
 - Nothing pages anyone during an outage. A failed maintenance cron shows only in the Vercel dashboard.
 - Neon's Free plan suspends the database for the rest of the month if its compute allowance runs out.
 - Channel intake serves one store per deployment (`FASHION_STORE_INBOX_STORE_ID`).
 - Accepted from the legacy plane, and throttled: an unverified signup can claim a global email, and the "accept your invite first" sign-in hint reveals that an address has a pending invite.
 - No email verification or MFA.
-- The legacy Supabase project is active again, so the pre-pivot build accepts sign-ups and writes there until Release A replaces it. `docs/cutover.md` Step 0 re-checks that its documents table is still empty.
+- The legacy Supabase project stays restorable for 90 days from its next pause; Release B's second UAT item 11 confirmation needs it before then.
 
 ## History
 

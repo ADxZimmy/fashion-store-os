@@ -6,7 +6,7 @@ Where Fashion Store OS keeps what, after the Phase 021 local-first pivot. Busine
 
 ## Status
 
-- The design below is built on branch `phase-021-release-a` and **not yet deployed**. Production still runs the pre-pivot build, whose Supabase database paused for inactivity and is down (found 2026-10-02).
+- The design below is **in production** since Release A, 2026-10-19 (`v2.0.0`, commit `584277b`).
 - The server database is **Neon Postgres**, chosen on 2026-10-02 after Supabase paused the project a second time. It was connected to the Vercel project on 2026-10-19: Vercel resource `neon-champagne-river`, Neon project `steep-smoke-31370127`, Frankfurt (`aws-eu-central-1`), PostgreSQL 18.6, database `neondb`. It is still empty; the first Release A build creates the tables. Its variables use the standard names (`DATABASE_URL` and so on), are set for Production only, and are write-only secrets: deployments read them, while `vercel env pull` and `vercel env run` receive them empty. See `docs/owner-activation-runbook.md`.
 
 ## What Lives Where

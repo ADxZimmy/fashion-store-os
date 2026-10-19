@@ -178,4 +178,4 @@ Record: date, reporter, device and browser, whether the device was online, the s
 | Date found | What happened | Resolution |
 | --- | --- | --- |
 | 2026-07-30 | Supabase free project paused after about a month idle; `/api/health` reported `supabase-unreachable`; readiness stayed green. | Restored 2026-07-31. Daily keepalive cron added. |
-| 2026-10-02 | Supabase paused again despite the keepalive cron; the project hostname stopped resolving. | Server database moved to Neon (Phase 021). The owner restored the legacy project by 2026-10-19 for Phase 021 UAT item 11, which brought the pre-pivot site back until Release A. The legacy project is decommissioned in Release B. |
+| 2026-10-02 | Supabase paused again despite the keepalive cron; the project hostname stopped resolving. | Server database moved to Neon (Phase 021). The owner restored the legacy project by 2026-10-19 for Phase 021 UAT item 11, which brought the pre-pivot site back for a few hours until Release A replaced it the same day. The legacy project is decommissioned in Release B. |

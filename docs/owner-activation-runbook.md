@@ -6,7 +6,7 @@ Audience: `ADxZimmy`, the owner of the Vercel project. Goal: connect a Neon Post
 
 Time: about 10 minutes. Do it from the owner account: the Vercel project belongs to it, and on the Hobby plan deploys of collaborator-authored commits are refused with `TEAM_ACCESS_REQUIRED`.
 
-Status as of 2026-10-19: **done.** The database exists and answers: the app's own database code ran against it read-only, and its role may create tables. After one redo (the first connection had a variable prefix and included Preview), `vercel env ls` lists `DATABASE_URL` and the other standard names for Production only, and their values are write-only secrets: `vercel env run` receives them empty. Production still runs the pre-pivot build on the paused Supabase project until Release A.
+Status as of 2026-10-19: **done.** The database exists and answers: the app's own database code ran against it read-only, and its role may create tables. After one redo (the first connection had a variable prefix and included Preview), `vercel env ls` lists `DATABASE_URL` and the other standard names for Production only, and their values are write-only secrets: `vercel env run` receives them empty. Release A went out on it the same day: the first production build applied the schema, and `/api/health` reports `storage: "postgres"`.
 
 ## Targets
 

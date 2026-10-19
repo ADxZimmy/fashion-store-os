@@ -1,6 +1,6 @@
 ﻿# Verification
 
-Status: Planned on 2026-08-18. Step 0 executed the same day. Steps 1 to 7 built by 2026-10-19 on `phase-021-release-a`, not pushed; nothing after step 0 has run in production. This file records evidence as steps land; the checks below mirror PLAN.md and must each carry a dated result before the phase closes.
+Status: Planned on 2026-08-18. Step 0 executed the same day. Steps 1 to 7 built by 2026-10-19 and released to production as Release A (`v2.0.0`) the same day; the UAT and Release B remain. This file records evidence as steps land; the checks below mirror PLAN.md and must each carry a dated result before the phase closes.
 
 ## Checks To Run
 
@@ -10,7 +10,7 @@ Status: Planned on 2026-08-18. Step 0 executed the same day. Steps 1 to 7 built 
   Result: **Passed locally on 2026-08-18, production verification outstanding.** Built on branch `phase-021-release-a` (`128ae7d`, remediated by `bc72529`). 115 assertions in `scripts/test-identity.js` run the real core against a file-backed adapter, including all four gate cases for every manager-gated action. An adversarial review confirmed 20 defects in the first cut; all material ones are fixed and regression-tested. Two are recorded as accepted: unverified signup can permanently squat a global email, and the "accept your invite first" sign-in hint reveals that an address has a pending invite — both inherited from the legacy plane, both throttled.
   Superseded on 2026-10-02 by the move to Neon (CONTEXT, "Provider change"). The untested Supabase adapter was deleted. Its replacement, `api/_identity_pg.js`, is the code the suites run: 116 identity, 45 backup, and 35 inbox assertions against PGlite (real Postgres), plus a 22-step HTTP round trip through the dev server (signup, cookie session, identity-only bootstrap, backup round trip, inbox drain, maintenance, readiness, the four 410s, sign-out). The schema is `db/migrations/0001_identity.sql`, applied automatically by production builds.
   Still not evidenced: Neon's HTTP driver against a live Neon database. Needs the owner to add Neon to the Vercel project; the first production build then migrates, and a live sign-up round trip closes it.
-  Partly evidenced on 2026-10-19, after the owner connected Neon (project `steep-smoke-31370127`, Frankfurt, PostgreSQL 18.6). From a local machine, with the production variables injected in memory by `vercel env run`, the app's own `api/_db.js` ran `db.probe` (the `/api/health` query) and a `driver.transaction` (the mechanism migrations use) against the live database, read-only; the role may create tables in `public`, and the database held no app tables yet. Still outstanding: the same from Vercel's functions, the build-time migration, and a write.
+  Partly evidenced on 2026-10-19, after the owner connected Neon (project `steep-smoke-31370127`, Frankfurt, PostgreSQL 18.6). From a local machine, with the production variables injected in memory by `vercel env run`, the app's own `api/_db.js` ran `db.probe` (the `/api/health` query) and a `driver.transaction` (the mechanism migrations use) against the live database, read-only; the role may create tables in `public`, and the database held no app tables yet. Still outstanding: the same from Vercel's functions, the build-time migration, and a write. The first two passed at Release A the same day (see Release A); a write is pending the operator-run smoke.
 - Local-primary flip: no code path PUTs business state to the server (grep plus network-log evidence); bootstrap response carries no state; session responses carry no state.
 - Trust direction: expired session → lock screen, local dataset byte-identical before and after; a non-member sign-in over existing local data gets the locked/erase choice, never a silent wipe.
   Result: **Passed in a real browser on 2026-10-19** (dev server on embedded Postgres). Sign-out locked the UI, cleared the offline identity cache, and left the records in IndexedDB; signing back in showed the same records. Signing up a second account on the same device raised the mismatch screen with nothing changed; erasing from it cleared both IndexedDB records and re-tagged the device. Saving a profile and a client sent no request to the server: the only API calls were identity checks, the signup, and one inbox pull.
@@ -26,7 +26,7 @@ Status: Planned on 2026-08-18. Step 0 executed the same day. Steps 1 to 7 built 
 - Route parity: every endpoint add/change/delete landed in both `api/` and `server.js`, asserted by an updated check script.
   Result: **Passed on 2026-10-19.** The guard suite derives the endpoint list from `api/` and checks it against the routes in `server.js` in both directions (13 endpoints). Mutation-tested: removing the `/api/backup` route from `server.js` fails it.
 - Suites: `npm run check`, `npm run launch:check` green at every landed step; security-audit assertions updated in the same commits that change the asserted files; the CI workflow observed red on a deliberately broken push once.
-  Result: **Partially passed.** `launch:check` green at steps 6 and 7 on 2026-10-19 (at step 7: identity 136, local-first 90, storage 36, backup 45, inbox 35, Neon 54, plus the UX and security audits and the build). The CI workflow has never run, because the branch has not been pushed; the deliberately broken push is outstanding.
+  Result: **Partially passed.** `launch:check` green at steps 6 and 7 on 2026-10-19 (at step 7: identity 136, local-first 90, storage 36, backup 45, inbox 35, Neon 54, plus the UX and security audits and the build). The CI workflow's first runs, at Release A, passed; the deliberately broken push is outstanding.
 
 ## Notes
 
@@ -48,6 +48,20 @@ First run of the client flows from steps 2 to 5 in a real browser (the dev serve
 10. Stale and non-compliant copy: the erase dialog still said there was no server copy to restore from, the storage panel promised backups "coming next", the mismatch screen named stores by internal id, and several strings used em-dashes.
 
 Not exercised: the oversized-backup refusal, logo downscaling (needs a file upload), the plain file export (a download), persistent storage being granted (this browser declined, and the "Evictable" warning showed as designed), and the transit inbox beyond an empty pull.
+
+## Release A, 2026-10-19
+
+**Released.** `phase-021-release-a` was fast-forwarded into `main` and pushed as `584277b`, tagged `v2.0.0`. Record: `docs/cutover.md`, Release A Record.
+
+- **Found before pushing:** the release had 13 files in `api/`, one over the Hobby plan's limit of 12 functions per deployment without a framework, so Vercel would have refused it. The four retired endpoints became one function reached through `vercel.json` rewrites (PLAN step 6, second deviation); a guard now fails at 13.
+- **Preflight:** `launch:check` and `release:preflight` green on `main`; the legacy Supabase documents table rechecked at 0 rows just before the push.
+- **Build:** cloned `main` at `584277b`; `db-migrate: applied 0001_identity (23 statements)`, `applied 1 of 1 migrations.`; deployed in 17 seconds. All 10 functions in `fra1`. The public alias moved to the new deployment.
+- **Health gate:** `/api/health` `ok: true` with `storage: "postgres"` on the Frankfurt Neon host, and `/api/readiness` `ok: true`: live round trips from Vercel's functions to Neon, closing the gap left by the local probe. `/api/state`, `/api/data`, `/api/inbound`, and `/api/workspace-code` each answered 410 with its own message, so the rewrites carry the endpoint name; a PUT got 410 and an OPTIONS 204; `/api/maintenance` refused a request without the cron secret (401).
+- **Headers:** the production response carries the Content Security Policy and the other security headers, plus HSTS; `/sw.js` serves `fso-shell-v4`.
+- **CI:** the workflow's first runs, on the release push and the tag push, both passed.
+- **Smoke:** `docs/production-smoke.md` Steps 1 and 2 passed (API baseline; a fresh profile loads the sign-in screen with no business data and no console errors, and the service worker activates). Steps 3 to 10 sign up and sign in on production, which the agent does not do there, so they run in operator mode and are pending.
+
+Still not evidenced in production: a write (sign-up and the rest of the smoke), rate limits across serverless instances, and a scheduled maintenance run.
 
 ## UAT item 11, first confirmation, 2026-10-19
 

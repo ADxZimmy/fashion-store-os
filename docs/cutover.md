@@ -108,17 +108,19 @@ Fill this in at release and keep it in the repo:
 
 | Field | Value |
 | --- | --- |
-| Release date | |
-| Deployed commit | |
-| Release tag | |
+| Release date | 2026-10-19 |
+| Deployed commit | `584277b`, deployment `dpl_22mWPFLGf5if5FWwKUJiVei5jkqA` (Ready; built from `main` at that commit) |
+| Release tag | `v2.0.0`, annotated by `ADxZimmy`, points at `584277b` |
 | Neon project | `steep-smoke-31370127` (Vercel resource `neon-champagne-river`), Frankfurt `aws-eu-central-1`, PostgreSQL 18.6; functions in `fra1` |
-| Build log migration line | |
-| `/api/health` | |
-| `/api/readiness` | |
-| `/api/state` returns 410 | |
-| Smoke test (`docs/production-smoke.md`) | |
-| Legacy Supabase check (UAT item 11) | Passed 2026-10-19: 0 documents, 2 test workspace rows. Recheck at Step 0: |
-| Operator | |
+| Functions | 10, all in `fra1` (the four retired paths share `api/retired.js`) |
+| Build log migration line | `db-migrate: applied 0001_identity (23 statements)`, then `db-migrate: applied 1 of 1 migrations.` |
+| `/api/health` | Passed 2026-10-19: `ok: true`, `storage: "postgres"`, the Frankfurt Neon host |
+| `/api/readiness` | Passed 2026-10-19: `ok: true`; required checks green; the optional channel-binding check false (no provider yet) |
+| `/api/state` returns 410 | Passed, as do `/api/data`, `/api/inbound`, and `/api/workspace-code`, each with its own message |
+| CI | Green on the release push and on the tag push |
+| Smoke test (`docs/production-smoke.md`) | Steps 1 and 2 passed 2026-10-19. Steps 3 to 10 create and sign in to a test account on production, so they run in operator mode: pending. |
+| Legacy Supabase check (UAT item 11) | Passed 2026-10-19: 0 documents, 2 test workspace rows. Recheck at Step 0: 0 documents. |
+| Operator | `ADxZimmy`; merged, pushed, and tagged by Claude Code on the owner's instruction |
 
 ## History: v1.0.0 Cutover (2026-08-03)
 

@@ -16,7 +16,7 @@ Before Phase 021 the server stored every business record, and this test checked 
 ## Read This Before Starting
 
 - **This is live production.** There is no staging environment.
-- Use a **fresh browser profile or incognito window** for each device in the test. Each profile is a separate "device" with its own records.
+- Use a **separate fresh browser profile** for each device in the test, for example a Chrome incognito window as device A and an Edge InPrivate window as device B. Each profile is a separate "device" with its own records. Two incognito windows of the same browser share their storage, so they count as one device.
 - Test accounts are global: an email can only be used once across the whole system. Use addresses nobody owns (below).
 - **Clean up when done** (Step 10). A test store left in production is a live store.
 
