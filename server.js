@@ -247,7 +247,11 @@ async function routeApi(request, response, url) {
 
 async function serveStatic(requestPath, response) {
   const cleanPath = decodeURIComponent(requestPath.split("?")[0]);
-  const safePath = cleanPath === "/" ? "/index.html" : cleanPath;
+  // The offline shell must be served from the root so its scope covers every
+  // route. scripts/build.js copies src/sw.js to dist/sw.js for Vercel; this
+  // mirrors that here, without which the worker 404s locally and offline
+  // behaviour can only ever be seen in production.
+  const safePath = cleanPath === "/" ? "/index.html" : cleanPath === "/sw.js" ? "/src/sw.js" : cleanPath;
 
   if (isPrivatePath(safePath)) {
     response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });

@@ -154,6 +154,18 @@ const BACKUP_META_KEY = "fashion-studio-os-backupmeta-v1";
 // operator hears about their data size rather than a transport error.
 const MAX_BACKUP_CHARS = 4 * 1024 * 1024;
 const AUTO_BACKUP_DELAY_MS = 1000 * 60 * 3;
+// Holds the time of the last change not yet in a backup. Persisted, so edits
+// made offline, or in a session that closed before its timer fired, are caught
+// up as soon as the app is next online instead of waiting for another edit.
+const BACKUP_PENDING_KEY = "fashion-studio-os-backuppending-v1";
+const CATCH_UP_BACKUP_DELAY_MS = 1000 * 15;
+// How often an offline session checks whether the server is back. Without it,
+// a session that opened offline stayed offline until someone reloaded.
+const RECONNECT_CHECK_MS = 1000 * 60;
+let reconnectTimer = null;
+let reconnectAttempt = null;
+// Set by a sign-out the server could not hear (see signOut).
+const SIGNOUT_PENDING_KEY = "fashion-studio-os-signout-pending-v1";
 let backupBusy = "";
 let backupPrompt = null;
 let autoBackupTimer = null;
@@ -163,7 +175,7 @@ let inboxBusy = false;
 let inboxPullTimer = null;
 let lastInviteResult = null;
 // Recovery codes are returned by the server exactly once. Hold the value only
-// long enough to show it, then clear it — it is never persisted client-side.
+// long enough to show it, then clear it. It is never persisted client-side.
 let lastRecoveryResult = null;
 // Workspace join codes are returned once and are short-lived. Held only long
 // enough to display, never persisted.
@@ -182,7 +194,16 @@ async function initializeApp() {
   // else.
   await openDeviceStorage();
 
-  const snapshot = await loadIdentitySnapshot();
+  let snapshot = await loadIdentitySnapshot();
+
+  // A sign-out made while the server was unreachable only locked this device.
+  // Finish it before trusting a "still signed in" answer, or this start would
+  // unlock the device as whoever signed out. Fails closed either way.
+  if (snapshot.reachable && readSignOutPending()) {
+    if (snapshot.identity) await completePendingSignOut();
+    else clearSignOutPending();
+    snapshot = { reachable: true, identity: null };
+  }
 
   if (snapshot.reachable && snapshot.identity) {
     applyIdentity(snapshot.identity);
@@ -204,17 +225,70 @@ async function initializeApp() {
       accessMode = "locked";
       auth = normalizeAuth();
     }
+    startReconnectWatch();
   }
 
   authMode = "signin";
   // A short delay so the first paint is not competing with a network call.
   if (accessMode === "unlocked") scheduleInboxPull(4000);
+  // Changes left unbacked-up by an earlier session (made offline, or closed
+  // before the timer fired) go up shortly after an online start.
+  if (accessMode === "unlocked" && !offlineMode && readBackupPending()) {
+    scheduleAutoBackup(CATCH_UP_BACKUP_DELAY_MS);
+  }
   selectedClientId = state.clients[0]?.id || "";
   draftOrderStyleId = state.styles[0]?.id || "";
   if (isDevHost()) {
     window.loadStudioDemo = loadStudioDemo;
   }
   render();
+}
+
+// While offline, keep checking whether the server is back: on the browser's
+// "online" event, and on a timer, because "the server is unreachable" and "the
+// device has no network" are different failures and only the second fires an
+// event. Once reachable, the session is revalidated in place: backups, the
+// inbox, and sign-in resume without a reload, and a session that expired while
+// offline locks the UI with the records untouched.
+function startReconnectWatch() {
+  if (reconnectTimer) return;
+  reconnectAttempt = async function () {
+    const snapshot = await loadIdentitySnapshot();
+    if (!snapshot.reachable) return;
+    stopReconnectWatch();
+    offlineMode = false;
+    if (readSignOutPending()) {
+      // Someone signed out while offline. Finish that with the server and stay
+      // locked, rather than letting the still-valid cookie reopen the device.
+      if (snapshot.identity) await completePendingSignOut();
+      else clearSignOutPending();
+      render();
+      return;
+    }
+    if (snapshot.identity) {
+      applyIdentity(snapshot.identity);
+      cacheIdentity(snapshot.identity);
+      reconcileStoreTag(snapshot.identity);
+      scheduleInboxPull(2000);
+      if (readBackupPending()) scheduleAutoBackup(CATCH_UP_BACKUP_DELAY_MS);
+      showToast("Back online.");
+    } else {
+      auth = normalizeAuth();
+      accessMode = "locked";
+      clearCachedIdentity();
+      showToast("Back online. Sign in again to continue; your records are still on this device.");
+    }
+    render();
+  };
+  reconnectTimer = setInterval(reconnectAttempt, RECONNECT_CHECK_MS);
+  window.addEventListener("online", reconnectAttempt);
+}
+
+function stopReconnectWatch() {
+  if (reconnectTimer) clearInterval(reconnectTimer);
+  reconnectTimer = null;
+  if (reconnectAttempt) window.removeEventListener("online", reconnectAttempt);
+  reconnectAttempt = null;
 }
 
 function registerServiceWorker() {
@@ -447,7 +521,7 @@ async function openDeviceStorage() {
     storageFailureAnnounced = true;
     showToast(
       quota
-        ? "This device is out of storage space. Your last change was not saved -- free up space, then retry."
+        ? "This device is out of storage space, so your last change was not saved. Free up space, then try again."
         : `Could not save to this device (${phase}). Your last change was not saved.`,
     );
     render();
@@ -525,7 +599,7 @@ function normalizeAuth(nextAuth = {}) {
           suspendedAt: clean(user.suspendedAt),
           lastSignInAt: clean(user.lastSignInAt),
           // Metadata only; the hash never reaches the client. Listed here for
-          // the same reason as in the server normalizer — this rebuilds from an
+          // the same reason as in the server normalizer: this rebuilds from an
           // explicit field list, so anything omitted is dropped.
           recoveryIssuedAt: clean(user.recoveryIssuedAt),
           recoveryRedeemedAt: clean(user.recoveryRedeemedAt),
@@ -1342,7 +1416,10 @@ function renderStoreMismatch() {
           <p class="eyebrow">Different store</p>
           <h2>This device already holds another store's records.</h2>
           <p class="lead">You are signed in to a store that does not match the data saved on this device. Nothing has been changed or deleted.</p>
-          <p>Records on this device belong to store <code>${escapeHtml(storeMismatch?.existingStoreId || "")}</code>. You signed in to <code>${escapeHtml(storeMismatch?.incomingStoreId || "")}</code>.</p>
+          ${lastRecoveryResult && lastRecoveryResult.context !== "team" ? renderRecoveryResult(lastRecoveryResult) : ""}
+          <p>${state.profile?.businessName
+            ? `The records on this device belong to <strong>${escapeHtml(state.profile.businessName)}</strong>, a different store from the one you signed in to.`
+            : `The records on this device belong to a different store from the one you signed in to.`}</p>
           <div class="form-actions">
             <button class="btn secondary" type="button" data-action="mismatch-sign-out">Sign out and keep this device's records</button>
             <button class="btn danger" type="button" data-action="mismatch-erase">Erase this device's records and continue</button>
@@ -1356,25 +1433,24 @@ function renderStoreMismatch() {
 
 function renderOnboarding() {
   const mode = ["signin", "signup", "invite", "recover"].includes(authMode) ? authMode : "signin";
-  const hasAccounts = auth.users.length > 0;
+  // A locked device cannot know whether accounts exist: they are global and
+  // live on the server, and nothing is sent until someone signs in. The note
+  // used to say "No account exists yet" on every locked device, which became
+  // false the moment accounts stopped being per-device.
   const actionTitle = mode === "signin"
     ? "Sign in to Studio OS"
     : mode === "invite"
       ? "Accept staff invite"
       : mode === "recover"
         ? "Recover access"
-        : mode === "join"
-          ? "Open an existing workspace"
-          : "Create manager access";
+        : "Create manager access";
   const actionCopy = mode === "signin"
     ? "Use the manager account or an active staff account created by the manager."
     : mode === "invite"
       ? "Use the invite token from the manager to finish staff onboarding and set your password."
       : mode === "recover"
         ? "Use the recovery code saved when this account was created to set a new password."
-        : mode === "join"
-          ? "Enter the workspace code from a device already signed in to that studio."
-          : "Start with one manager account. Staff access can be assigned later in settings.";
+        : "Start with one manager account. Staff access can be assigned later in settings.";
 
   app.innerHTML = `
     <main class="onboarding-page">
@@ -1415,7 +1491,7 @@ function renderOnboarding() {
             <p>${actionCopy}</p>
           </div>
         </div>
-        ${mode === "signin" ? renderSignInForm(hasAccounts) : mode === "invite" ? renderInviteForm() : mode === "recover" ? renderRecoveryForm() : renderSignUpForm()}
+        ${mode === "signin" ? renderSignInForm() : mode === "invite" ? renderInviteForm() : mode === "recover" ? renderRecoveryForm() : renderSignUpForm()}
       </section>
     </main>
   `;
@@ -1453,7 +1529,7 @@ function renderInviteForm() {
   `;
 }
 
-function renderSignInForm(hasAccounts) {
+function renderSignInForm() {
   return `
     <form id="signinForm" class="auth-form">
       <label class="field full">
@@ -1464,12 +1540,13 @@ function renderSignInForm(hasAccounts) {
         <span>Password</span>
         <input name="password" type="password" autocomplete="current-password" required placeholder="Enter password">
       </label>
-      <div class="auth-note">${hasAccounts ? "Managers use full access. Staff see only assigned sections." : "No account exists yet. Create manager access first."}</div>
+      <div class="auth-note">${hasLocalBusinessData()
+        ? "Sign in to open this device's records. Managers have full access; staff see only their assigned sections."
+        : "Managers have full access; staff see only their assigned sections."}</div>
       <div class="button-row">
         <button class="btn" type="submit">Sign in</button>
         <button class="btn secondary" type="button" data-auth-mode="signup">Create manager account</button>
         <button class="btn secondary" type="button" data-auth-mode="recover">Forgot password</button>
-        <button class="btn secondary" type="button" data-auth-mode="join">Have a workspace code</button>
       </div>
     </form>
   `;
@@ -1822,7 +1899,7 @@ function renderModal() {
       title: "Restore from backup?",
       eyebrow: "Backup",
       message:
-        "This replaces the records on this device with the backup. If another device is still working from this store, the two will hold different records from now on -- there is no syncing between devices. Download a copy first if you are unsure.",
+        "This replaces the records on this device with the backup. If another device is still working from this store, the two will hold different records from now on, because there is no syncing between devices. Download a copy first if you are unsure.",
       confirmAction: "confirm-restore",
       confirmLabel: "Restore",
       tone: "danger",
@@ -1833,9 +1910,11 @@ function renderModal() {
     return renderConfirmModal({
       title: "Erase this device's records",
       eyebrow: "Local data",
-      message: "This permanently deletes every record stored on this device -- clients, orders, inventory, everything. There is no server copy to restore from. Your account and team are not affected.",
+      // The pre-backup version said "There is no server copy to restore from",
+      // which stopped being true when encrypted backups shipped.
+      message: "This permanently deletes every record stored on this device: clients, orders, inventory, everything. If this store has an encrypted backup, you can restore from it afterwards; if not, this cannot be undone. Your account and team are not affected.",
       confirmAction: "confirm-reset-data",
-      confirmLabel: "Reset data",
+      confirmLabel: "Erase records",
       tone: "danger",
     });
   }
@@ -1884,6 +1963,33 @@ function focusMobileNavControl() {
   });
 }
 
+// A device with no business profile shows only this screen, so restoring onto
+// a new device has to be offered here: the backup panel lives in Settings,
+// which cannot be reached until a profile exists. Without this, restoring meant
+// inventing a business profile first just so the restore could overwrite it.
+// The confirm dialog is skipped because there is nothing local to replace; the
+// divergence warning it carried is stated inline instead.
+function renderSetupRestore() {
+  const busy = backupBusy === "restore";
+  return `
+    <div class="inline-callout">
+      <div>
+        <strong>Restoring onto a new device?</strong>
+        <p class="muted small-text">If this store has an encrypted backup, restore it instead of setting up again. If another device is still working from this store, the two will hold different records from now on; there is no syncing between devices.</p>
+      </div>
+      ${backupPrompt && backupPrompt.intent === "restore"
+        ? renderBackupPassphraseForm(backupPrompt)
+        : `<div class="button-row"><button class="btn small secondary" type="button" data-action="setup-restore" ${busy ? "disabled" : ""}>${busy ? "Restoring..." : "Restore from backup"}</button></div>`}
+    </div>
+  `;
+}
+
+// Signup always lands here, never on Settings, so the one-time recovery code
+// is shown on this screen. It used to render only in Settings, which meant a
+// manager who reloaded before visiting Settings lost the only way back into a
+// locked-out account. The sign-out is here for the same reason: signing in to
+// the wrong account on a fresh or shared device used to leave no way off this
+// screen except inventing a business profile.
 function renderSetup() {
   applyTheme();
   app.innerHTML = `
@@ -1894,6 +2000,11 @@ function renderSetup() {
         <p class="lead">
           Shape the business profile first. The dashboard, settings, orders, records, and client-facing labels use this identity instead of a hardcoded brand.
         </p>
+        ${lastRecoveryResult && lastRecoveryResult.context !== "team" ? renderRecoveryResult(lastRecoveryResult) : ""}
+        ${currentUser()?.role === "manager" && backupAvailable() ? renderSetupRestore() : ""}
+        <div class="button-row">
+          <button class="btn small secondary" type="button" data-action="sign-out">Not your store? Sign out</button>
+        </div>
         <div class="setup-points">
           <div class="setup-point">Capture client inquiries, measurements, garment orders, style recipes, stock, and production stages.</div>
           <div class="setup-point">Reserve estimated materials when work is confirmed, then deduct actual usage during cutting and finishing.</div>
@@ -1952,7 +2063,7 @@ function renderTopbar() {
         <p>${escapeHtml(viewSubtitle(currentView))}</p>
       </div>
       <div class="actions">
-        ${offlineMode ? `<span class="session-chip data-chip local">Offline &mdash; working on this device</span>` : ""}
+        ${offlineMode ? `<span class="session-chip data-chip local">Offline: working on this device</span>` : ""}
         <span class="session-chip">${escapeHtml(user?.name || "Studio user")} · ${escapeHtml(user?.role || "staff")}</span>
         ${canAccess("settings") ? `<button class="btn secondary" type="button" data-nav="settings">Brand settings</button>` : ""}
         ${canAccess("orders") ? `<button class="btn" type="button" data-nav="orders">New garment order</button>` : ""}
@@ -3048,7 +3159,14 @@ async function backUpNow() {
     promptForPassphrase("set");
     return;
   }
+  if (!hasRecordsWorthBackingUp()) {
+    showToast("There is nothing on this device to back up yet. Set up the business first.");
+    return;
+  }
 
+  // A manual backup covers anything the automatic one was waiting on.
+  cancelAutoBackup();
+  const sealedAt = readBackupPending();
   backupBusy = "backup";
   render();
   try {
@@ -3072,6 +3190,7 @@ async function backUpNow() {
     const result = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(result.error || "Backup failed with " + response.status);
     writeBackupMeta(new Date().toISOString());
+    clearBackupPending(sealedAt);
     showToast("Backup saved.");
   } catch (error) {
     console.error("Backup failed.", error);
@@ -3082,22 +3201,64 @@ async function backUpNow() {
   }
 }
 
+function markBackupPending() {
+  try {
+    localStorage.setItem(BACKUP_PENDING_KEY, String(Date.now()));
+  } catch (error) {
+    // The timer still runs; only the cross-session catch-up is lost.
+  }
+}
+
+function readBackupPending() {
+  try {
+    return localStorage.getItem(BACKUP_PENDING_KEY) || "";
+  } catch (error) {
+    return "";
+  }
+}
+
+// Cleared only if no further change landed while the backup was uploading;
+// otherwise that change would be marked as backed up without being in it.
+function clearBackupPending(sealedAt) {
+  try {
+    if (sealedAt === undefined || localStorage.getItem(BACKUP_PENDING_KEY) === sealedAt) {
+      localStorage.removeItem(BACKUP_PENDING_KEY);
+    }
+  } catch (error) {
+    // display only
+  }
+}
+
+function cancelAutoBackup() {
+  if (autoBackupTimer) clearTimeout(autoBackupTimer);
+  autoBackupTimer = null;
+}
+
+// A device with no business profile holds nothing worth keeping, so uploading
+// it can only destroy something. This is the guard that stops an erase, or any
+// other path that empties local data, from overwriting the store's backup with
+// an empty one.
+function hasRecordsWorthBackingUp() {
+  return Boolean(state && state.profile);
+}
+
 // Automatic backup, debounced well clear of individual edits so a busy hour is
 // one upload rather than fifty. Silent on failure: an unprompted background
 // action must not interrupt the operator, and the panel shows the true
 // last-backup time either way.
-function scheduleAutoBackup() {
+function scheduleAutoBackup(delayMs) {
   if (!backupAvailable() || offlineMode || !readCachedBackupKey()) return;
-  if (autoBackupTimer) clearTimeout(autoBackupTimer);
+  cancelAutoBackup();
   autoBackupTimer = setTimeout(function () {
     autoBackupTimer = null;
     void backUpQuietly();
-  }, AUTO_BACKUP_DELAY_MS);
+  }, delayMs === undefined ? AUTO_BACKUP_DELAY_MS : delayMs);
 }
 
 async function backUpQuietly() {
   const cached = readCachedBackupKey();
-  if (!cached || offlineMode) return;
+  if (!cached || offlineMode || !hasRecordsWorthBackingUp()) return;
+  const sealedAt = readBackupPending();
   try {
     const key = await backupCrypto.importKey(cached.key);
     const envelope = await backupCrypto.seal({ state: state, key: key, salt: cached.salt, storeId: identityStoreId() });
@@ -3110,10 +3271,15 @@ async function backUpQuietly() {
     });
     if (response.ok) {
       writeBackupMeta(new Date().toISOString());
+      clearBackupPending(sealedAt);
       render();
     }
   } catch (error) {
-    console.warn("Automatic backup failed; will retry after the next change.", error);
+    // Network failure: the server went away mid-session. Retry on the
+    // reconnect cadence rather than waiting for the next edit, which may never
+    // come before the device is closed.
+    console.warn("Automatic backup failed; retrying shortly.", error);
+    scheduleAutoBackup(RECONNECT_CHECK_MS);
   }
 }
 
@@ -3154,8 +3320,12 @@ async function restoreFromBackup(passphrase) {
       storeId: identityStoreId(),
     });
 
+    // Anything queued against the records being replaced must not upload.
+    cancelAutoBackup();
     state = normalizeState(restored);
     persistLocalState();
+    // The device now matches the backup exactly; nothing is waiting.
+    clearBackupPending();
     selectedClientId = state.clients[0] ? state.clients[0].id : "";
     draftOrderStyleId = state.styles[0] ? state.styles[0].id : "";
     // The passphrase just proved itself against this store's backup, so cache
@@ -3197,7 +3367,7 @@ function exportRecordsFile() {
     setTimeout(function () {
       URL.revokeObjectURL(url);
     }, 1000);
-    showToast("Downloaded a copy of your records. Keep it safe -- this file is not encrypted.");
+    showToast("Downloaded a copy of your records. Keep it somewhere safe, because this file is not encrypted.");
   } catch (error) {
     console.error("Export failed.", error);
     showToast("Could not download a copy of your records.");
@@ -3214,6 +3384,9 @@ async function importRecordsFile(input) {
     if (!records || typeof records !== "object") throw new Error("That file is not a Fashion Store OS export.");
     state = normalizeState(records);
     persistLocalState();
+    // Imported records differ from the last backup, so they need one.
+    markBackupPending();
+    scheduleAutoBackup();
     selectedClientId = state.clients[0] ? state.clients[0].id : "";
     draftOrderStyleId = state.styles[0] ? state.styles[0].id : "";
     showToast("Records loaded from the file. This replaced what was on this device.");
@@ -3294,6 +3467,7 @@ async function pullInbox(options) {
         showToast("New messages arrived but could not be saved. They stay on the server until there is space.");
         return;
       }
+      markBackupPending();
     }
 
     await fetch(API_INBOX_PATH, {
@@ -3340,15 +3514,17 @@ function renderBackupPanel() {
   return [
     '<section class="panel">',
     '<div class="panel-header"><div><h2>Backup</h2>',
-    "<p>An encrypted copy of your records, stored online. We cannot read it &mdash; only your passphrase can open it.</p>",
+    "<p>An encrypted copy of your records, stored online. We cannot read it; only your passphrase can open it.</p>",
     "</div><span class=\"status\">" + escapeHtml(status) + "</span></div>",
     !cached && backupAvailable()
-      ? '<div class="inline-callout"><div><strong>No backup passphrase yet</strong><p class="muted small-text">Without one, losing this device loses your records. Set a passphrase and keep it somewhere safe &mdash; if you forget it, nobody can open the backup, including us.</p></div></div>'
+      ? '<div class="inline-callout"><div><strong>No backup passphrase yet</strong><p class="muted small-text">Without one, losing this device loses your records. Set a passphrase and keep it somewhere safe. If you forget it, nobody can open the backup, including us.</p></div></div>'
       : "",
     backupPrompt ? renderBackupPassphraseForm(backupPrompt) : "",
     '<dl class="meta-grid">',
     "<div><dt>Last backup</dt><dd>" + (last ? escapeHtml(formatDate(last)) : "Never") + "</dd></div>",
-    "<div><dt>Automatic</dt><dd>" + (cached ? "After each change" : "Off") + "</dd></div>",
+    "<div><dt>Automatic</dt><dd>" +
+      (!cached ? "Off" : readBackupPending() ? (offlineMode ? "Recent changes will back up when you are online" : "Backing up recent changes shortly") : "Up to date") +
+      "</dd></div>",
     "</dl>",
     '<div class="button-row">',
     '<button class="btn small" type="button" data-action="backup-now"' + (backupBusy ? " disabled" : "") + ">" + (backupBusy === "backup" ? "Backing up&hellip;" : "Back up now") + "</button>",
@@ -3409,7 +3585,7 @@ function renderDeviceStoragePanel() {
         <span class="status">${escapeHtml(persistedLabel)}</span>
       </div>
       ${storageUnavailable ? `<div class="inline-callout"><div><strong>Changes are not being saved</strong><p class="muted small-text">This browser is blocking local storage, so nothing you enter will survive a reload. Check site permissions, or try a different browser.</p></div></div>` : ""}
-      ${!storageUnavailable && storageEstimate.supported && !storagePersisted ? `<div class="inline-callout"><div><strong>The browser may clear these records</strong><p class="muted small-text">This browser has not granted persistent storage, so it can evict your records if the device runs low on space. Keeping the app installed or revisiting it regularly makes eviction less likely. A backup, coming next, removes the risk.</p></div></div>` : ""}
+      ${!storageUnavailable && storageEstimate.supported && !storagePersisted ? `<div class="inline-callout"><div><strong>The browser may clear these records</strong><p class="muted small-text">This browser has not granted persistent storage, so it can evict your records if the device runs low on space. Keeping the app installed or revisiting it regularly makes eviction less likely. Setting up a backup below removes the risk.</p></div></div>` : ""}
       <dl class="meta-grid">
         <div><dt>Storage</dt><dd>${escapeHtml(storageUnavailable ? "Unavailable" : "On this device")}</dd></div>
         <div><dt>Connection</dt><dd>${offlineMode ? "Offline" : "Online"}</dd></div>
@@ -3864,6 +4040,7 @@ function wireEvents() {
     if (action === "backup-forget") forgetBackupPassphrase();
     if (action === "backup-cancel") dismissBackupPrompt();
     if (action === "confirm-restore") confirmRestore();
+    if (action === "setup-restore") promptForPassphrase("restore");
     if (action === "export-records") exportRecordsFile();
     if (action === "check-messages") pullInbox({ silent: false });
   };
@@ -4076,20 +4253,73 @@ async function signOut() {
   mobileNavOpen = false;
 
   // Always drop the offline cache first. Sign-out has to work with the server
-  // unreachable, otherwise a device that cannot reach Supabase could never be
-  // locked -- and the cached identity is exactly what would keep unlocking it.
+  // unreachable, otherwise a device that cannot reach the server could never
+  // be locked -- and the cached identity is exactly what would keep unlocking it.
   clearCachedIdentity();
 
   if (!offlineMode) {
-    await runServerAuthAction("signout", {}, { successMessage: "Signed out." });
-    return;
+    const result = await runServerAuthAction("signout", {}, { successMessage: "Signed out." });
+    if (result) {
+      clearSignOutPending();
+      return;
+    }
+    // The server could not be reached mid-sign-out. Fall through to the local
+    // lock: the person asked to sign out, so the device must not stay open.
   }
 
+  // The session cookie is HttpOnly, so only the server can end it. Until it
+  // does, record that a sign-out is owed; the next online check finishes it
+  // instead of trusting the server's "still signed in" and unlocking the
+  // device as whoever just left it.
+  markSignOutPending();
   auth = normalizeAuth();
   accessMode = "locked";
   authMode = "signin";
   showToast("Signed out on this device. Your records stay here.");
   render();
+  startReconnectWatch();
+}
+
+function markSignOutPending() {
+  try {
+    localStorage.setItem(SIGNOUT_PENDING_KEY, "1");
+  } catch (error) {
+    // The UI is locked regardless; only the server-side completion is at risk.
+  }
+}
+
+function readSignOutPending() {
+  try {
+    return localStorage.getItem(SIGNOUT_PENDING_KEY) === "1";
+  } catch (error) {
+    return false;
+  }
+}
+
+function clearSignOutPending() {
+  try {
+    localStorage.removeItem(SIGNOUT_PENDING_KEY);
+  } catch (error) {
+    // nothing to clear
+  }
+}
+
+// Finishes a sign-out the server never heard about. Fails closed: if this
+// cannot complete, the device stays locked and the debt is kept for next time.
+async function completePendingSignOut() {
+  try {
+    const response = await fetch(API_SESSION_PATH, {
+      method: "POST",
+      headers: apiHeaders({ "Content-Type": "application/json" }),
+      credentials: "same-origin",
+      body: JSON.stringify({ action: "signout" }),
+    });
+    if (!response.ok) return false;
+  } catch (error) {
+    return false;
+  }
+  clearSignOutPending();
+  return true;
 }
 
 async function handleProfileSubmit(form, isFirstLaunch) {
@@ -5188,6 +5418,10 @@ async function confirmResetLocalData() {
 }
 
 function eraseLocalBusinessData() {
+  // A backup queued before the erase would otherwise fire afterwards, seal the
+  // now-empty records, and overwrite the store's good backup with them.
+  cancelAutoBackup();
+  clearBackupPending();
   if (deviceStorage) void deviceStorage.erase();
   for (const key of [STORAGE_KEY, VIEW_KEY, WORKSPACE_KEY, STORE_TAG_KEY]) {
     try {
@@ -5956,6 +6190,8 @@ function applyServerSessionResult(result = {}, options = {}) {
   offlineMode = false;
 
   if (result.authenticated && result.identity) {
+    // A deliberate new sign-in supersedes any sign-out still owed to the server.
+    clearSignOutPending();
     applyIdentity(result.identity);
     cacheIdentity(result.identity);
     persistLocalAuth();
@@ -5988,6 +6224,9 @@ function applyServerSessionResult(result = {}, options = {}) {
 
 function saveState() {
   persistLocalState();
+  // Recorded even when no backup can run right now (offline, or no passphrase
+  // yet), so the change is caught up later rather than forgotten.
+  markBackupPending();
   // Queue an encrypted backup. Debounced inside, so this is cheap to call from
   // every mutation site.
   scheduleAutoBackup();

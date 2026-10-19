@@ -38,6 +38,11 @@ ok("no PUT to /api/state anywhere in the client", !/API_STATE_PATH|["'`]\/api\/s
 ok("no saveBackendData sync path survives", !appCode.includes("saveBackendData"));
 ok("no /api/data export or delete call survives", !/API_DATA_PATH|["'`]\/api\/data/.test(appCode));
 ok("no workspace-code calls survive", !/API_WORKSPACE_CODE_PATH|["'`]\/api\/workspace-code/.test(appCode));
+// The join flow's UI outlived its removal once: a CRLF-blind edit script in
+// step 2 deleted the single-line references and silently missed the
+// multi-line ones, leaving a dead "Have a workspace code" button that the
+// first browser session found. Guard the UI, not just the network call.
+ok("no join-mode UI survives", !/data-auth-mode="join"|mode === "join"|workspace code/i.test(appCode));
 ok("the client sends no x-workspace-id header", !appCode.includes("x-workspace-id"));
 // The client may only talk to identity endpoints plus the backup endpoint.
 // Backup is the one deliberate exception to "no business data leaves the
@@ -105,6 +110,65 @@ ok("activate drops superseded caches", /keys\.filter\(\(key\) => key !== SHELL_V
 ok("navigations fall back to the shell offline", /request\.mode === "navigate"/.test(swSource));
 ok("the worker is registered from the app", appCode.includes('navigator.serviceWorker.register("/sw.js")'));
 ok("the worker ships in the build", fs.readFileSync(path.join(rootDir, "scripts/build.js"), "utf8").includes("sw.js"));
+// The build serves the worker from the root; the dev server must too, or the
+// worker 404s locally and offline behaviour can only be seen in production.
+// The first browser session found exactly that.
+ok("the dev server serves the worker from the root", /cleanPath === "\/sw\.js" \? "\/src\/sw\.js"/.test(serverCode));
+
+// --- Findings from the first browser session (2026-10-19) -------------------
+// Each of these passed every earlier static check and was only caught by
+// running the app. They are pinned here so they cannot quietly return.
+function bodyOf(name) {
+  const start = appCode.indexOf(`function ${name}(`);
+  if (start === -1) return "";
+  const next = appCode.indexOf("\nfunction ", start + 10);
+  const nextAsync = appCode.indexOf("\nasync function ", start + 10);
+  const ends = [next, nextAsync].filter((index) => index !== -1);
+  return appCode.slice(start, ends.length ? Math.min(...ends) : undefined);
+}
+const setupBody = bodyOf("renderSetup");
+const mismatchBody = bodyOf("renderStoreMismatch");
+const signOutBody = appCode.slice(appCode.indexOf("async function signOut("), appCode.indexOf("function markSignOutPending("));
+const bootBody = appCode.slice(appCode.indexOf("async function initializeApp("), appCode.indexOf("function startReconnectWatch("));
+const reconnectBody = bodyOf("startReconnectWatch");
+
+// Signup lands on setup, never Settings, so the one-time recovery code must
+// render there (and on the mismatch screen, which signup can also land on).
+ok("the signup recovery code shows on the setup screen", /renderRecoveryResult\(lastRecoveryResult\)/.test(setupBody));
+ok("the signup recovery code shows on the mismatch screen", /renderRecoveryResult\(lastRecoveryResult\)/.test(mismatchBody));
+
+// A fresh device has no profile, so it only ever shows setup: restore and
+// sign-out have to be reachable from there.
+ok("restore onto a new device is offered on the setup screen", /renderSetupRestore\(\)/.test(setupBody));
+ok("the setup screen can sign out", /data-action="sign-out"/.test(setupBody));
+ok("the setup restore action is wired", /action === "setup-restore"/.test(appCode));
+
+// A locked device cannot know whether accounts exist.
+ok("the sign-in note no longer claims no account exists", !/No account exists yet/.test(appCode));
+
+// Sign-out that the server cannot hear must still lock, and must be finished
+// with the server before any later "still signed in" answer is trusted.
+ok("a failed online sign-out still locks the device", /if \(result\)[\s\S]{0,120}return;[\s\S]{0,600}markSignOutPending\(\);[\s\S]{0,80}accessMode = "locked"/.test(signOutBody));
+ok("boot finishes an owed sign-out before trusting the server", /readSignOutPending\(\)[\s\S]{0,200}completePendingSignOut\(\)[\s\S]{0,120}identity: null/.test(bootBody));
+ok("the reconnect check finishes an owed sign-out instead of unlocking", /readSignOutPending\(\)[\s\S]{0,300}completePendingSignOut\(\)[\s\S]{0,200}return;/.test(reconnectBody));
+ok("a deliberate sign-in clears an owed sign-out", /result\.authenticated && result\.identity\)[\s\S]{0,200}clearSignOutPending\(\)/.test(appCode));
+
+// Offline edits must reach the backup once the app is online again.
+ok("every save marks a backup as pending", /function saveState\(\)[\s\S]{0,300}markBackupPending\(\)/.test(appCode));
+ok("an online start catches up a pending backup", /readBackupPending\(\)[\s\S]{0,80}scheduleAutoBackup\(CATCH_UP_BACKUP_DELAY_MS\)/.test(bootBody));
+ok("an offline start watches for the server to return", /startReconnectWatch\(\)/.test(bootBody));
+ok("a failed automatic backup retries instead of waiting for an edit", /scheduleAutoBackup\(RECONNECT_CHECK_MS\)/.test(bodyOf("backUpQuietly")));
+ok("pending is cleared only if nothing changed during the upload", /localStorage\.getItem\(BACKUP_PENDING_KEY\) === sealedAt/.test(appCode));
+
+// An erase must never be followed by a backup of the emptied device.
+ok("erase cancels a queued backup", /cancelAutoBackup\(\)/.test(bodyOf("eraseLocalBusinessData")));
+ok("automatic backup refuses an empty device", /hasRecordsWorthBackingUp\(\)/.test(bodyOf("backUpQuietly")));
+ok("manual backup refuses an empty device", /hasRecordsWorthBackingUp\(\)/.test(bodyOf("backUpNow")));
+ok("restore cancels anything queued against the replaced records", /cancelAutoBackup\(\)/.test(bodyOf("restoreFromBackup")));
+
+// The owner's writing rule: no em-dashes in UI copy or comments.
+ok("no em-dashes anywhere in the app", !/—|&mdash;/.test(appSource));
+ok("the erase dialog no longer denies the backup exists", !/There is no server copy to restore from/.test(appCode));
 
 // --- Server mirror ----------------------------------------------------------
 ok("dev server gates the retired endpoints", /\/api\/state[\s\S]{0,200}410/.test(serverCode));
