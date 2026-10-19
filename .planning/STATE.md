@@ -101,7 +101,7 @@ The repo is single-branch: `main` is the working, default, and production branch
 
 ## In Progress
 
-- Item: Phase 021 local-first pivot. Step 0 (anon-grant revoke) applied to production on 2026-08-18. Steps 1 to 5 built and review-remediated on `phase-021-release-a`: global identity, local-primary data, IndexedDB device storage, encrypted backup and restore, transit inbox. The server database moved to Neon on 2026-10-02; 196 server assertions now run the production SQL adapter on embedded Postgres, plus a 22-step HTTP round trip through the dev server. Remaining: a browser session over the client flows (they have never run in a real browser), steps 6 and 7, UAT, then Release A.
+- Item: Phase 021 local-first pivot. Step 0 (anon-grant revoke) applied to production on 2026-08-18. Steps 1 to 5 built and review-remediated on `phase-021-release-a`: global identity, local-primary data, IndexedDB device storage, encrypted backup and restore, transit inbox. The server database moved to Neon on 2026-10-02; 196 server assertions now run the production SQL adapter on embedded Postgres, plus a 22-step HTTP round trip through the dev server. First browser session ran on 2026-10-19: ten defects found and fixed, including a security hole where an offline sign-out left the session valid so the next online start reopened the device as the same user. Remaining: steps 6 and 7, UAT, then Release A.
 - Item: Neon not yet provisioned. Until Neon is added to the Vercel project, `DATABASE_URL` does not exist and a production build of the new code fails by design, keeping the previous deployment live rather than shipping an app that cannot sign anyone in.
 - Item: Legacy Supabase project, paused and restorable for 90 days from its pause date, so until no earlier than about 2026-11-23. Restore it once to run UAT item 11 (confirm the old documents hold nothing real), then decommission it. The keepalive cron that was meant to prevent this pause was replaced by `/api/maintenance`; whether it ever fired was never established.
 - Item: Phase 018/019 production verification — folded into the Phase 021 UAT. The old smoke exercised the server write path and cross-device flows that the pivot removes or replaces; recovery and invite flows are re-verified against the restructured identity plane instead. The owner last-resort procedure remains unrehearsed and gets rewritten in 021 step 7.
@@ -126,7 +126,7 @@ Historical detail retained below.
 
 ## Next Action
 
-Owner: add Neon to the Vercel project (Vercel dashboard, the project's Storage tab, connect Neon), which sets `DATABASE_URL` for every environment. The first production build of Release A then applies the schema automatically. Owner, before about 2026-11-23: restore the legacy Supabase project once so UAT item 11 can confirm it holds nothing real. Engineering next: a browser session over the client flows of steps 2 to 5, then steps 6 and 7.
+Owner: add Neon to the Vercel project (Vercel dashboard, the project's Storage tab, connect Neon), which sets `DATABASE_URL` for every environment. The first production build of Release A then applies the schema automatically. Owner, before about 2026-11-23: restore the legacy Supabase project once so UAT item 11 can confirm it holds nothing real. Engineering next: steps 6 and 7 (cleanup and re-homed hardening, then the docs and smoke rewrite).
 
 ## Verification Snapshot
 
