@@ -40,13 +40,13 @@ For work not ready to deploy, use a short-lived branch (as `phase-021-release-a`
 
 - Worktree clean; `npm.cmd run launch:check` and `npm.cmd run release:preflight` pass.
 - Vercel production environment variables present (values never in the repo):
-  - `DATABASE_URL`, set by the Neon integration
+  - `DATABASE_URL`, set by the Neon integration: unprefixed, Production only
   - `CRON_SECRET`
   - For channel intake: `FASHION_STORE_INBOX_STORE_ID`, `CHANNEL_WEBHOOK_VERIFY_TOKEN`, `CHANNEL_WEBHOOK_SECRET`, `CHANNEL_WEBHOOK_REQUIRE_SIGNATURE=1`, optionally `CHANNEL_WEBHOOK_MAX_MESSAGES`
 - The build log shows a `db-migrate:` line, and the deployment is Ready.
 - `/api/health` on `https://fashion-store-os.vercel.app` reports `ok: true` and `storage: "postgres"`.
 
-The `SUPABASE_*` variables are unused since Phase 021 and are removed in Release B, when the legacy Supabase project is decommissioned.
+The `SUPABASE_*` and `FASHION_STORE_WORKSPACE_ID` variables are unused since Phase 021 and are removed in Release B, when the legacy Supabase project is decommissioned.
 
 ## Rollback
 

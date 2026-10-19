@@ -1,6 +1,7 @@
 {
   "buildCommand": "node scripts/build.js && node scripts/db-migrate.js",
   "outputDirectory": "dist",
+  "regions": ["fra1"],
   "crons": [
     {
       "path": "/api/maintenance",

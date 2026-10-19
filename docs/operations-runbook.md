@@ -36,7 +36,7 @@ After each release:
 
 ## Neon Operations
 
-The database is a Neon Postgres project connected through the Vercel integration, which supplies `DATABASE_URL` to every environment.
+The database is Neon project `steep-smoke-31370127` in Frankfurt, connected through the Vercel integration as storage resource `neon-champagne-river`, which supplies `DATABASE_URL` to Production. The functions run in Frankfurt too (`vercel.json`), next to it. Its Neon organization is managed by Vercel, so reach the Neon console from Vercel (Storage, `neon-champagne-river`, Open in Neon); a separate Neon login cannot see it.
 
 - **It does not pause the way Supabase did.** Neon scales idle compute to zero after 5 minutes and wakes it on the next query; the first request after a quiet spell is a little slower. Idle branches are archived and unarchived automatically on access. Nothing needs keeping alive.
 - **Free plan limits** (as of 2026-10): 1 GB storage, 100 compute-hours a month, 5 GB transfer a month. These are usage caps, not inactivity rules. If compute runs out, the database is suspended until the next month, which looks like `database-unreachable`. One shop is far below this, because compute only accrues while requests are being served. Check usage in the Neon console when traffic grows.

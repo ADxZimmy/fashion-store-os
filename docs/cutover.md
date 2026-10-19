@@ -20,7 +20,7 @@ Ordered checklist for releasing Phase 021 (the local-first pivot) to production 
 
 | # | Prerequisite | How to confirm |
 |---|---|---|
-| 1 | Neon added to the Vercel project **[OWNER]** | Vercel, project, Storage: a Neon database is connected for Production. `DATABASE_URL` appears under Settings, Environment Variables. See `docs/owner-activation-runbook.md`. |
+| 1 | Neon added to the Vercel project **[OWNER]** | `vercel env ls` shows `DATABASE_URL`, unprefixed, for Production only. Connected on 2026-10-19 but with a prefix and Preview included, so not yet met; see `docs/owner-activation-runbook.md`, Fixing The Connection. |
 | 2 | `CRON_SECRET` set in Vercel | Settings, Environment Variables. Set since 2026-08-02; confirm it is still there. |
 | 3 | Legacy Supabase holds nothing real **[OWNER]** | Phase 021 UAT item 11. Restore the paused project once (Supabase dashboard), run the query in that item, confirm only test content. Must happen before about 2026-11-23, when the restore window may close. |
 | 4 | Branch reviewed | `phase-021-release-a` merged into `main` locally and `npm.cmd run launch:check` green on the result. |
@@ -89,7 +89,7 @@ Follow **Post-Launch Support** in `docs/operations-runbook.md`.
 Only after every Phase 021 UAT scenario passes:
 
 1. Delete the retired endpoints (`api/state.js`, `api/data.js`, `api/inbound.js`, `api/workspace-code.js`, `api/_gone.js`) and their dev-server routes.
-2. Decommission the legacy Supabase project, after UAT item 11's second confirmation. Remove the `SUPABASE_*` variables from Vercel and the `supabase` devDependency.
+2. Decommission the legacy Supabase project, after UAT item 11's second confirmation. Remove the `SUPABASE_*` and `FASHION_STORE_WORKSPACE_ID` variables from Vercel and the `supabase` devDependency.
 3. Re-run Steps 0 to 5.
 
 Nothing in Release B touches Neon.
@@ -103,7 +103,7 @@ Fill this in at release and keep it in the repo:
 | Release date | |
 | Deployed commit | |
 | Release tag | |
-| Neon project | |
+| Neon project | `steep-smoke-31370127` (Vercel resource `neon-champagne-river`), Frankfurt `aws-eu-central-1`, PostgreSQL 18.6; functions in `fra1` |
 | Build log migration line | |
 | `/api/health` | |
 | `/api/readiness` | |

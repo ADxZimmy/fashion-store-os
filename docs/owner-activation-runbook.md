@@ -6,7 +6,7 @@ Audience: `ADxZimmy`, the owner of the Vercel project. Goal: connect a Neon Post
 
 Time: about 10 minutes. Do it from the owner account: the Vercel project belongs to it, and on the Hobby plan deploys of collaborator-authored commits are refused with `TEAM_ACCESS_REQUIRED`.
 
-Status as of 2026-10-19: **not done.** No Neon database is connected yet, and production still runs the pre-pivot build on the paused Supabase project.
+Status as of 2026-10-19: **connected, with one fix outstanding.** The database exists and answers: the app's own database code ran against it read-only, and its role may create tables. But the connection was made with the variable prefix `NEON_FASHION_STORE_` and for Preview as well as Production, so it has to be redone (Fixing The Connection, below) before Release A. Production still runs the pre-pivot build on the paused Supabase project.
 
 ## Targets
 
@@ -16,40 +16,50 @@ Status as of 2026-10-19: **not done.** No Neon database is connected yet, and pr
 | Vercel project ID | `prj_3oNJjdlNXi5yTKkqenDEzY2jVELi` |
 | Production branch | `main` |
 | Public URL | `https://fashion-store-os.vercel.app` |
-| Neon database | Created in Step 2. Record its project name, id, and region in the Release A record in `docs/cutover.md`. |
+| Vercel storage resource | `neon-champagne-river` |
+| Neon project | `steep-smoke-31370127`, in a Neon organization managed by Vercel. Open it from Vercel; a separate Neon login cannot see it. |
+| Region | Frankfurt, `aws-eu-central-1`. Functions are pinned to `fra1` to match (Step 1). |
+| Database | `neondb` on PostgreSQL 18.6 |
 
 ## What Happens Where
 
 Connecting Neon only stores configuration. Nothing changes for users until the Phase 021 build is pushed to `main`: that build runs `scripts/db-migrate.js`, which creates the tables from `db/migrations/` before the deployment goes live. The pre-pivot build currently in production never reads `DATABASE_URL`, so adding it is safe at any time.
 
-## Step 1: Check the function region
+## Step 1: Choose the region (done)
 
-Vercel, project, Settings, Functions: note the **Function Region**. Every API request makes several database round trips, so the database belongs in the same region as the functions; the distance between them costs more than the distance to the user.
+Every API request makes several database round trips, so the functions belong in the same region as the database; the distance between them costs more than the distance to the user.
 
-If the shop is far from that region (for example in West Africa, with functions on Vercel's US East default), consider moving both to Europe, for example Vercel `fra1` with Neon's Frankfurt region. Decide before Step 2: a Neon database cannot move region later without a migration.
+The database is in Frankfurt, which suits a shop in West Africa better than Vercel's US East default. `vercel.json` pins the functions to Frankfurt (`fra1`) to match, overriding the dashboard's Function Region setting, and a guard test keeps the pin in place. A Neon database cannot move region without a migration, so if the functions ever move, the database has to move with them.
 
 ## Step 2: Create the database from Vercel
 
 1. Vercel, project, **Storage**, create a database and choose **Neon** (listed with the marketplace database providers). Accept Neon's terms as the owner.
 2. Plan: **Free**. Region: the one matching Step 1.
 3. Connect it to this project for the **Production** environment. Development is not needed: local development runs on an embedded database. Leave **Preview** unconnected (see Preview deployments below).
-4. If the dialog offers an environment variable prefix, leave it **empty**. The app reads `DATABASE_URL`, falling back to `POSTGRES_URL`; a prefixed name such as `STORAGE_DATABASE_URL` is never read, and the production build would fail.
+4. If the dialog offers an environment variable prefix, make sure it is **empty**. The app reads `DATABASE_URL`, falling back to `POSTGRES_URL`; a prefixed name is never read, and the production build would fail. The first connection, on 2026-10-19, came out as `NEON_FASHION_STORE_DATABASE_URL` and so on.
+
+## Fixing The Connection
+
+Needed once: the 2026-10-19 connection carries the prefix and includes Preview.
+
+1. Vercel, project, **Storage**, `neon-champagne-river`. Remove **this project's connection** only. Do **not** delete the database itself, which is a separate action.
+2. Connect the project again: **Production** only, prefix **empty**.
+3. Check the result with `vercel env ls`: `DATABASE_URL` is listed for Production only, and no `NEON_FASHION_STORE_` names remain. If any prefixed variables survive the disconnect, delete them under Settings, Environment Variables.
+
+The database is untouched by this, and it is still empty anyway. Neon Auth, which the integration enabled on the database, stays as it is; the app does not use it.
 
 ## Step 3: Confirm the configuration
 
-Vercel, project, Settings, Environment Variables, Production:
+Vercel, project, Settings, Environment Variables:
 
-- `DATABASE_URL` is present (the integration may add several related variables too; they are harmless).
+- `DATABASE_URL` is present for Production, unprefixed, and not for Preview (the integration adds several related variables too; they are harmless).
 - `CRON_SECRET` is still present (set since 2026-08-02). The daily `/api/maintenance` cron needs it.
 
 Never copy the connection string into the repo, an issue, or `.planning/`.
 
-## Step 4: Note the database's settings
+## Step 4: Note the restore window
 
-From Vercel, Storage, open the database in the Neon console:
-
-- Note the project name, id, and region for the Release A record.
-- Note how far back the database can be restored (Neon's history retention or restore window setting). It bounds a restore by branching from a timestamp (`docs/operations-runbook.md`, Backups And Recovery).
+From Vercel, Storage, open the database in the Neon console and note how far back it can be restored (Neon's history retention or restore window setting). It bounds a restore by branching from a timestamp (`docs/operations-runbook.md`, Backups And Recovery). The other Neon projects on this account show 6 hours; confirm this one.
 
 ## Step 5: Release
 
@@ -61,13 +71,13 @@ db-migrate: applied 0001_identity (<n> statements)
 db-migrate: applied 1 of 1 migrations.
 ```
 
-Later builds show `db-migrate: schema up to date`. Then `/api/health` returns `ok: true` and `storage: "postgres"`, which closes the last unverified piece of the move to Neon: the production driver against a live database.
+Later builds show `db-migrate: schema up to date`. Then `/api/health` returns `ok: true` and `storage: "postgres"`. The app's database code already ran against this database from a local machine on 2026-10-19 (read-only); the first build proves it from Vercel's functions.
 
 ## Troubleshooting
 
 | Symptom | Meaning | Fix |
 | --- | --- | --- |
-| Build fails with `db-migrate: DATABASE_URL is not set` | Neon is not connected to Production, or the variables were given a prefix. | Recheck Steps 2 and 3, then redeploy. A failed build never goes live, so users saw nothing. |
+| Build fails with `db-migrate: DATABASE_URL is not set` | Neon is not connected to Production, or the variables were given a prefix. | Fixing The Connection, then Step 3, then redeploy. A failed build never goes live, so users saw nothing. |
 | Build fails with `db-migrate: failed.` | The database refused or did not answer. | Check the database's status in the Neon console; reconnect the integration if the credentials changed. |
 | `/api/health` says `unconfigured` after a good build | `DATABASE_URL` was removed or renamed since that build. | Restore it and redeploy. |
 | `/api/health` says `database-unreachable` | Neon is down, or the Free plan's monthly compute ran out. | Neon console: project status and usage. Signed-in devices keep working offline meanwhile. |

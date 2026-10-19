@@ -7,7 +7,7 @@ Where Fashion Store OS keeps what, after the Phase 021 local-first pivot. Busine
 ## Status
 
 - The design below is built on branch `phase-021-release-a` and **not yet deployed**. Production still runs the pre-pivot build, whose Supabase database paused for inactivity and is down (found 2026-10-02).
-- The server database is **Neon Postgres**, chosen on 2026-10-02 after Supabase paused the project a second time. Neon has **not been provisioned** yet: the owner adds it to the Vercel project from the Storage tab, which sets `DATABASE_URL`. See `docs/owner-activation-runbook.md`.
+- The server database is **Neon Postgres**, chosen on 2026-10-02 after Supabase paused the project a second time. It was connected to the Vercel project on 2026-10-19: Vercel resource `neon-champagne-river`, Neon project `steep-smoke-31370127`, Frankfurt (`aws-eu-central-1`), PostgreSQL 18.6, database `neondb`. It is still empty; the first Release A build creates the tables. As first connected, its variables carry the prefix `NEON_FASHION_STORE_`, which the app does not read, so the connection is redone without a prefix before Release A. See `docs/owner-activation-runbook.md`.
 
 ## What Lives Where
 
@@ -64,7 +64,7 @@ The local dev server (`npm run dev`, `server.js`) mirrors every route; a guard t
 
 | Variable | Required | Purpose |
 |---|---|---|
-| `DATABASE_URL` | Yes | Neon connection string. Set by the Vercel Neon integration; `POSTGRES_URL` is accepted as a fallback. A production build without it fails on purpose, so the previous deployment stays live. |
+| `DATABASE_URL` | Yes | Neon connection string. Set by the Vercel Neon integration; `POSTGRES_URL` is accepted as a fallback. The names must be unprefixed: `NEON_FASHION_STORE_DATABASE_URL` and the like are never read. A production build without it fails on purpose, so the previous deployment stays live. |
 | `CRON_SECRET` | Recommended | Bearer token Vercel Cron sends to `/api/maintenance`. |
 | `FASHION_STORE_INBOX_STORE_ID` | For channel intake | The one store that provider messages belong to. Until it is set, webhook deliveries are refused with 503 rather than guessed at. |
 | `CHANNEL_WEBHOOK_VERIFY_TOKEN` | For channel intake | Provider handshake token. |
@@ -90,5 +90,8 @@ The pre-pivot database is Supabase project `elkpberfbhwbrkawklnk` (`fashion-stor
 ## Vercel Project
 
 - Git-connected project: `sanuske2-2147s-projects/fashion-store-os` (project ID `prj_3oNJjdlNXi5yTKkqenDEzY2jVELi`).
+- Functions run in Frankfurt (`fra1`), pinned by `regions` in `vercel.json` so they sit next to the database; every request makes several database round trips. Vercel's default would be Washington, D.C. A guard test keeps the pin in place.
+- The Neon organization behind the database is managed by Vercel. Open it from Vercel (Storage, `neon-champagne-river`, Open in Neon), not from a separate Neon login, which cannot see it.
+- The integration also enabled Neon Auth: a `neon_auth` schema and `NEON_AUTH` variables. The app does not use it.
 - Public alias: `https://fashion-store-os.vercel.app`.
 - `main` is the production branch; every push to it deploys. Commits must be authored as `ADxZimmy` or the Hobby-plan deploy is refused; see `docs/release-lane.md`.

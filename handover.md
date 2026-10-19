@@ -73,7 +73,9 @@ It runs the syntax check, every test suite, the UX and security audits, and the 
 
 **Status on 2026-10-19: production is down.** `main` still runs the pre-pivot build, which depends on the Supabase project `fashion-store` (`elkpberfbhwbrkawklnk`); that project paused for inactivity on 2026-10-02. No real store uses the app, so nothing real is affected. Production returns with Release A, on Neon.
 
-Release A needs, in order: Neon connected to the Vercel project (owner), the legacy Supabase check in Phase 021 UAT item 11 (owner, before about 2026-11-23), then `docs/cutover.md`.
+Release A needs, in order: the Neon connection redone without its variable prefix and for Production only (owner; `docs/owner-activation-runbook.md`, Fixing The Connection), the legacy Supabase check in Phase 021 UAT item 11 (owner, before about 2026-11-23), then `docs/cutover.md`.
+
+Database: Neon project `steep-smoke-31370127` (Vercel resource `neon-champagne-river`), Frankfurt, PostgreSQL 18.6, connected 2026-10-19 and still empty. Functions are pinned to Frankfurt (`fra1`) in `vercel.json` to sit next to it. The Neon organization is managed by Vercel: open it from Vercel's Storage tab.
 
 ## Release Status
 
@@ -161,7 +163,8 @@ Signing out never touches records. Settings, This device's records, **Erase this
 
 Latest, 2026-10-19:
 
-- `npm.cmd run launch:check` green: identity 136, local-first 90, storage 36, backup 45, inbox 35, and Neon 54 assertions, plus the UX and security audits and the build.
+- `npm.cmd run launch:check` green: identity 136, local-first 90, storage 36, backup 45, inbox 35, and Neon 55 assertions, plus the UX and security audits and the build.
+- The production Neon database answered a read-only check through the app's own database code (`docs/owner-activation-runbook.md`, Status).
 - Browser sessions in the in-app browser against the dev server: the client flows of steps 2 to 6 and the staff-device fix.
 - HTTP runs against the dev server: the channel inbox local smoke (10 of 10) and signed delivery (11 of 11).
 
@@ -169,7 +172,7 @@ Full record: `.planning/phases/021-local-first-pivot/VERIFICATION.md`. Earlier r
 
 ## Next Steps
 
-1. Owner: connect Neon to the Vercel project (`docs/owner-activation-runbook.md`).
+1. Owner: redo the Neon connection without the variable prefix, for Production only (`docs/owner-activation-runbook.md`, Fixing The Connection).
 2. Owner, before about 2026-11-23: restore the legacy Supabase project and run Phase 021 UAT item 11.
 3. Owner: set the repo-local commit identity (`docs/release-lane.md`).
 4. Release A (`docs/cutover.md`), then the 14-day watch window (`docs/operations-runbook.md`).

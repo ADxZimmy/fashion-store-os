@@ -213,6 +213,11 @@ async function main() {
     const vercel = JSON.parse(fs.readFileSync(path.join(rootDir, "vercel.json"), "utf8"));
     ok("the daily cron targets maintenance, not keepalive", vercel.crons.length === 1 && vercel.crons[0].path === "/api/maintenance");
     ok("production builds run migrations", /db-migrate\.js/.test(vercel.buildCommand));
+    // Every request makes several database round trips, so the functions must
+    // sit next to the database: Neon project steep-smoke-31370127 is in
+    // Frankfurt (aws-eu-central-1). Without this key Vercel falls back to its
+    // Washington default and every query crosses the Atlantic. Hobby allows one.
+    ok("functions run in Frankfurt, next to the database", JSON.stringify(vercel.regions) === JSON.stringify(["fra1"]));
     const pkg = JSON.parse(fs.readFileSync(path.join(rootDir, "package.json"), "utf8"));
     ok("the Neon driver is a runtime dependency", Boolean(pkg.dependencies && pkg.dependencies["@neondatabase/serverless"]));
     ok("PGlite stays a dev dependency", Boolean(pkg.devDependencies && pkg.devDependencies["@electric-sql/pglite"]) && !(pkg.dependencies || {})["@electric-sql/pglite"]);

@@ -2,7 +2,7 @@
 
 Owner-run scenarios against the Release A deployment, in a real browser. All must pass before Release B (the destructive release). Item 11's first half is the exception: it runs **before Release A**, because the identity cutover invalidates existing accounts.
 
-Server-side inspection uses the Neon console's SQL editor; Neon replaced Supabase on 2026-10-02 (CONTEXT, "Provider change"). Item 11 is the one place the legacy Supabase project is still needed.
+Server-side inspection uses the Neon console's SQL editor, opened from Vercel (Storage, `neon-champagne-river`, Open in Neon); Neon replaced Supabase on 2026-10-02 (CONTEXT, "Provider change"). Item 11 is the one place the legacy Supabase project is still needed.
 
 1. **Fresh start.** New browser profile → manager signup → set up business profile, add a client and an order → refresh → everything persists. DevTools network tab shows no business-data writes to the server.
 2. **Lock without loss.** Sign out → lock screen appears → local data untouched (verify by signing back in: same data).
