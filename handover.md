@@ -54,6 +54,7 @@ It runs the syntax check, every test suite, the UX and security audits, and the 
 ## Development Rules
 
 - Every API route change lands in both `api/` and `server.js`. A guard checks the two match.
+- `api/` holds at most 12 functions (files not starting with `_`): the Vercel Hobby plan refuses a deployment with more. A guard enforces it. Release A has 10; the four retired endpoints share `api/retired.js` through `vercel.json` rewrites.
 - A schema change is a new file in `db/migrations/`. Never edit an applied one.
 - Bump `SHELL_VERSION` in `src/sw.js` in the same commit as any change to a file it precaches.
 - Security-audit assertions change in the same commit as the code they assert on.

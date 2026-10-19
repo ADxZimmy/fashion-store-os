@@ -7,6 +7,7 @@ const fs = require("fs/promises");
 const { sweepIdentity } = require("./api/_identity");
 const { readBackup, removeBackup, writeBackup } = require("./api/_backup");
 const { SECURITY_HEADERS } = require("./api/_security_headers");
+const { RETIRED_ENDPOINTS, retiredEndpointFor, sendGone } = require("./api/_gone");
 const { handleIdentityGet, handleSessionAction } = require("./api/_identity_http");
 const { openDevDatabase } = require("./db/pglite");
 const { acceptMessages, acknowledgeMessages, pullMessages } = require("./api/_inbox");
@@ -87,6 +88,7 @@ async function routeApi(request, response, url) {
     "/api/session": "POST, OPTIONS",
     "/api/workspace-code": "OPTIONS",
     "/api/state": "OPTIONS",
+    "/api/retired": "OPTIONS",
   };
 
   if (request.method === "OPTIONS" && optionsAllow[url.pathname]) {
@@ -146,14 +148,11 @@ async function routeApi(request, response, url) {
     return;
   }
 
-  // Phase 021 Release A: retired endpoints answer 410 here exactly as they do
-  // in api/_gone.js, so local dev and production agree about what is gone.
-  if (["/api/state", "/api/inbound", "/api/data", "/api/workspace-code"].includes(url.pathname)) {
-    sendJson(response, 410, {
-      ok: false,
-      error: "Business data is stored on your device and is no longer synced to the server.",
-      retired: "Phase 021 moved business data onto the device. This endpoint no longer exists.",
-    });
+  // Phase 021 Release A: retired endpoints answer 410 through the same helper
+  // as production's api/retired.js, where vercel.json rewrites these paths,
+  // so local dev and production give the same answer for each one.
+  if (url.pathname === "/api/retired" || ["/api/state", "/api/inbound", "/api/data", "/api/workspace-code"].includes(url.pathname)) {
+    sendGone(request, response, RETIRED_ENDPOINTS[retiredEndpointFor(request)]);
     return;
   }
 

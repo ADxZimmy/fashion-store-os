@@ -96,7 +96,7 @@ Follow **Post-Launch Support** in `docs/operations-runbook.md`.
 
 Only after every Phase 021 UAT scenario passes:
 
-1. Delete the retired endpoints (`api/state.js`, `api/data.js`, `api/inbound.js`, `api/workspace-code.js`, `api/_gone.js`) and their dev-server routes.
+1. Delete the retired endpoints: `api/retired.js`, `api/_gone.js`, the four `/api/` rewrites in `vercel.json`, and their dev-server routes.
 2. Decommission the legacy Supabase project, after UAT item 11's second confirmation. Remove the `SUPABASE_*` and `FASHION_STORE_WORKSPACE_ID` variables from Vercel and the `supabase` devDependency.
 3. Re-run Steps 0 to 5.
 

@@ -9,6 +9,8 @@ How a change gets from this repo to production.
 - GitHub repository owner: `ADxZimmy`.
 - One branch, `main`: the working branch, the GitHub default, and the production branch of the Git-connected Vercel project. **Every push to `main` is a production release.**
 - The Vercel project is on the Hobby plan, which deploys only commits authored by the project owner. Commits authored by the collaborator account (`NnazimuzoO`) are refused with `TEAM_ACCESS_REQUIRED` even when the push succeeds. Both accounts belong to the same operator, so authoring as `ADxZimmy` is an identity choice, not spoofing a third party.
+- The Hobby plan also refuses a deployment with more than **12 functions**. With no framework, every file in `api/` not starting with `_` is one function. A guard in `scripts/test-local-first.js` fails at 13; that is why the four retired endpoints share `api/retired.js` through `vercel.json` rewrites.
+- Functions run in one region, Frankfurt (`fra1`), next to the database (`vercel.json`).
 
 ### Commit author
 

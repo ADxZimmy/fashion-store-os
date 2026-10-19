@@ -31,7 +31,7 @@ After each release:
 
 - Deployment status is **Ready**, and the build log shows a `db-migrate:` line (applied, or schema up to date).
 - Runtime Logs show no 5xx after the smoke test.
-- Function activity for `/api/bootstrap`, `/api/session`, `/api/auth`, `/api/backup`, `/api/inbox`, `/api/channel-webhook`, `/api/health`, `/api/readiness`, `/api/maintenance`. Calls to `/api/state`, `/api/data`, `/api/inbound`, or `/api/workspace-code` come from a browser still on the old build; they get 410 and should fade away.
+- Function activity for `/api/bootstrap`, `/api/session`, `/api/auth`, `/api/backup`, `/api/inbox`, `/api/channel-webhook`, `/api/health`, `/api/readiness`, `/api/maintenance`. Calls to `/api/state`, `/api/data`, `/api/inbound`, or `/api/workspace-code` come from a browser still on the old build; they get 410 and should fade away. They appear under the `/api/retired` function, which `vercel.json` rewrites all four paths to.
 - Cron Jobs: `/api/maintenance` succeeded.
 
 ## Neon Operations

@@ -2,6 +2,12 @@
   "buildCommand": "node scripts/build.js && node scripts/db-migrate.js",
   "outputDirectory": "dist",
   "regions": ["fra1"],
+  "rewrites": [
+    { "source": "/api/state", "destination": "/api/retired?endpoint=state" },
+    { "source": "/api/data", "destination": "/api/retired?endpoint=data" },
+    { "source": "/api/inbound", "destination": "/api/retired?endpoint=inbound" },
+    { "source": "/api/workspace-code", "destination": "/api/retired?endpoint=workspace-code" }
+  ],
   "crons": [
     {
       "path": "/api/maintenance",

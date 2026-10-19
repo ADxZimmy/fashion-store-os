@@ -31,7 +31,9 @@ function runAudit() {
   // manager gating still exists on the identity plane, and no server write path
   // for business data has crept back in.
   const identitySource = fs.readFileSync(path.join(rootDir, "api/_identity.js"), "utf8");
-  const stateSource = fs.readFileSync(path.join(rootDir, "api/state.js"), "utf8");
+  // The retired endpoints share one function (api/retired.js, reached through
+  // vercel.json rewrites) and one helper; between them they must only refuse.
+  const retiredSource = ["api/retired.js", "api/_gone.js"].map((file) => fs.readFileSync(path.join(rootDir, file), "utf8")).join("\n");
   const dbSource = fs.readFileSync(path.join(rootDir, "api/_db.js"), "utf8");
   const runtimeSources = fs
     .readdirSync(path.join(rootDir, "api"))
@@ -43,8 +45,8 @@ function runAudit() {
     ["Webhook signature-required mode", fs.readFileSync(path.join(rootDir, "api/channel-webhook.js"), "utf8").includes("CHANNEL_WEBHOOK_REQUIRE_SIGNATURE")],
     ["Manager-gated identity actions", identitySource.includes("requireManager")],
     ["Identity rate limiting is durable", identitySource.includes("consumeRateLimit")],
-    ["Retired state endpoint is gated", stateSource.includes("sendGone")],
-    ["No server-side business state writes", !stateSource.includes("setDocument")],
+    ["Retired endpoints answer 410", /sendJson\(response, 410/.test(retiredSource) && retiredSource.includes("sendGone")],
+    ["No server-side business state writes", !/setDocument|readJsonBody|\.query\(/.test(retiredSource)],
     ["Database credentials come from the environment", dbSource.includes("process.env.DATABASE_URL")],
     ["No Supabase client left in runtime code", runtimeSources.every((source) => !/supabaseRequest|SUPABASE_SERVICE_ROLE_KEY|\.supabase\.co/.test(source))],
     // Presence only; scripts/test-local-first.js checks the policy itself and

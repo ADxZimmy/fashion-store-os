@@ -210,15 +210,25 @@ ok("the erase dialog no longer denies the backup exists", !/There is no server c
 // rather than inspected: the dev server is where behaviour is verified, so a
 // missing mirror means verifying something production does not run.
 {
-  const endpoints = fs
-    .readdirSync(path.join(rootDir, "api"))
-    .filter((name) => name.endsWith(".js") && !name.startsWith("_"))
-    .map((name) => `/api/${name.replace(/\.js$/, "")}`);
+  // An endpoint is a function file in api/ or a path vercel.json rewrites to one.
+  const vercelConfig = JSON.parse(fs.readFileSync(path.join(rootDir, "vercel.json"), "utf8"));
+  const functionFiles = fs.readdirSync(path.join(rootDir, "api")).filter((name) => name.endsWith(".js") && !name.startsWith("_"));
+  const apiRewrites = (vercelConfig.rewrites || []).filter((rule) => rule.source.startsWith("/api/"));
+  const endpoints = [
+    ...functionFiles.map((name) => `/api/${name.replace(/\.js$/, "")}`),
+    ...apiRewrites.map((rule) => rule.source),
+  ];
   const mirrored = new Set([...serverCode.matchAll(/["'](\/api\/[a-z-]+)["']/g)].map((match) => match[1]));
   const unmirrored = endpoints.filter((route) => !mirrored.has(route));
   const orphaned = [...mirrored].filter((route) => !endpoints.includes(route));
   ok("every api/ endpoint has a dev-server route", unmirrored.length === 0, unmirrored.join(","));
   ok("every dev-server route has an api/ endpoint", orphaned.length === 0, orphaned.join(","));
+  const strayRewrites = apiRewrites.filter((rule) => !functionFiles.includes(`${rule.destination.split("?")[0].replace(/^\/api\//, "")}.js`));
+  ok("every api/ rewrite lands on a real function", strayRewrites.length === 0, strayRewrites.map((rule) => rule.source).join(","));
+  // Without a framework every file in api/ is one function, and the Hobby
+  // plan refuses a deployment with more than 12. Release A first reached 13,
+  // which is why the retired endpoints share api/retired.js.
+  ok("api/ stays within the Hobby plan's 12 functions", functionFiles.length <= 12, `${functionFiles.length} functions`);
 }
 
 // --- Store deletion UI (step 6) ---------------------------------------------
@@ -227,12 +237,46 @@ ok("store deletion asks for the password again", /deleteStoreForm[\s\S]{0,400}na
 ok("a deleted store drops the backup key and queued backups", /storeDeleted[\s\S]{0,300}cancelAutoBackup\(\)[\s\S]{0,80}clearBackupPending\(\)[\s\S]{0,80}clearCachedBackupKey\(\)/.test(appCode));
 
 // --- Server mirror ----------------------------------------------------------
-ok("dev server gates the retired endpoints", /\/api\/state[\s\S]{0,200}410/.test(serverCode));
+ok("dev server gates the retired endpoints", /\["\/api\/state", "\/api\/inbound", "\/api\/data", "\/api\/workspace-code"\]\.includes\(url\.pathname\)\)\s*\{\s*sendGone\(request, response/.test(serverCode));
 ok("dev server no longer serves business state", !/url\.pathname === "\/api\/state"[\s\S]{0,200}writeJsonAtomic/.test(serverCode));
 ok("dev server dropped the legacy auth document plane", !serverCode.includes("normalizeAuthDocument"));
-for (const file of ["state.js", "inbound.js", "data.js", "workspace-code.js"]) {
-  const source = fs.readFileSync(path.join(rootDir, "api", file), "utf8");
-  ok(`api/${file} answers 410`, source.includes("sendGone"));
+// --- Retired endpoints (Release A) -------------------------------------------
+// Exercised, not grepped: the shared function must give each retired path its
+// own 410 whichever form of the URL the rewrite hands it.
+{
+  const retired = require(path.join(rootDir, "api/retired.js"));
+  const { RETIRED_ENDPOINTS } = require(path.join(rootDir, "api/_gone.js"));
+  const call = (method, url) => {
+    const response = {
+      statusCode: 200,
+      headers: {},
+      body: "",
+      ended: false,
+      setHeader(name, value) {
+        this.headers[name.toLowerCase()] = value;
+      },
+      end(chunk) {
+        this.body = chunk ? String(chunk) : "";
+        this.ended = true;
+      },
+    };
+    retired({ method, url, headers: {} }, response);
+    return response;
+  };
+  const errorOf = (response) => (response.body ? JSON.parse(response.body).error : "");
+  ok("four retired paths are covered", Object.keys(RETIRED_ENDPOINTS).sort().join(",") === "data,inbound,state,workspace-code");
+  for (const [name, detail] of Object.entries(RETIRED_ENDPOINTS)) {
+    const viaRewrite = call("PUT", `/api/retired?endpoint=${name}`);
+    const viaPath = call("GET", `/api/${name}`);
+    ok(
+      `/api/${name} answers 410 with its own message`,
+      viaRewrite.statusCode === 410 && errorOf(viaRewrite) === detail && viaPath.statusCode === 410 && errorOf(viaPath) === detail,
+    );
+  }
+  const preflight = call("OPTIONS", "/api/retired?endpoint=state");
+  ok("a retired endpoint answers OPTIONS with no body", preflight.statusCode === 204 && preflight.ended && preflight.body === "");
+  const unknown = call("GET", "/api/retired?endpoint=nonsense");
+  ok("an unknown name still gets a generic 410", unknown.statusCode === 410 && errorOf(unknown).length > 0);
 }
 
 // --- Boot behaviour, exercised against a stubbed browser --------------------
