@@ -4,13 +4,13 @@
 
 - Phase 021: Local-first pivot.
   Outcome: Each device owns its business data locally; the server database (Neon Postgres since 2026-10-02) holds identity (global accounts, memberships, sessions, invites, recovery codes), a transit inbox for provider webhooks, and opaque encrypted backups, and nothing else. Offline unlock, encrypted backup and restore onto a new device, and durable identity-plane rate limits ship with it.
-  Status: Steps 0 to 7 built as of 2026-10-19. Step 0 (hotfix) reached production on 2026-08-18; steps 1 to 7 are on branch `phase-021-release-a`, not pushed. The server database moved from Supabase to Neon on 2026-10-02 after a second free-tier pause took production down, and production stays down until Release A ships. On 2026-10-19 the owner connected Neon (Frankfurt), UAT item 11's first confirmation passed (the legacy Supabase project holds no business data and no accounts), and **Release A shipped** as `v2.0.0` (`584277b`): the build migrated Neon, and health, readiness, and the retired endpoints passed in production. Remaining, in order: the operator-run smoke Steps 3 to 10, the 14-day watch window, the Phase 021 UAT, Release B.
+  Status: Steps 0 to 7 built as of 2026-10-19. Step 0 (hotfix) reached production on 2026-08-18; steps 1 to 7 shipped in **Release A**, `v2.0.0` (`584277b`), on 2026-10-19. The server database moved from Supabase to Neon on 2026-10-02 after a second free-tier pause took production down. On 2026-10-19 the owner connected Neon (Frankfurt), UAT item 11's first confirmation passed (the legacy Supabase project holds no business data and no accounts), the build migrated Neon, and health, readiness, and the retired endpoints passed in production. Production smoke Steps 3 to 10 then passed in agent mode, including recovery, offline sign-out, and mandatory cleanup (`docs/production-smoke-2026-10-19.md`). Remaining, in order: the 14-day watch window, the Phase 021 UAT, Release B.
 
 ## Next
 
 - Item: Pilot on the local-first model.
   Outcome: One real store runs a full operating cycle on its shop device (`docs/pilot-uat.md`, rewritten for the local-first model on 2026-10-19).
-  Status: Waiting for Release A and the Phase 021 UAT. The pre-pivot pilot was waived on 2026-07-31.
+  Status: Release A is live; waiting for the Phase 021 UAT. The pre-pivot pilot was waived on 2026-07-31.
 
 - Item: Custom domain, if wanted.
   Outcome: A branded domain replaces the `fashion-store-os.vercel.app` alias as the public target.
@@ -66,7 +66,7 @@
   Status: Complete locally.
 - Phase 015: Observability, backup, and security operations.
   Outcome: `/api/readiness`, local readiness parity, operations runbook, and `npm.cmd run ops:security` were added.
-  Status: Complete and deployed; owner-side backup/restore rehearsal pending.
+  Status: Complete and deployed. The local-first production backup/restore rehearsal passed on 2026-10-19 (smoke Steps 6 and 7; `docs/production-smoke-2026-10-19.md`).
 - Phase 020: Production-readiness remediation.
   Outcome: Planned account-bound server-owned tenancy, conflict-safe server writes, server-enforced RBAC, durable abuse controls, and provider routing.
   Status: **Superseded on 2026-08-18 by the Phase 021 local-first pivot**, which inverts its premise. Surviving items were re-homed: abuse controls (rate limits, validation, quotas, retention) into 021 step 1, the anon-grant removal into 021 step 0 (applied 2026-08-18), CSP/security headers and a CI push gate into 021 step 6 (built 2026-10-19). Alerting is deliberately deferred and stays tracked as the Later item below. The plan documents remain as the record of the server-data-plane direction not taken.
@@ -77,7 +77,7 @@
 
 - Phase 018: Account recovery and password reset.
   Outcome: One-time recovery codes issued at manager signup and re-issuable from Settings, manager-issued codes for colleagues, a redeem flow that grants no session, and a documented owner last-resort procedure.
-  Status: Implemented, verified locally, and deployed from `2a4a696` on 2026-08-03. Raised by the production smoke test, where a forgotten manager password made a workspace permanently unreachable. Email-based reset stayed out of scope: no mail capability exists, and the project constrains new dependencies. Rebuilt on the row-based identity plane in Phase 021. Outstanding: the production recovery round trip (`docs/production-smoke.md` Step 8). The owner last-resort procedure was rewritten for Neon and checked against the real code path on 2026-10-19, locally; it has not been run against production.
+  Status: Implemented, verified locally, and deployed from `2a4a696` on 2026-08-03. Raised by the production smoke test, where a forgotten manager password made a workspace permanently unreachable. Email-based reset stayed out of scope: no mail capability exists, and the project constrains new dependencies. Rebuilt on the row-based identity plane in Phase 021. The production recovery round trip passed on 2026-10-19 (`docs/production-smoke.md` Step 8; evidence in `docs/production-smoke-2026-10-19.md`). The owner last-resort procedure was rewritten for Neon and checked against the real code path on 2026-10-19, locally; it has not been run against production.
 
 - Phase 016: Pilot UAT and launch readiness.
   Outcome: Pilot UAT script, issue triage, and `npm.cmd run launch:check` were added.

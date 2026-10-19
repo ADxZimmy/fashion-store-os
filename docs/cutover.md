@@ -118,7 +118,7 @@ Fill this in at release and keep it in the repo:
 | `/api/readiness` | Passed 2026-10-19: `ok: true`; required checks green; the optional channel-binding check false (no provider yet) |
 | `/api/state` returns 410 | Passed, as do `/api/data`, `/api/inbound`, and `/api/workspace-code`, each with its own message |
 | CI | Green on the release push and on the tag push |
-| Smoke test (`docs/production-smoke.md`) | Steps 1 and 2 passed 2026-10-19. Steps 3 to 10 create and sign in to a test account on production, so they run in operator mode: pending. |
+| Smoke test (`docs/production-smoke.md`) | Steps 1 and 2 passed 2026-10-19. Steps 3 to 10 passed the same day in agent mode, including mandatory store deletion and refused sign-in afterwards. Both isolated browser sessions were closed. Evidence: `docs/production-smoke-2026-10-19.md`. |
 | Legacy Supabase check (UAT item 11) | Passed 2026-10-19: 0 documents, 2 test workspace rows. Recheck at Step 0: 0 documents. |
 | Operator | `ADxZimmy`; merged, pushed, and tagged by Claude Code on the owner's instruction |
 

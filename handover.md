@@ -72,18 +72,18 @@ It runs the syntax check, every test suite, the UX and security audits, and the 
 | Production branch | `main`; every push deploys |
 | Release owner | `ADxZimmy`. On the Hobby plan, deploys of collaborator-authored commits (`NnazimuzoO`) fail with `TEAM_ACCESS_REQUIRED`. |
 
-**Status on 2026-10-19: Release A is live.** Production runs the local-first build, `v2.0.0` (commit `584277b`), on Neon: `/api/health` reports `storage: "postgres"`, and the retired endpoints answer 410. Smoke Steps 1 and 2 passed; Steps 3 to 10 (operator mode) are pending. The 14-day watch window runs from 2026-10-19. Record: `docs/cutover.md`, Release A Record.
+**Status on 2026-10-19: Release A is live and the production smoke passed.** Production runs the local-first build, `v2.0.0` (commit `584277b`), on Neon: `/api/health` reports `storage: "postgres"`, and the retired endpoints answer 410. Smoke Steps 1 and 2 passed at release; Steps 3 to 10 passed in agent mode on 2026-10-19, including mandatory store deletion and browser cleanup. Detailed evidence: `docs/production-smoke-2026-10-19.md`. The 14-day watch window runs from 2026-10-19. Release record: `docs/cutover.md`.
 
 The legacy Supabase project `fashion-store` (`elkpberfbhwbrkawklnk`) is no longer read by production. It was restored for UAT item 11 (first confirmation passed: no business data, no accounts) and will pause again after about a week idle; Release B decommissions it after the second confirmation.
 
-Database: Neon project `steep-smoke-31370127` (Vercel resource `neon-champagne-river`), Frankfurt, PostgreSQL 18.6, connected 2026-10-19 and still empty. `DATABASE_URL` is set for Production only, as a write-only secret. Functions are pinned to Frankfurt (`fra1`) in `vercel.json` to sit next to it. The Neon organization is managed by Vercel: open it from Vercel's Storage tab.
+Database: Neon project `steep-smoke-31370127` (Vercel resource `neon-champagne-river`), Frankfurt, PostgreSQL 18.6, connected and migrated by Release A on 2026-10-19. The production smoke exercised identity and encrypted-backup writes the same day, then deleted its test store. `DATABASE_URL` is set for Production only, as a write-only secret. Functions are pinned to Frankfurt (`fra1`) in `vercel.json` to sit next to it. The Neon organization is managed by Vercel: open it from Vercel's Storage tab.
 
 ## Release Status
 
 | Release | State |
 | --- | --- |
 | v1.0.0, 2026-08-03 | Released on the Vercel alias. Down from the 2026-10-02 Supabase pause until the owner restored the project (by 2026-10-19). Record: `docs/cutover.md`, History. |
-| Release A (Phase 021), `v2.0.0` | Released 2026-10-19 from `584277b`. Smoke Steps 3 to 10 pending (operator). Record: `docs/cutover.md`. |
+| Release A (Phase 021), `v2.0.0` | Released 2026-10-19 from `584277b`. Smoke Steps 3 to 10 passed in agent mode, including cleanup. Evidence: `docs/production-smoke-2026-10-19.md`. Release record: `docs/cutover.md`. |
 | Release B | After the Phase 021 UAT: deletes the retired endpoints and decommissions the legacy Supabase project. |
 
 ## Current Git State
@@ -131,7 +131,7 @@ Built, verified locally, and released (Release A, 2026-10-19):
 
 Not yet verified:
 
-- In production: a write (smoke Steps 3 to 10, operator mode), rate limits across serverless instances, and a scheduled maintenance run. Verified at release: the build-time migration, live database round trips from the functions, the retired endpoints, the security headers, and CI.
+- In production: rate limits across serverless instances and a scheduled maintenance run. Verified at release: the build-time migration, live database round trips from the functions, the retired endpoints, the security headers, and CI. Production writes and the local-first smoke Steps 3 to 10 passed on 2026-10-19 (`docs/production-smoke-2026-10-19.md`).
 - CI going red on a deliberately broken push.
 - In a browser: the oversized-backup refusal, logo downscaling, the file download, and persistent storage being granted.
 - The Phase 021 UAT (owner-run, after Release A) and a real-store pilot.
@@ -170,6 +170,7 @@ Signing out never touches records. Settings, This device's records, **Erase this
 
 Latest, 2026-10-19:
 
+- Production smoke Steps 3 to 10 passed in agent mode on Release A: manager signup and one-time recovery code, local records and sign-out persistence, encrypted backup and new-device restore, password recovery, offline edits and reconnect backup, and offline sign-out. Mandatory deletion succeeded, post-deletion sign-in returned 401, both isolated browser sessions were cleared and closed, and ephemeral credentials discarded. No unexpected page JavaScript errors; the wrong-passphrase error and auth/offline warnings were expected. Detailed evidence: `docs/production-smoke-2026-10-19.md`.
 - `npm.cmd run launch:check` green: identity 136, local-first 90, storage 36, backup 45, inbox 35, and Neon 55 assertions, plus the UX and security audits and the build.
 - The production Neon database answered a read-only check through the app's own database code (`docs/owner-activation-runbook.md`, Status).
 - Browser sessions in the in-app browser against the dev server: the client flows of steps 2 to 6 and the staff-device fix.
@@ -179,13 +180,12 @@ Full record: `.planning/phases/021-local-first-pivot/VERIFICATION.md`. Earlier r
 
 ## Next Steps
 
-1. Owner: the production smoke, `docs/production-smoke.md` Steps 3 to 10, in operator mode.
-2. The 14-day watch window from 2026-10-19 (`docs/operations-runbook.md`, Post-Launch Support).
-3. The Phase 021 UAT, then Release B.
-4. A pilot with a real store (`docs/pilot-uat.md`).
-5. Later: alerting, a custom domain if wanted, a Vercel plan decision for collaborator deploys, and connecting a real provider.
+1. The 14-day watch window from 2026-10-19 (`docs/operations-runbook.md`, Post-Launch Support).
+2. The Phase 021 UAT, then Release B.
+3. A pilot with a real store (`docs/pilot-uat.md`).
+4. Later: alerting, a custom domain if wanted, a Vercel plan decision for collaborator deploys, and connecting a real provider.
 
-Done on 2026-10-19: Neon connected to the Vercel project (`docs/owner-activation-runbook.md`), this checkout's repo-local commit identity set to `ADxZimmy`, Phase 021 UAT item 11's first confirmation passed, and Release A shipped as `v2.0.0`.
+Done on 2026-10-19: Neon connected to the Vercel project (`docs/owner-activation-runbook.md`), this checkout's repo-local commit identity set to `ADxZimmy`, Phase 021 UAT item 11's first confirmation passed, Release A shipped as `v2.0.0`, and production smoke Steps 3 to 10 passed with mandatory cleanup (`docs/production-smoke-2026-10-19.md`).
 
 ## UI/UX Expectations
 
