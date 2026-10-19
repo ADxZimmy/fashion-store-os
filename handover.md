@@ -73,7 +73,7 @@ It runs the syntax check, every test suite, the UX and security audits, and the 
 
 **Status on 2026-10-19: production is down.** `main` still runs the pre-pivot build, which depends on the Supabase project `fashion-store` (`elkpberfbhwbrkawklnk`); that project paused for inactivity on 2026-10-02. No real store uses the app, so nothing real is affected. Production returns with Release A, on Neon.
 
-Release A needs, in order: the legacy Supabase check in Phase 021 UAT item 11 (owner, before about 2026-11-23), the repo-local commit identity, then `docs/cutover.md`.
+Release A needs, in order: the legacy Supabase check in Phase 021 UAT item 11 (owner, before about 2026-11-23), then `docs/cutover.md`.
 
 Database: Neon project `steep-smoke-31370127` (Vercel resource `neon-champagne-river`), Frankfurt, PostgreSQL 18.6, connected 2026-10-19 and still empty. `DATABASE_URL` is set for Production only, as a write-only secret. Functions are pinned to Frankfurt (`fra1`) in `vercel.json` to sit next to it. The Neon organization is managed by Vercel: open it from Vercel's Storage tab.
 
@@ -90,7 +90,7 @@ Database: Neon project `steep-smoke-31370127` (Vercel resource `neon-champagne-r
 - `main` is production, at `c194b7d`, level with GitHub.
 - `phase-021-release-a` holds Phase 021 steps 1 to 7 and is not pushed. It is fast-forwarded into `main` as Release A (`docs/cutover.md`, Prerequisite 4); pushing that is the release.
 - Local-only leftovers `master`, `codex/backend-foundation`, and `backup/main-before-backend-promotion` still exist in this checkout. GitHub has only `main`.
-- Commits must be authored as `ADxZimmy`. As of 2026-10-19 no repo-local identity is set; `docs/release-lane.md` has the command.
+- Commits must be authored as `ADxZimmy`. This checkout's repo-local identity has been set to that since 2026-10-19; a fresh clone needs the command in `docs/release-lane.md`.
 
 Phase 021 commits so far:
 
@@ -173,13 +173,12 @@ Full record: `.planning/phases/021-local-first-pivot/VERIFICATION.md`. Earlier r
 ## Next Steps
 
 1. Owner, before about 2026-11-23: restore the legacy Supabase project and run Phase 021 UAT item 11.
-2. Owner: set the repo-local commit identity (`docs/release-lane.md`).
-3. Release A (`docs/cutover.md`), then the 14-day watch window (`docs/operations-runbook.md`).
-4. The Phase 021 UAT, then Release B.
-5. A pilot with a real store (`docs/pilot-uat.md`).
-6. Later: alerting, a custom domain if wanted, a Vercel plan decision for collaborator deploys, and connecting a real provider.
+2. Release A (`docs/cutover.md`), then the 14-day watch window (`docs/operations-runbook.md`).
+3. The Phase 021 UAT, then Release B.
+4. A pilot with a real store (`docs/pilot-uat.md`).
+5. Later: alerting, a custom domain if wanted, a Vercel plan decision for collaborator deploys, and connecting a real provider.
 
-Done on 2026-10-19: Neon connected to the Vercel project (`docs/owner-activation-runbook.md`).
+Done on 2026-10-19: Neon connected to the Vercel project (`docs/owner-activation-runbook.md`), and this checkout's repo-local commit identity set to `ADxZimmy`.
 
 ## UI/UX Expectations
 

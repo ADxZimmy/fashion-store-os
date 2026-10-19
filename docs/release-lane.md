@@ -12,7 +12,7 @@ How a change gets from this repo to production.
 
 ### Commit author
 
-Commits in this repo must be authored as `ADxZimmy`. As of 2026-10-19 that is **not** configured for this checkout: no repo-local identity is set, so a plain `git commit` uses the machine's global identity and the resulting deploy would be refused. Set it once:
+Commits in this repo must be authored as `ADxZimmy`. The main checkout (`F:\Fashion Store OS`) has had this as its repo-local identity since 2026-10-19, so a plain `git commit` there is owner-authored. A fresh clone or another machine starts with the global identity, whose deploys would be refused, so set it once there:
 
 ```bash
 git config --local user.name ADxZimmy && git config --local user.email 84815694+ADxZimmy@users.noreply.github.com
