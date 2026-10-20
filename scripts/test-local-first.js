@@ -279,36 +279,45 @@ ok("dev server dropped the legacy auth document plane", !serverCode.includes("no
   ok("an unknown name still gets a generic 410", unknown.statusCode === 410 && errorOf(unknown).length > 0);
 }
 
+// --- Sandbox helpers -----------------------------------------------------------
+// The sections below run the real functions from src/app.js in a vm sandbox
+// with the helpers they call stubbed, so each check fails on the behaviour a
+// review found rather than on one spelling of the fix.
+const vm = require("vm");
+// A trailing "?" marks a function the check can run without, so the check
+// still runs against code that predates it.
+const sourceOf = (wanted) => {
+  const name = wanted.replace(/\?$/, "");
+  const start = appSource.search(new RegExp(`\\n(?:async )?function ${name}\\(`));
+  if (start === -1 && wanted.endsWith("?")) return "";
+  if (start === -1) throw new Error(`src/app.js has no function ${name}`);
+  const rest = appSource.slice(start + 1);
+  const end = rest.search(/\n(?:async )?function /);
+  return end === -1 ? rest : rest.slice(0, end);
+};
+const constOf = (name) => {
+  const match = appSource.match(new RegExp(`const ${name} = [\\[{][\\s\\S]*?\\n[\\]}];`));
+  if (!match) throw new Error(`src/app.js has no const ${name}`);
+  return match[0];
+};
+// A missing function or a thrown error is a failed check, not a crashed suite.
+const exercise = (label, run) => {
+  try {
+    run();
+  } catch (error) {
+    ok(label, false, error.message);
+  }
+};
+// The same for checks that await the app, such as reading a file. They run
+// one after another, and the tally at the end waits for them.
+let asyncChecks = Promise.resolve();
+const exerciseAsync = (label, run) => {
+  asyncChecks = asyncChecks.then(() => run()).catch((error) => ok(label, false, error.message));
+};
+
 // --- Order workflow (audit, 2026-10-20) --------------------------------------
-// Exercised, not grepped: the real functions from src/app.js run in a sandbox
-// with the helpers they call stubbed, so each check fails on the behaviour the
-// audit found rather than on one spelling of the fix.
+// Exercised, not grepped, with the sandbox helpers above.
 {
-  const vm = require("vm");
-  // A trailing "?" marks a function the check can run without, so the check
-  // still runs against code that predates it.
-  const sourceOf = (wanted) => {
-    const name = wanted.replace(/\?$/, "");
-    const start = appSource.search(new RegExp(`\\n(?:async )?function ${name}\\(`));
-    if (start === -1 && wanted.endsWith("?")) return "";
-    if (start === -1) throw new Error(`src/app.js has no function ${name}`);
-    const rest = appSource.slice(start + 1);
-    const end = rest.search(/\n(?:async )?function /);
-    return end === -1 ? rest : rest.slice(0, end);
-  };
-  const constOf = (name) => {
-    const match = appSource.match(new RegExp(`const ${name} = [\\[{][\\s\\S]*?\\n[\\]}];`));
-    if (!match) throw new Error(`src/app.js has no const ${name}`);
-    return match[0];
-  };
-  // A missing function or a thrown error is a failed check, not a crashed suite.
-  const exercise = (label, run) => {
-    try {
-      run();
-    } catch (error) {
-      ok(label, false, error.message);
-    }
-  };
   const orderApp = (state, functions) => {
     const context = vm.createContext({
       state,
@@ -457,6 +466,224 @@ ok("dev server dropped the legacy auth document plane", !serverCode.includes("no
   ok("every precached shell file is published by the build", precached.length > 0 && unpublished.length === 0, unpublished.join(","));
 }
 
+// --- Feature sweep in a browser (2026-10-20) ---------------------------------
+// Three defects every check above had passed: Record payment refused every
+// whole amount, price fields took only whole thousands, and Load from a file
+// wiped the device for any JSON file.
+{
+  // An <input> as written in a template, read past ${...} expressions so a
+  // ">" inside one (the payment amount has one) does not end the tag early.
+  const tagAt = (start) => {
+    let depth = 0;
+    for (let index = start; index < appSource.length; index += 1) {
+      if (appSource.startsWith("${", index)) {
+        depth += 1;
+        index += 1;
+      } else if (depth && appSource[index] === "{") depth += 1;
+      else if (depth && appSource[index] === "}") depth -= 1;
+      else if (!depth && appSource[index] === ">") return appSource.slice(start, index + 1);
+    }
+    return appSource.slice(start);
+  };
+  const attribute = (tag, name) => {
+    const match = tag.match(new RegExp(`\\s${name}="([^"]*)"`));
+    return match ? match[1] : undefined;
+  };
+  const numberInputs = [...appSource.matchAll(/<input\b/g)].map((match) => tagAt(match.index)).filter((tag) => /\stype="number"/.test(tag));
+  const labelOf = (tag) => attribute(tag, "name") || tag.slice(0, 60);
+  // Millionths as whole numbers, so 0.01 and 100 compare exactly.
+  const micro = (value) => Math.round(Number(value) * 1e6);
+  const isLiteral = (value) => value !== undefined && /^-?\d+(\.\d+)?$/.test(value);
+  // A browser counts a number input's steps from its min, or from its first
+  // value when it has no min. Anything else fails validation and the form
+  // silently refuses to submit: min 0.01 with step 100 refused every whole
+  // payment, the prefilled balance included.
+  const stepBase = (tag) => attribute(tag, "min") ?? attribute(tag, "value") ?? "0";
+  const stepProblems = numberInputs.flatMap((tag) => {
+    const step = attribute(tag, "step") ?? "1";
+    if (step === "any") return [];
+    const base = stepBase(tag);
+    if (!isLiteral(step) || !isLiteral(base) || micro(step) <= 0) return [`${labelOf(tag)}: write min and step as plain numbers`];
+    return micro(base) % micro(step) === 0 ? [] : [`${labelOf(tag)}: min ${base} is not a whole number of ${step} steps`];
+  });
+  ok("every number input's min is a whole multiple of its step", numberInputs.length >= 10 && stepProblems.length === 0, stepProblems.join("; ") || `${numberInputs.length} inputs found`);
+
+  // Every currency the app offers counts in hundredths, so each price field
+  // must take 450, 7,500, 10,000 and 12.50 alike. A field missing from this
+  // list fails the check, so a rename cannot quietly drop one.
+  const moneyFields = ["amount", "budget", "quote", "deposit", "basePrice", "costPerUnit"];
+  const accepts = (tag, amount) => {
+    const min = attribute(tag, "min");
+    const max = attribute(tag, "max");
+    const step = attribute(tag, "step") ?? "1";
+    if ((min !== undefined && amount < Number(min)) || (max !== undefined && amount > Number(max))) return false;
+    return step === "any" || (micro(amount) - micro(stepBase(tag))) % micro(step) === 0;
+  };
+  const moneyInputs = numberInputs.filter((tag) => moneyFields.includes(attribute(tag, "name")));
+  const moneyProblems = [
+    ...moneyFields.filter((name) => !moneyInputs.some((tag) => attribute(tag, "name") === name)).map((name) => `no ${name} field`),
+    ...moneyInputs.flatMap((tag) => [450, 7500, 10000, 12.5, 1234.56].filter((amount) => !accepts(tag, amount)).map((amount) => `${labelOf(tag)} refuses ${amount}`)),
+  ];
+  ok("every price field takes ordinary amounts, cents included", moneyProblems.length === 0, moneyProblems.join("; "));
+
+  // Cents that can be entered must not be rounded away on screen.
+  exercise("money shows cents only when an amount has them", () => {
+    const context = vm.createContext({ state: { profile: { currency: "USD" } } });
+    vm.runInContext(["money", "round2"].map(sourceOf).join("\n"), context);
+    const shown = [10000, 12.5, 0.5].map((amount) => context.money(amount));
+    ok("money shows cents only when an amount has them", shown.join("|") === "$10,000|$12.50|$0.50", shown.join(", "));
+  });
+
+  // A device with no profile shows only business setup, so loading a copy has
+  // to be offered there too, and setup has to show the dialog that asks first.
+  exercise("the setup screen offers Load from a file", () => {
+    const setupScreen = (canRestore) => {
+      const context = vm.createContext({
+        app: { innerHTML: "" },
+        applyTheme: () => {},
+        wireEvents: () => {},
+        focusModalControl: () => {},
+        renderModal: () => '<div id="modal-probe"></div>',
+        renderProfileFields: () => "",
+        renderRecoveryResult: () => "",
+        renderBackupPassphraseForm: () => "",
+        currentUser: () => ({ role: "manager" }),
+        backupAvailable: () => canRestore,
+        lastRecoveryResult: null,
+        backupPrompt: null,
+        backupBusy: "",
+        defaultTheme: {},
+      });
+      vm.runInContext(["renderSetup", "renderSetupRestore", "renderLoadFromFile?"].map(sourceOf).join("\n"), context);
+      context.renderSetup();
+      return context.app.innerHTML;
+    };
+    const offersLoad = (html) => /data-action="load-records-file"/.test(html) && /data-import-records/.test(html);
+    const withBackup = setupScreen(true);
+    ok("the setup screen offers Load from a file next to Restore from backup", /data-action="setup-restore"/.test(withBackup) && offersLoad(withBackup));
+    ok("the setup screen offers Load from a file with no backup to restore", offersLoad(setupScreen(false)));
+    ok("the setup screen shows dialogs, so a load there can ask first", withBackup.includes('<div id="modal-probe"></div>'));
+  });
+  // A button, so the keyboard reaches it; it opens the hidden file input.
+  ok("Load from a file is a button that opens the file picker", /action === "load-records-file"\)[^\n]*\[data-import-records\][^\n]*\.click\(\)/.test(appCode));
+
+  // Load from a file, run for real against a file input holding the given text.
+  const storeRecords = (businessName, lists = {}) => ({
+    profile: { businessName },
+    clients: [],
+    inquiries: [],
+    channelMessages: [],
+    channelDeliveryEvents: [],
+    styles: [],
+    inventory: [],
+    inventoryAdjustments: [],
+    orders: [],
+    usageRecords: [],
+    ...lists,
+  });
+  const copyOf = (records, extra = {}) => JSON.stringify({ exportedAt: "2026-10-18T09:30:00.000Z", format: 1, ...extra, records });
+  const fileInput = (text) => ({ value: "C:\\fakepath\\records.json", files: [{ name: "records.json", text: async () => text }] });
+  const importApp = (state) => {
+    const context = vm.createContext({
+      state,
+      modalState: null,
+      selectedClientId: "",
+      draftOrderStyleId: "",
+      toasts: [],
+      writes: [],
+      console: { error: () => {}, warn: () => {}, log: () => {} },
+      // The real normalizeState runs every record normalizer; only the swap matters here.
+      normalizeState: (records) => ({ ...records, clients: Array.isArray(records.clients) ? records.clients : [], styles: Array.isArray(records.styles) ? records.styles : [] }),
+      cancelAutoBackup: () => {},
+      render: () => {},
+      identityStoreId: () => "store-1",
+    });
+    // Anything that saves, or queues a backup, is a write to the device.
+    for (const name of ["persistLocalState", "markBackupPending", "scheduleAutoBackup"]) {
+      context[name] = () => {
+        context.writes.push(name);
+        return true;
+      };
+    }
+    context.showToast = (message) => context.toasts.push(message);
+    const format = appSource.match(/^const RECORDS_FILE_FORMAT = .*;$/m);
+    vm.runInContext([format ? format[0] : "", ...["clean", "parseRecordsFile?", "importRecordsFile", "confirmImportRecords?", "closeModal"].map(sourceOf)].join("\n"), context);
+    return context;
+  };
+  const deviceRecords = () => storeRecords("Needle House", { clients: [{ id: "c1", name: "Ada" }, { id: "c2", name: "Bola" }], orders: [{ id: "o1" }] });
+
+  // {"hello":"world"} once wiped the profile and every record, dropped the app
+  // onto business setup, and queued a backup of the emptied device.
+  exerciseAsync("a file that is not a records copy changes nothing", async () => {
+    const notCopies = {
+      "an unrelated JSON object": '{"hello":"world"}',
+      "a JSON list": "[]",
+      "a file that is not JSON": "name,phone\nAda,0800",
+      "bare records with no export wrapper": JSON.stringify(deviceRecords()),
+      "the export wrapper around something else": copyOf({ hello: "world" }),
+      "a copy whose client list is not a list": copyOf(storeRecords("Needle House", { clients: "Ada" })),
+      "a copy from a newer version": JSON.stringify({ exportedAt: "2026-10-18T09:30:00.000Z", format: 2, records: storeRecords("Needle House") }),
+    };
+    const touched = [];
+    const unexplained = [];
+    for (const [label, text] of Object.entries(notCopies)) {
+      const state = deviceRecords();
+      const before = JSON.stringify(state);
+      const context = importApp(state);
+      await context.importRecordsFile(fileInput(text));
+      if (context.state !== state || JSON.stringify(context.state) !== before || context.writes.length || context.modalState) touched.push(label);
+      if (context.toasts.length !== 1 || !/nothing on this device was changed/i.test(context.toasts[0])) unexplained.push(label);
+    }
+    ok("a file that is not a records copy changes nothing on the device", touched.length === 0, touched.join("; "));
+    ok("refusing a file says so and says nothing changed", unexplained.length === 0, unexplained.join("; "));
+  });
+
+  exerciseAsync("loading a real copy asks before replacing anything", async () => {
+    const state = deviceRecords();
+    const before = JSON.stringify(state);
+    const context = importApp(state);
+    // Shaped like every copy downloaded so far, which carry no store id.
+    await context.importRecordsFile(fileInput(copyOf(storeRecords("Needle House", { clients: [{ id: "c9", name: "Chi" }], styles: [{ id: "s1" }] }))));
+    ok("loading a real copy asks before replacing anything", context.state === state && JSON.stringify(context.state) === before && context.writes.length === 0 && context.modalState?.type === "import-records");
+    context.confirmImportRecords();
+    ok("confirming the load replaces the records and queues a backup", context.state.clients[0]?.id === "c9" && context.selectedClientId === "c9" && context.writes.includes("persistLocalState") && context.writes.includes("markBackupPending") && !context.modalState);
+  });
+
+  exerciseAsync("cancelling a load leaves the device as it was", async () => {
+    const state = deviceRecords();
+    const before = JSON.stringify(state);
+    const context = importApp(state);
+    await context.importRecordsFile(fileInput(copyOf(storeRecords("Needle House"), { storeId: "store-1" })));
+    ok("a copy that carries its store id is offered for loading too", context.modalState?.type === "import-records");
+    context.closeModal();
+    // A stray confirm after the dialog closed has nothing left to load.
+    if (typeof context.confirmImportRecords === "function") context.confirmImportRecords();
+    ok("cancelling a load leaves the device as it was", context.state === state && JSON.stringify(context.state) === before && context.writes.length === 0);
+  });
+
+  // The dialog has to say what goes and what replaces it, and catch the file
+  // that belongs to another store before its records are backed up over this
+  // store's backup.
+  exercise("the load dialog says what it replaces", () => {
+    const dialog = (incoming) => {
+      const context = vm.createContext({
+        state: deviceRecords(),
+        modalState: { type: "import-records", exportedAt: "2026-10-18T09:30:00.000Z", storeId: "", ...incoming },
+        identityStoreId: () => "store-1",
+        backupAvailable: () => true,
+        readCachedBackupKey: () => ({ key: "cached" }),
+      });
+      vm.runInContext(["renderModal", "renderImportRecordsModal?", "describeRecords?", "hasLocalBusinessData", "escapeHtml", "clean", "formatDate"].map(sourceOf).join("\n"), context);
+      return context.renderModal();
+    };
+    const sameStore = dialog({ records: storeRecords("Needle House", { clients: [{ id: "c9" }] }), storeId: "store-1" });
+    ok("the load dialog names what is on the device and what replaces it", /Needle House, with 2 clients and 1 order/.test(sameStore) && /Needle House, with 1 client\./.test(sameStore) && /data-action="confirm-import-records"/.test(sameStore));
+    ok("the load dialog says the online backup follows", /online backup is replaced/i.test(sameStore));
+    ok("the load dialog warns about a file from another store", /different store/i.test(dialog({ records: storeRecords("Kente Couture"), storeId: "store-2" })));
+    ok("copies made before the store id are told apart by business name", /Kente Couture, not Needle House/.test(dialog({ records: storeRecords("Kente Couture") })));
+  });
+}
+
 // --- Boot behaviour, exercised against a stubbed browser --------------------
 function runBoot({ reachable, authenticated, identity, localState, storeTag, cachedIdentity, cacheAge = 0 }) {
   const store = new Map();
@@ -529,5 +756,7 @@ ok("offline with no cached identity stays locked", r.accessMode === "locked" && 
 r = runBoot({ reachable: false, localState: DATA, cachedIdentity: IDENTITY, cacheAge: 1000 * 60 * 60 * 24 * 45 });
 ok("an expired offline cache stops unlocking", r.accessMode === "locked" && r.dataSurvived);
 
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+asyncChecks.then(() => {
+  console.log(`\n${pass} passed, ${fail} failed`);
+  process.exit(fail ? 1 : 0);
+});

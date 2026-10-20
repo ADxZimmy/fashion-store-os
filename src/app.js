@@ -154,6 +154,9 @@ const BACKUP_META_KEY = "fashion-studio-os-backupmeta-v1";
 // operator hears about their data size rather than a transport error.
 const MAX_BACKUP_CHARS = 4 * 1024 * 1024;
 const AUTO_BACKUP_DELAY_MS = 1000 * 60 * 3;
+// The version of the file Download a copy writes. Load from a file accepts
+// this version only, so a newer file is refused rather than half read.
+const RECORDS_FILE_FORMAT = 1;
 // Holds the time of the last change not yet in a backup. Persisted, so edits
 // made offline, or in a session that closed before its timer fired, are caught
 // up as soon as the app is next online instead of waiting for another edit.
@@ -1644,6 +1647,10 @@ function renderModal() {
     `;
   }
 
+  // Browsers count a number input's steps from its min, so the two must agree.
+  // This amount once had min 0.01 with step 100, which accepted only 0.01,
+  // 100.01, 200.01 and so on: every whole amount, the prefilled balance
+  // included, was refused and the dialog would not save.
   if (modalState.type === "payment") {
     const order = getOrder(modalState.id);
     if (!order) return "";
@@ -1661,7 +1668,7 @@ function renderModal() {
           <form id="paymentForm" data-id="${escapeHtml(order.id)}" class="form-grid modal-form-grid">
             <label class="field">
               <span>Amount</span>
-              <input name="amount" type="number" min="0.01" step="100" inputmode="decimal" value="${balance > 0 ? balance : ""}" required autofocus data-modal-autofocus>
+              <input name="amount" type="number" min="0.01" step="0.01" inputmode="decimal" value="${balance > 0 ? balance : ""}" required autofocus data-modal-autofocus>
             </label>
             <label class="field">
               <span>Method</span>
@@ -1923,6 +1930,10 @@ function renderModal() {
     });
   }
 
+  if (modalState.type === "import-records") {
+    return renderImportRecordsModal(modalState);
+  }
+
   return "";
 }
 
@@ -1972,18 +1983,21 @@ function focusMobileNavControl() {
 // which cannot be reached until a profile exists. Without this, restoring meant
 // inventing a business profile first just so the restore could overwrite it.
 // The confirm dialog is skipped because there is nothing local to replace; the
-// divergence warning it carried is stated inline instead.
+// divergence warning it carried is stated inline instead. Loading a downloaded
+// copy is offered here for the same reason, and works with no backup at all;
+// it still opens its dialog, which shows whose records the file holds.
 function renderSetupRestore() {
   const busy = backupBusy === "restore";
+  const canRestore = backupAvailable();
   return `
-    <div class="inline-callout">
+    <div class="inline-callout stacked">
       <div>
         <strong>Restoring onto a new device?</strong>
-        <p class="muted small-text">If this store has an encrypted backup, restore it instead of setting up again. If another device is still working from this store, the two will hold different records from now on; there is no syncing between devices.</p>
+        <p class="muted small-text">${canRestore ? "If this store has an encrypted backup, restore it instead of setting up again, or load a copy you downloaded." : "If you downloaded a copy of this store's records, load it instead of setting up again."} If another device is still working from this store, the two will hold different records from now on; there is no syncing between devices.</p>
       </div>
       ${backupPrompt && backupPrompt.intent === "restore"
         ? renderBackupPassphraseForm(backupPrompt)
-        : `<div class="button-row"><button class="btn small secondary" type="button" data-action="setup-restore" ${busy ? "disabled" : ""}>${busy ? "Restoring..." : "Restore from backup"}</button></div>`}
+        : `<div class="button-row">${canRestore ? `<button class="btn small secondary" type="button" data-action="setup-restore" ${busy ? "disabled" : ""}>${busy ? "Restoring..." : "Restore from backup"}</button>` : ""}${renderLoadFromFile()}</div>`}
     </div>
   `;
 }
@@ -2005,7 +2019,7 @@ function renderSetup() {
           Shape the business profile first. The dashboard, settings, orders, records, and client-facing labels use this identity instead of a hardcoded brand.
         </p>
         ${lastRecoveryResult && lastRecoveryResult.context !== "team" ? renderRecoveryResult(lastRecoveryResult) : ""}
-        ${currentUser()?.role === "manager" && backupAvailable() ? renderSetupRestore() : ""}
+        ${currentUser()?.role === "manager" ? renderSetupRestore() : ""}
         <div class="button-row">
           <button class="btn small secondary" type="button" data-action="sign-out">Not your store? Sign out</button>
         </div>
@@ -2028,8 +2042,10 @@ function renderSetup() {
         </div>
       </form>
     </main>
+    ${renderModal()}
   `;
   wireEvents();
+  focusModalControl();
 }
 
 // Records never leave the device they were made on except through the
@@ -2257,7 +2273,7 @@ function renderInquiries() {
           </label>
           <label class="field">
             <span>Budget</span>
-            <input name="budget" type="number" min="0" step="1000">
+            <input name="budget" type="number" min="0" step="0.01" inputmode="decimal">
           </label>
           <label class="field">
             <span>Follow-up state</span>
@@ -2331,7 +2347,7 @@ function renderInquiries() {
           </label>
           <label class="field">
             <span>Budget</span>
-            <input name="budget" type="number" min="0" step="1000">
+            <input name="budget" type="number" min="0" step="0.01" inputmode="decimal">
           </label>
           <label class="field full">
             <span>Consultation notes</span>
@@ -2751,11 +2767,11 @@ function renderOrders() {
           </label>
           <label class="field">
             <span>Quote/price</span>
-            <input name="quote" type="number" min="0" step="1000" value="${defaultQuote}">
+            <input name="quote" type="number" min="0" step="0.01" inputmode="decimal" value="${defaultQuote}">
           </label>
           <label class="field">
             <span>Deposit received</span>
-            <input name="deposit" type="number" min="0" step="1000" value="0">
+            <input name="deposit" type="number" min="0" step="0.01" inputmode="decimal" value="0">
           </label>
           <label class="field">
             <span>Assigned tailor/staff</span>
@@ -2819,7 +2835,7 @@ function renderRecipes() {
           </label>
           <label class="field">
             <span>Base price</span>
-            <input name="basePrice" type="number" min="0" step="1000" required>
+            <input name="basePrice" type="number" min="0" step="0.01" inputmode="decimal" required>
           </label>
           <label class="field">
             <span>Estimated production days</span>
@@ -2933,7 +2949,7 @@ function renderInventory() {
           </label>
           <label class="field">
             <span>Cost per unit</span>
-            <input name="costPerUnit" type="number" min="0" step="1">
+            <input name="costPerUnit" type="number" min="0" step="0.01" inputmode="decimal">
           </label>
           <label class="field full">
             <span>Notes</span>
@@ -3387,7 +3403,8 @@ function forgetBackupPassphrase() {
 // had a button for.
 function exportRecordsFile() {
   try {
-    const payload = JSON.stringify({ exportedAt: new Date().toISOString(), format: 1, records: state }, null, 2);
+    // The store id lets a later load tell this store's file from another's.
+    const payload = JSON.stringify({ exportedAt: new Date().toISOString(), format: RECORDS_FILE_FORMAT, storeId: identityStoreId(), records: state }, null, 2);
     const blob = new Blob([payload], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -3407,29 +3424,141 @@ function exportRecordsFile() {
   }
 }
 
+// Loading a file replaces every record on this device, so it takes only a file
+// that Download a copy made, and changes nothing until the operator has seen
+// what it replaces and confirmed. It used to treat any JSON object as records
+// and swap them in at once: an unrelated file wiped the profile and every
+// record, dropped the app onto business setup, and queued a backup of the
+// emptied device.
 async function importRecordsFile(input) {
   const file = input && input.files ? input.files[0] : null;
   if (!file) return;
   try {
-    const text = await file.text();
-    const parsed = JSON.parse(text);
-    const records = parsed && parsed.records && typeof parsed.records === "object" ? parsed.records : parsed;
-    if (!records || typeof records !== "object") throw new Error("That file is not a Fashion Store OS export.");
-    state = normalizeState(records);
-    persistLocalState();
-    // Imported records differ from the last backup, so they need one.
-    markBackupPending();
-    scheduleAutoBackup();
-    selectedClientId = state.clients[0] ? state.clients[0].id : "";
-    draftOrderStyleId = state.styles[0] ? state.styles[0].id : "";
-    showToast("Records loaded from the file. This replaced what was on this device.");
+    const incoming = parseRecordsFile(await file.text());
+    if (incoming.error) {
+      showToast(incoming.error);
+      return;
+    }
+    modalState = { type: "import-records", records: incoming.records, exportedAt: incoming.exportedAt, storeId: incoming.storeId };
   } catch (error) {
-    console.error("Import failed.", error);
-    showToast(error.message || "Could not read that file.");
+    console.error("Could not read the records file.", error);
+    showToast("Could not read that file. Nothing on this device was changed.");
   } finally {
     input.value = "";
     render();
   }
+}
+
+// Download a copy writes { exportedAt, format, storeId, records }, where
+// records holds the business profile and every list of records. Files made
+// before the store id was added load the same way.
+function parseRecordsFile(text) {
+  const refused = { error: "That file is not a copy of your records. Choose a file made with Download a copy. Nothing on this device was changed." };
+  const isRecord = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (error) {
+    return refused;
+  }
+  if (!isRecord(parsed) || !isRecord(parsed.records)) return refused;
+  if (typeof parsed.format === "number" && parsed.format > RECORDS_FILE_FORMAT) {
+    return { error: "That file was made by a newer version of the app. Reload the page to update the app, then load the file again. Nothing on this device was changed." };
+  }
+  if (parsed.format !== RECORDS_FILE_FORMAT) return refused;
+  const records = parsed.records;
+  const lists = ["clients", "inquiries", "channelMessages", "channelDeliveryEvents", "styles", "inventory", "inventoryAdjustments", "orders", "usageRecords"];
+  const complete = isRecord(records.profile) && lists.every((key) => Array.isArray(records[key]) && records[key].every(isRecord));
+  if (!complete) return refused;
+  return { records, exportedAt: clean(parsed.exportedAt), storeId: clean(parsed.storeId) };
+}
+
+// The only way a loaded file reaches this device's records: the Replace or
+// Load button in the dialog importRecordsFile opens.
+function confirmImportRecords() {
+  const incoming = modalState && modalState.type === "import-records" ? modalState : null;
+  if (!incoming) return;
+  modalState = null;
+  state = normalizeState(incoming.records);
+  persistLocalState();
+  // Loaded records differ from the last backup, so they need one. The dialog
+  // said the online backup would follow.
+  markBackupPending();
+  scheduleAutoBackup();
+  selectedClientId = state.clients[0] ? state.clients[0].id : "";
+  draftOrderStyleId = state.styles[0] ? state.styles[0].id : "";
+  showToast("Records loaded from the file. They replaced what was on this device.");
+  render();
+}
+
+// Says what loading replaces before anything is replaced: whose records the
+// file holds, what this device holds now, and that the online backup follows.
+function renderImportRecordsModal(incoming) {
+  const replacing = hasLocalBusinessData() || state.channelMessages.length > 0;
+  const fileBusiness = clean(incoming.records.profile.businessName);
+  const deviceBusiness = clean(state.profile && state.profile.businessName);
+  let warning = "";
+  if (incoming.storeId && identityStoreId()) {
+    if (incoming.storeId !== identityStoreId()) warning = "This file was downloaded from a different store than the one you are signed in to.";
+  } else if (fileBusiness && deviceBusiness && fileBusiness !== deviceBusiness) {
+    // Files made before the store id was added can only be told apart by name.
+    warning = `This file is for ${fileBusiness}, not ${deviceBusiness}. Check that it is the right file.`;
+  }
+  const downloaded = incoming.exportedAt ? ` Downloaded ${formatDate(incoming.exportedAt)}.` : "";
+  const outcome = replacing
+    ? "Loading replaces the business profile and every record on this device with the file's: clients, measurements, inquiries, orders, payments, style recipes, and stock. Anything not in the file is lost, so download a copy first if you are unsure."
+    : "Loading sets up this device from the file: the business profile and every record in it.";
+  const backupNote = backupAvailable() && readCachedBackupKey()
+    ? " Automatic backup is on, so shortly after loading, this store's online backup is replaced with these records too."
+    : "";
+  return `
+    <section class="modal-layer" role="presentation">
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle" aria-describedby="modalMessage">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Your own copy</p>
+            <h2 id="modalTitle">${replacing ? "Replace this device's records?" : "Load these records?"}</h2>
+          </div>
+          <button class="modal-close" type="button" data-action="close-modal" aria-label="Close confirmation dialog">&times;</button>
+        </div>
+        <p class="modal-note"><strong>In the file:</strong> ${escapeHtml(`${describeRecords(incoming.records)}.${downloaded}`)}</p>
+        <p class="modal-note"><strong>On this device now:</strong> ${escapeHtml(replacing ? `${describeRecords(state)}.` : "Nothing yet.")}</p>
+        ${warning ? `<p class="modal-note warning-text">${escapeHtml(warning)}</p>` : ""}
+        <p id="modalMessage" class="modal-note">${escapeHtml(outcome + backupNote)}</p>
+        <div class="button-row">
+          <button class="btn secondary" type="button" data-action="close-modal" data-modal-autofocus>Cancel</button>
+          <button class="btn${replacing ? " danger" : ""}" type="button" data-action="confirm-import-records">${replacing ? "Replace records" : "Load records"}</button>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+// "Needle House, with 12 clients, 30 orders and 6 style recipes".
+function describeRecords(records) {
+  const counts = [
+    [records.clients, "client", "clients"],
+    [records.orders, "order", "orders"],
+    [records.inquiries, "inquiry", "inquiries"],
+    [records.channelMessages, "inbox message", "inbox messages"],
+    [records.styles, "style recipe", "style recipes"],
+    [records.inventory, "material", "materials"],
+  ]
+    .map(([list, one, many]) => {
+      const count = Array.isArray(list) ? list.length : 0;
+      return count ? `${count} ${count === 1 ? one : many}` : "";
+    })
+    .filter(Boolean);
+  const listed = counts.length > 1 ? `${counts.slice(0, -1).join(", ")} and ${counts[counts.length - 1]}` : counts[0] || "no records yet";
+  const business = clean(records.profile && records.profile.businessName) || "No business profile";
+  return `${business}, with ${listed}`;
+}
+
+// A real button that opens a hidden file picker, so it is reached by keyboard
+// and announced as a button. It used to be a label beside a file input whose
+// hiding class was never defined, so the browser's own picker showed as well.
+function renderLoadFromFile() {
+  return '<button class="btn small secondary" type="button" data-action="load-records-file">Load from a file</button><input type="file" accept="application/json,.json" hidden data-import-records>';
 }
 
 
@@ -3570,8 +3699,7 @@ function renderBackupPanel() {
     "</div></div>",
     '<div class="button-row">',
     '<button class="btn small secondary" type="button" data-action="export-records">Download a copy</button>',
-    '<label class="btn small secondary" for="importRecordsInput">Load from a file</label>',
-    '<input id="importRecordsInput" class="visually-hidden" type="file" accept="application/json,.json" data-import-records>',
+    renderLoadFromFile(),
     "</div>",
     "</section>",
   ].join("");
@@ -4105,6 +4233,8 @@ function wireEvents() {
     if (action === "confirm-restore") confirmRestore();
     if (action === "setup-restore") promptForPassphrase("restore");
     if (action === "export-records") exportRecordsFile();
+    if (action === "load-records-file") actionButton.parentElement.querySelector("[data-import-records]")?.click();
+    if (action === "confirm-import-records") confirmImportRecords();
     if (action === "check-messages") pullInbox({ silent: false });
   };
 
@@ -6489,16 +6619,22 @@ function downscaleImage(dataUrl, maxDimension) {
   });
 }
 
+// Whole amounts show whole, as they always have; cents show only when an
+// amount has them. Price fields take cents, and rounding them away would show
+// a balance of 0.50 as 1, or one of 0.40 as nothing owed.
 function money(value) {
   const currency = state.profile?.currency || "NGN";
+  const amount = Number(value || 0);
+  const digits = Number.isInteger(round2(amount)) ? 0 : 2;
   try {
     return new Intl.NumberFormat("en", {
       style: "currency",
       currency,
-      maximumFractionDigits: 0,
-    }).format(Number(value || 0));
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    }).format(amount);
   } catch {
-    return `${currency} ${Number(value || 0).toLocaleString()}`;
+    return `${currency} ${amount.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
   }
 }
 

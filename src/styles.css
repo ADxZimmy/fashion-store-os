@@ -1299,6 +1299,13 @@ input[type="color"] {
   color: var(--text);
 }
 
+/* Text above its actions. The setup screen's callout sits in a narrow column,
+   where a side-by-side button column squeezed the text to a word per line. */
+.inline-callout.stacked {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
 .audit-panel {
   margin-top: 18px;
   padding-top: 14px;
