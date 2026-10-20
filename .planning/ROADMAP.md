@@ -10,7 +10,7 @@
 
 - Item: Pilot on the local-first model.
   Outcome: One real store runs a full operating cycle on its shop device (`docs/pilot-uat.md`, rewritten for the local-first model on 2026-10-19).
-  Status: Release A is live; waiting for the Phase 021 UAT. The pre-pivot pilot was waived on 2026-07-31.
+  Status: Release A is live; waiting for the Phase 021 UAT and for three product decisions the 2026-10-20 audit raised (`handover.md`, Open Questions). The pre-pivot pilot was waived on 2026-07-31.
 
 - Item: Custom domain, if wanted.
   Outcome: A branded domain replaces the `fashion-store-os.vercel.app` alias as the public target.
@@ -90,6 +90,10 @@
 - Item: v1.0.0 production write-path verification.
   Outcome: A browser smoke of manager signup, business setup, and server persistence.
   Status: Superseded, never run. Phase 021 removed the server write path it existed to verify. The local-first smoke is `docs/production-smoke.md`.
+
+- Item: Order workflow audit fixes.
+  Outcome: Defects found by reading `src/app.js` against the original brief were fixed and guarded: Advance completing an order and stranding its reserved stock, an inquiry converting into duplicate orders, false learning records, an inch-only size allowance, cancelled orders counted on the dashboard, a theme preset that erased the business identity, stale manager copy, and a branded favicon.
+  Status: Released 2026-10-20 as `0ec6175` and verified in production (STATE, Verification Snapshot).
 
 ## Later
 

@@ -1,6 +1,6 @@
 # Fashion Store OS Handover
 
-Last updated: 2026-10-19
+Last updated: 2026-10-20
 Current repo: `F:\Fashion Store OS`
 
 ## Project Summary
@@ -72,7 +72,7 @@ It runs the syntax check, every test suite, the UX and security audits, and the 
 | Production branch | `main`; every push deploys |
 | Release owner | `ADxZimmy`. On the Hobby plan, deploys of collaborator-authored commits (`NnazimuzoO`) fail with `TEAM_ACCESS_REQUIRED`. |
 
-**Status on 2026-10-19: Release A is live and the production smoke passed.** Production runs the local-first build, `v2.0.0` (commit `584277b`), on Neon: `/api/health` reports `storage: "postgres"`, and the retired endpoints answer 410. Smoke Steps 1 and 2 passed at release; Steps 3 to 10 passed in agent mode on 2026-10-19, including mandatory store deletion and browser cleanup. Detailed evidence: `docs/production-smoke-2026-10-19.md`. The 14-day watch window runs from 2026-10-19. Release record: `docs/cutover.md`.
+**Status on 2026-10-20: Release A is live, the production smoke passed, and the order workflow fixes from a repo audit followed it.** Production runs the local-first build on Neon: `v2.0.0` (`584277b`) plus those fixes (`0ec6175`, 2026-10-20). `/api/health` reports `storage: "postgres"`, and the retired endpoints answer 410. Smoke Steps 1 and 2 passed at release; Steps 3 to 10 passed in agent mode on 2026-10-19, including mandatory store deletion and browser cleanup. Detailed evidence: `docs/production-smoke-2026-10-19.md`. The 14-day watch window runs from 2026-10-19. Release record: `docs/cutover.md`.
 
 The legacy Supabase project `fashion-store` (`elkpberfbhwbrkawklnk`) is no longer read by production. It was restored for UAT item 11 (first confirmation passed: no business data, no accounts) and will pause again after about a week idle; Release B decommissions it after the second confirmation.
 
@@ -84,11 +84,12 @@ Database: Neon project `steep-smoke-31370127` (Vercel resource `neon-champagne-r
 | --- | --- |
 | v1.0.0, 2026-08-03 | Released on the Vercel alias. Down from the 2026-10-02 Supabase pause until the owner restored the project (by 2026-10-19). Record: `docs/cutover.md`, History. |
 | Release A (Phase 021), `v2.0.0` | Released 2026-10-19 from `584277b`. Smoke Steps 3 to 10 passed in agent mode, including cleanup. Evidence: `docs/production-smoke-2026-10-19.md`. Release record: `docs/cutover.md`. |
+| Order workflow fixes, 2026-10-20 | Released from `0ec6175`, untagged. Found by a repo audit the same day; verified live (the new offline shell, health and readiness, the icon, CI). Record: History, 2026-10-20. |
 | Release B | After the Phase 021 UAT: deletes the retired endpoints and decommissions the legacy Supabase project. |
 
 ## Current Git State
 
-- `main` is production. Release A is `584277b`, tagged `v2.0.0` and pushed on 2026-10-19; later commits on `main` are documentation of the release.
+- `main` is production. Release A is `584277b`, tagged `v2.0.0` and pushed on 2026-10-19. `0ec6175` released the order workflow fixes on 2026-10-20; the other later commits on `main` are documentation.
 - `phase-021-release-a` was fast-forwarded into `main` for Release A and is fully merged. It exists only locally and can be deleted.
 - Local-only leftovers `master`, `codex/backend-foundation`, and `backup/main-before-backend-promotion` still exist in this checkout. GitHub has only `main`.
 - Commits must be authored as `ADxZimmy`. This checkout's repo-local identity has been set to that since 2026-10-19; a fresh clone needs the command in `docs/release-lane.md`.
@@ -129,6 +130,8 @@ Built, verified locally, and released (Release A, 2026-10-19):
 - Store deletion, security headers, a CI workflow, and a route parity guard.
 - Browser checks on 2026-10-19 of the client flows above, after which eleven defects were fixed and pinned by guards.
 
+Released since (2026-10-20): the order workflow fixes from a repo audit (History, 2026-10-20).
+
 Not yet verified:
 
 - In production: rate limits across serverless instances and a scheduled maintenance run. Verified at release: the build-time migration, live database round trips from the functions, the retired endpoints, the security headers, and CI. Production writes and the local-first smoke Steps 3 to 10 passed on 2026-10-19 (`docs/production-smoke-2026-10-19.md`).
@@ -168,7 +171,14 @@ Signing out never touches records. Settings, This device's records, **Erase this
 
 ## Verification
 
-Latest, 2026-10-19:
+Latest, 2026-10-20, the order workflow fixes (`0ec6175`):
+
+- Before the push, on `main`: `npm.cmd run launch:check` green (identity 136, local-first 120, storage 36, backup 45, inbox 35, and Neon 55 assertions, plus the UX and security audits and the build) and `npm.cmd run release:preflight` green.
+- 25 new guards in `scripts/test-local-first.js`, most running the real functions in a sandbox. Against the pre-fix files 18 of them fail, at least one per defect.
+- In the in-app browser against the dev server: every fixed flow, on a throwaway store with the dev demo data, deleted afterwards.
+- In production after the push: the new offline shell (`fso-shell-v5`) served within about 15 seconds; health and readiness green; the icon served and the docs images gone (404); the public `src/app.js` identical to the commit apart from line endings; CI green; a browser with no saved data for the site loaded the sign-in screen with no console messages. No account was created.
+
+2026-10-19:
 
 - Production smoke Steps 3 to 10 passed in agent mode on Release A: manager signup and one-time recovery code, local records and sign-out persistence, encrypted backup and new-device restore, password recovery, offline edits and reconnect backup, and offline sign-out. Mandatory deletion succeeded, post-deletion sign-in returned 401, both isolated browser sessions were cleared and closed, and ephemeral credentials discarded. No unexpected page JavaScript errors; the wrong-passphrase error and auth/offline warnings were expected. Detailed evidence: `docs/production-smoke-2026-10-19.md`.
 - `npm.cmd run launch:check` green: identity 136, local-first 90, storage 36, backup 45, inbox 35, and Neon 55 assertions, plus the UX and security audits and the build.
@@ -182,10 +192,13 @@ Full record: `.planning/phases/021-local-first-pivot/VERIFICATION.md`. Earlier r
 
 1. The 14-day watch window from 2026-10-19 (`docs/operations-runbook.md`, Post-Launch Support).
 2. The Phase 021 UAT, then Release B.
-3. A pilot with a real store (`docs/pilot-uat.md`).
-4. Later: alerting, a custom domain if wanted, a Vercel plan decision for collaborator deploys, and connecting a real provider.
+3. Before the pilot: the product questions the 2026-10-20 audit raised (Open Questions).
+4. A pilot with a real store (`docs/pilot-uat.md`).
+5. Later: alerting, a custom domain if wanted, a Vercel plan decision for collaborator deploys, and connecting a real provider.
 
 Done on 2026-10-19: Neon connected to the Vercel project (`docs/owner-activation-runbook.md`), this checkout's repo-local commit identity set to `ADxZimmy`, Phase 021 UAT item 11's first confirmation passed, Release A shipped as `v2.0.0`, and production smoke Steps 3 to 10 passed with mandatory cleanup (`docs/production-smoke-2026-10-19.md`).
+
+Done on 2026-10-20: the order workflow fixes from a repo audit, released as `0ec6175` (History).
 
 ## UI/UX Expectations
 
@@ -244,6 +257,10 @@ Commit:
 - Collaborator-authored commits cannot deploy on the Vercel Hobby plan; upgrade, move the project, or keep owner-authored releases?
 - If a custom domain is wanted, which one, and who owns the DNS zone?
 - Which real provider should connect first: WhatsApp Business API, Instagram Graph API, or a simpler webhook bridge?
+- Raised by the 2026-10-20 audit, to settle before the pilot:
+  - Should Complete and Handoff stay available at every step? Today an order can skip reserving and cutting, so its fabric is never deducted from stock and it leaves no learning record.
+  - Should a manager be removable? Today no manager can be suspended or removed except by deleting the store.
+  - Should saved records be editable? Clients, inquiries, orders, style recipes, and inventory details have no edit or delete screens, which a real store will need for corrections.
 
 ## Known Risks
 
@@ -261,6 +278,17 @@ Commit:
 - The legacy Supabase project stays restorable for 90 days from its next pause; Release B's second UAT item 11 confirmation needs it before then.
 
 ## History
+
+### 2026-10-20: Order Workflow Audit Fixes
+
+Owner: `ADxZimmy`. Fixed, released, and recorded by Claude Code on the owner's instruction.
+
+- Files changed: `src/app.js`, `src/icon.svg` (new), `index.html`, `src/sw.js`, `scripts/build.js`, `scripts/test-local-first.js`, `.planning/STATE.md`.
+- Summary: reading `src/app.js` against the original brief (`docs/Prompt 1.txt`) found defects no doc tracked. Advance on a Ready order marked it Completed without the completion step, stranding its reserved finishing items; Convert to order made another order on every click; an order closed without cutting recorded its estimate as the actual usage; the size allowance compared centimeters with inch thresholds; Fittings Due and the production flow counted cancelled orders; the neutral theme preset renamed the business and deleted its logo and tagline; the manager card pointed to a workspace reset that no longer exists; and the favicon was the Mo'ora Afrika logo, with the build publishing the docs reference images. All fixed; `SHELL_VERSION` is now `fso-shell-v5`.
+- Verification: Verification, 2026-10-20.
+- Known risks: none new. Left as product decisions (Open Questions): orders can skip reserving and cutting, managers cannot be removed, and saved records cannot be edited. The Team access panel still says "workspace" where it means the store.
+- Next step: unchanged; the watch window, then the Phase 021 UAT.
+- Commit: `0ec6175`, released 2026-10-20 (Vercel deployment `BS4gC6CYxiDstVWAC26cCmbjsj5q`).
 
 ### 2026-10-19: Phase 021 Local-First Pivot, Steps 1 to 7
 
