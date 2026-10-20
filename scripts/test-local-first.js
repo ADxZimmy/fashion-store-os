@@ -279,6 +279,184 @@ ok("dev server dropped the legacy auth document plane", !serverCode.includes("no
   ok("an unknown name still gets a generic 410", unknown.statusCode === 410 && errorOf(unknown).length > 0);
 }
 
+// --- Order workflow (audit, 2026-10-20) --------------------------------------
+// Exercised, not grepped: the real functions from src/app.js run in a sandbox
+// with the helpers they call stubbed, so each check fails on the behaviour the
+// audit found rather than on one spelling of the fix.
+{
+  const vm = require("vm");
+  // A trailing "?" marks a function the check can run without, so the check
+  // still runs against code that predates it.
+  const sourceOf = (wanted) => {
+    const name = wanted.replace(/\?$/, "");
+    const start = appSource.search(new RegExp(`\\n(?:async )?function ${name}\\(`));
+    if (start === -1 && wanted.endsWith("?")) return "";
+    if (start === -1) throw new Error(`src/app.js has no function ${name}`);
+    const rest = appSource.slice(start + 1);
+    const end = rest.search(/\n(?:async )?function /);
+    return end === -1 ? rest : rest.slice(0, end);
+  };
+  const constOf = (name) => {
+    const match = appSource.match(new RegExp(`const ${name} = [\\[{][\\s\\S]*?\\n[\\]}];`));
+    if (!match) throw new Error(`src/app.js has no const ${name}`);
+    return match[0];
+  };
+  // A missing function or a thrown error is a failed check, not a crashed suite.
+  const exercise = (label, run) => {
+    try {
+      run();
+    } catch (error) {
+      ok(label, false, error.message);
+    }
+  };
+  const orderApp = (state, functions) => {
+    const context = vm.createContext({
+      state,
+      toasts: [],
+      currentView: "inquiries",
+      saveState: () => {},
+      render: () => {},
+      recordOrderActivity: (order, label) => {
+        order.activity = [...(order.activity || []), label];
+      },
+      getInventoryItem: (id) => state.inventory.find((item) => item.id === id),
+      getStyle: (id) => state.styles.find((style) => style.id === id),
+      uid: (prefix) => `${prefix}-${Math.random().toString(36).slice(2, 10)}`,
+      isoDate: () => "2026-10-20",
+      normalizeManagerReview: (review) => ({ status: "Not requested", ...(review || {}) }),
+      currentUserLabel: () => "Manager",
+      estimateOrder: () => ({ lineItems: [] }),
+    });
+    context.showToast = (message) => context.toasts.push(message);
+    vm.runInContext([constOf("productionSteps"), ...["getOrder", "round2", ...functions].map(sourceOf)].join("\n"), context);
+    return context;
+  };
+  const closing = ["productionStepToStatus", "advanceOrder", "completeOrder", "finalizeOrderCompletion", "consumeRemainingReserved"];
+  const emptyStore = () => ({ orders: [], inventory: [], usageRecords: [], styles: [], clients: [], inquiries: [], profile: { fabricUnit: "yards" } });
+  const lastToast = (context) => context.toasts[context.toasts.length - 1] || "";
+
+  // Advance on a Ready order used to mark it Completed without the completion
+  // step, stranding its finishing-item reservations with no way to release them.
+  exercise("advancing a Ready order does not close it", () => {
+    const state = emptyStore();
+    state.inventory.push({ id: "thread", quantity: 5, reserved: 1 });
+    state.orders.push({ id: "o1", status: "Ready for Collection", productionStep: "Ready", reservedMaterials: [{ itemId: "thread", role: "Thread", quantity: 1, unit: "spools" }], actualMaterials: [] });
+    const context = orderApp(state, closing);
+    context.advanceOrder("o1");
+    ok("advancing a Ready order does not close it", state.orders[0].status === "Ready for Collection" && state.orders[0].productionStep === "Ready");
+    ok("advancing a Ready order points to Handoff or Complete", /Handoff or Complete/.test(lastToast(context)));
+    context.completeOrder("o1");
+    ok("Complete on a Ready order uses up its reserved finishing items", state.orders[0].status === "Completed" && state.inventory[0].reserved === 0 && state.inventory[0].quantity === 4);
+    state.orders.push({ id: "o2", status: "Sewing", productionStep: "Sewing", reservedMaterials: [], actualMaterials: [] });
+    context.advanceOrder("o2");
+    ok("ordinary production steps still advance", state.orders[1].productionStep === "First Fitting" && state.orders[1].status === "Fitting");
+  });
+  ok("the production board sends a Ready order to Orders instead of advancing it", /order\.productionStep === "Ready"\s*\?\s*`<button[^`]*data-nav="orders"/.test(bodyOf("renderProduction")));
+  ok("the order card offers no Advance on a Ready order", /!\["Materials Reserved", "Ready"\]\.includes\(order\.productionStep\)[^\n]{0,80}data-action="advance-order"/.test(bodyOf("renderOrderCard")));
+
+  // Closing an order with no cutting entry used to record the estimate as the
+  // actual usage: a false zero difference in every learning report.
+  exercise("an order closed without cutting saves no learning record", () => {
+    const uncut = emptyStore();
+    uncut.orders.push({ id: "o3", status: "Sewing", productionStep: "Sewing", estimatedMaterials: [{ itemId: "fab", role: "Main fabric", quantity: 3, unit: "yards" }], reservedMaterials: [], actualMaterials: [] });
+    const context = orderApp(uncut, closing);
+    context.completeOrder("o3");
+    ok("an order closed without cutting saves no learning record", uncut.orders[0].status === "Completed" && uncut.usageRecords.length === 0);
+    ok("completing without cutting says no learning record was saved", /No cutting was recorded/.test(lastToast(context)));
+    const cut = emptyStore();
+    cut.orders.push({ id: "o4", status: "Cutting", productionStep: "Cutting", estimatedMaterials: [{ itemId: "fab", role: "Main fabric", quantity: 3, unit: "yards" }], reservedMaterials: [], actualMaterials: [{ itemId: "fab", role: "Main fabric", estimated: 3, actual: 3.4, unit: "yards" }] });
+    orderApp(cut, closing).completeOrder("o4");
+    ok("an order closed after cutting records the measured difference", cut.usageRecords.length === 1 && cut.usageRecords[0].actual === 3.4 && cut.usageRecords[0].difference === 0.4);
+  });
+
+  // Every click on "Convert to order" used to create another order.
+  exercise("converting an inquiry twice makes one order", () => {
+    const state = emptyStore();
+    state.inquiries.push({ id: "i1", clientName: "Ada", contact: "+2348000000000", desiredStyle: "Kaftan", status: "Quoted", notes: "" });
+    const context = orderApp(state, ["findBestStyle", "inquiryConverted?", "convertInquiry"]);
+    context.convertInquiry("i1");
+    context.convertInquiry("i1");
+    ok("converting an inquiry twice makes one order", state.orders.length === 1);
+    ok("a converted inquiry remembers its order", state.orders.length > 0 && state.inquiries[0].orderId === state.orders[0].id);
+    state.inquiries[0].status = "Quoted";
+    context.convertInquiry("i1");
+    ok("changing a converted inquiry's status back does not allow a second order", state.orders.length === 1);
+  });
+  ok("a converted inquiry shows no Convert button", /inquiryConverted\(inquiry\)\s*\?\s*`<button[^`]*data-nav="orders"[^`]*`\s*:\s*`<button[^`]*data-action="convert-inquiry"/.test(appCode));
+
+  // The size thresholds are in inches; a studio measuring in centimeters
+  // cleared all of them on almost every client.
+  exercise("size adjustment respects the measurement unit", () => {
+    const context = vm.createContext({});
+    vm.runInContext(["calculateSizeAdjustment", "numberValue"].map(sourceOf).join("\n"), context);
+    const average = { inches: { "Chest/Bust": "38", "Dress length": "45" }, centimeters: { "Chest/Bust": "96.5", "Dress length": "114" } };
+    const large = { inches: { "Chest/Bust": "54", "Dress length": "62" }, centimeters: { "Chest/Bust": "137", "Dress length": "157.5" } };
+    ok("an average client measured in inches gets no size allowance", context.calculateSizeAdjustment(average.inches, "inches") === 0);
+    ok("the same client measured in centimeters gets none either", context.calculateSizeAdjustment(average.centimeters, "centimeters") === 0);
+    const largeInches = context.calculateSizeAdjustment(large.inches, "inches");
+    ok("a large client gets the same allowance in either unit", largeInches > 0 && context.calculateSizeAdjustment(large.centimeters, "centimeters") === largeInches);
+  });
+  ok("the estimate passes the store's measurement unit", /calculateSizeAdjustment\([^)]*measurementUnit\)/.test(bodyOf("estimateOrder")));
+
+  // Cancelled orders are parked at Consultation and keep their fitting date.
+  exercise("the dashboard leaves cancelled orders out", () => {
+    const soon = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+    const state = emptyStore();
+    state.channelMessages = [];
+    state.orders.push(
+      { id: "o5", status: "Sewing", productionStep: "Sewing", fittingDate: soon, quote: 0 },
+      { id: "o6", status: "Cancelled", productionStep: "Consultation", fittingDate: soon, quote: 0 },
+    );
+    const context = vm.createContext({
+      state,
+      ordersDueWithin: () => [],
+      lowStockItems: () => [],
+      round2: (value) => value,
+      money: (value) => String(value),
+      metricCard: (label, value) => `[${label}=${value}]`,
+      renderCompactOrder: () => "",
+      renderLearningRecord: () => "",
+      emptyState: () => "",
+      escapeHtml: (value) => String(value),
+    });
+    vm.runInContext([constOf("productionSteps"), ...["renderDashboard", "daysUntil"].map(sourceOf)].join("\n"), context);
+    const html = context.renderDashboard();
+    ok("Fittings Due leaves cancelled orders out", html.includes("[Fittings Due=1]"));
+    const consultation = html.match(/<strong>Consultation<\/strong>\s*<span class="pill">(\d+)<\/span>/);
+    ok("the production flow leaves cancelled orders out", Boolean(consultation) && consultation[1] === "0");
+  });
+
+  // A theme preset used to rename the business and delete its logo.
+  exercise("the neutral theme keeps the business identity", () => {
+    const logo = "data:image/png;base64,AAAA";
+    const state = { profile: { businessName: "Needle House", displayName: "Needle House", businessType: "Bespoke tailoring", tagline: "Made to measure.", logo, theme: { primary: "#000000" } } };
+    const context = vm.createContext({ state, neutralTheme: { primary: "#2f6f73" }, normalizeProfile: (profile) => profile, saveState: () => {}, render: () => {}, showToast: () => {} });
+    vm.runInContext(sourceOf("applyNeutralBrand"), context);
+    context.applyNeutralBrand();
+    const profile = state.profile;
+    ok("the neutral theme keeps the business identity", profile.businessName === "Needle House" && profile.displayName === "Needle House" && profile.businessType === "Bespoke tailoring" && profile.tagline === "Made to measure." && profile.logo === logo);
+    ok("the neutral theme still changes the colors", profile.theme.primary === "#2f6f73");
+  });
+
+  ok("no copy sends managers to a workspace reset that no longer exists", !/reset the workspace/i.test(appCode));
+}
+
+// --- App icon and shell assets (audit, 2026-10-20) ---------------------------
+{
+  const htmlSource = fs.readFileSync(path.join(rootDir, "index.html"), "utf8");
+  const buildSource = fs.readFileSync(path.join(rootDir, "scripts/build.js"), "utf8");
+  // The app is meant to carry no brand, but its favicon was one store's logo.
+  const iconHref = (htmlSource.match(/<link rel="icon" href="([^"]+)"/) || [])[1] || "";
+  ok("the favicon is the neutral app icon", iconHref === "src/icon.svg" && fs.existsSync(path.join(rootDir, iconHref)));
+  ok("no reference images from docs/ ship to production", ![htmlSource, buildSource, swSource].some((source) => /docs\/IMG-/.test(source)));
+  // Every file the worker precaches must be one the build publishes, or its
+  // install quietly skips it and that file is missing offline.
+  const precached = [...swSource.matchAll(/^\s*"(\/[^"]*)",?\s*$/gm)].map((match) => match[1]).filter((asset) => asset !== "/");
+  const published = new Set([...buildSource.matchAll(/^\s*"([^"]+)",?\s*$/gm)].map((match) => `/${match[1]}`));
+  const unpublished = precached.filter((asset) => !published.has(asset));
+  ok("every precached shell file is published by the build", precached.length > 0 && unpublished.length === 0, unpublished.join(","));
+}
+
 // --- Boot behaviour, exercised against a stubbed browser --------------------
 function runBoot({ reachable, authenticated, identity, localState, storeTag, cachedIdentity, cacheAge = 0 }) {
   const store = new Map();

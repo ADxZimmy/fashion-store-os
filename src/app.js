@@ -2104,7 +2104,7 @@ function renderDashboard() {
   const newInquiries = state.inquiries.filter((inquiry) => inquiry.status === "New");
   const newChannelMessages = (state.channelMessages || []).filter((message) => message.routingStatus === "New");
   const dueSoon = ordersDueWithin(14);
-  const fittingsSoon = state.orders.filter((order) => order.fittingDate && daysUntil(order.fittingDate) >= 0 && daysUntil(order.fittingDate) <= 10 && order.status !== "Completed");
+  const fittingsSoon = active.filter((order) => order.fittingDate && daysUntil(order.fittingDate) >= 0 && daysUntil(order.fittingDate) <= 10);
   const productionWork = state.orders.filter((order) => ["Cutting", "Sewing", "First Fitting", "Adjustments", "Finishing", "Quality Check"].includes(order.productionStep));
   const lowStock = lowStockItems();
   const reservedQty = round2(state.inventory.reduce((sum, item) => sum + Number(item.reserved || 0), 0));
@@ -2171,7 +2171,8 @@ function renderDashboard() {
           </div>
           <div class="list">
             ${productionSteps.slice(0, -1).map((step) => {
-              const count = state.orders.filter((order) => order.productionStep === step).length;
+              // Active orders only: a cancelled order is parked at Consultation.
+              const count = active.filter((order) => order.productionStep === step).length;
               const percent = Math.min(100, count * 18);
               return `
                 <div class="progress-line">
@@ -2368,7 +2369,9 @@ function renderInquiries() {
                 <select data-inquiry-status="${escapeHtml(inquiry.id)}" aria-label="Inquiry status">
                   ${inquiryStatuses.map((status) => `<option ${status === inquiry.status ? "selected" : ""}>${status}</option>`).join("")}
                 </select>
-                <button class="btn small" type="button" data-action="convert-inquiry" data-id="${escapeHtml(inquiry.id)}">Convert to order</button>
+                ${inquiryConverted(inquiry)
+                  ? `<button class="btn small secondary" type="button" data-nav="orders">View orders</button>`
+                  : `<button class="btn small" type="button" data-action="convert-inquiry" data-id="${escapeHtml(inquiry.id)}">Convert to order</button>`}
               </div>
             </article>
           `).join("") || emptyState("No inquiries yet.")}
@@ -3001,7 +3004,11 @@ function renderProduction() {
                       <strong>${escapeHtml(getClient(order.clientId)?.name || "Unknown client")}</strong>
                       <p class="muted small-text">${escapeHtml(getStyle(order.styleId)?.name || "Custom style")} - due ${formatDate(order.deadline)}</p>
                       <div class="button-row" style="margin-top: 10px;">
-                        ${order.productionStep === "Materials Reserved" ? `<button class="btn small secondary" type="button" data-nav="orders">Cut from Orders</button>` : `<button class="btn small" type="button" data-action="advance-order" data-id="${escapeHtml(order.id)}">Advance</button>`}
+                        ${order.productionStep === "Materials Reserved"
+                          ? `<button class="btn small secondary" type="button" data-nav="orders">Cut from Orders</button>`
+                          : order.productionStep === "Ready"
+                            ? `<button class="btn small secondary" type="button" data-nav="orders">Hand off from Orders</button>`
+                            : `<button class="btn small" type="button" data-action="advance-order" data-id="${escapeHtml(order.id)}">Advance</button>`}
                       </div>
                     </div>
                   `).join("") || `<p class="muted small-text">No work here.</p>`}
@@ -3825,7 +3832,7 @@ function renderStaffAccessCard(user) {
           <h3>${escapeHtml(user.name)} ${roleBadge} <span class="status">${escapeHtml(status)}</span></h3>
           <p>${escapeHtml(user.email)}${user.lastSignInAt ? ` · Last sign-in ${formatDate(user.lastSignInAt)}` : ""}</p>
           ${user.inviteExpiresAt ? `<p class="muted small-text">Invite expires ${formatDate(user.inviteExpiresAt)}</p>` : ""}
-          <p class="muted small-text">Managers have full access. To remove a manager, reset the workspace.</p>
+          <p class="muted small-text">Managers have full access and cannot be suspended or removed.</p>
         </div>
         <div class="button-row">
           <button class="btn small secondary" type="button" data-action="reset-user-password" data-id="${escapeHtml(user.id)}">Issue recovery code</button>
@@ -4450,13 +4457,11 @@ function applyPremiumBrand() {
 
 function applyNeutralBrand() {
   const existing = state.profile || {};
+  // A theme preset changes colors only. This one used to rename the business
+  // to "Fashion Studio OS" and delete its logo and tagline, which the store
+  // could only undo by entering them again.
   state.profile = normalizeProfile({
     ...existing,
-    businessName: "Fashion Studio OS",
-    displayName: "Fashion Studio OS",
-    businessType: "Tailoring studio",
-    tagline: "",
-    logo: "",
     theme: { ...neutralTheme },
   });
   saveState();
@@ -4880,9 +4885,20 @@ function handleOrderSubmit(form) {
   render();
 }
 
+// The status alone also covers inquiries converted before orderId was kept.
+function inquiryConverted(inquiry) {
+  return inquiry.status === "Converted to Order" || Boolean(inquiry.orderId && getOrder(inquiry.orderId));
+}
+
 function convertInquiry(id) {
   const inquiry = state.inquiries.find((item) => item.id === id);
   if (!inquiry) return;
+  // Every click used to create another order, so a double click or a second
+  // visit duplicated the client's order and its material reservation.
+  if (inquiryConverted(inquiry)) {
+    showToast("This inquiry is already an order. Find it in Garment Orders.");
+    return;
+  }
 
   let client = state.clients.find((item) => item.name.toLowerCase() === inquiry.clientName.toLowerCase() || item.phone === inquiry.contact || item.email === inquiry.contact);
   if (!client) {
@@ -4939,6 +4955,7 @@ function convertInquiry(id) {
   order.estimatedMaterials = estimateOrder(order).lineItems;
   state.orders.unshift(order);
   inquiry.status = "Converted to Order";
+  inquiry.orderId = order.id;
   currentView = "orders";
   saveState();
   showToast("Inquiry converted to an order draft.");
@@ -5125,7 +5142,14 @@ function advanceOrder(id) {
   } else if (order.productionStep === "Materials Reserved") {
     showToast("Use Start cutting in Orders so actual fabric usage is recorded.");
     return;
-  } else if (currentIndex < productionSteps.length - 1) {
+  } else if (currentIndex >= productionSteps.indexOf("Ready")) {
+    // Closing an order is not a production step. Handoff and Complete use up
+    // the finishing-item reservations and save the learning record; advancing
+    // past Ready marked the order Completed without either, which left that
+    // stock reserved for good with no button left to release it.
+    showToast("Use Handoff or Complete in Orders so the order closes properly.");
+    return;
+  } else {
     order.productionStep = productionSteps[currentIndex + 1];
   }
 
@@ -5139,22 +5163,28 @@ function completeOrder(id) {
   const order = getOrder(id);
   if (!order) return;
 
-  finalizeOrderCompletion(order);
+  const learningSaved = finalizeOrderCompletion(order);
   recordOrderActivity(order, "Order completed", "Marked complete without handoff details.");
   saveState();
-  showToast("Order completed and learning record saved.");
+  showToast(learningSaved ? "Order completed and learning record saved." : "Order completed. No cutting was recorded, so no learning record was saved.");
   render();
 }
 
+// Returns whether a learning record was saved for the order.
 function finalizeOrderCompletion(order) {
   const alreadyCompleted = order.status === "Completed";
   consumeRemainingReserved(order);
   const mainEstimate = (order.estimatedMaterials || order.reservedMaterials || []).find((line) => line.role === "Main fabric");
   const mainActual = (order.actualMaterials || []).find((line) => line.role === "Main fabric");
   const estimated = mainEstimate?.quantity || mainActual?.estimated || 0;
-  const actual = mainActual?.actual || estimated;
+  // Learning compares the estimate with fabric actually cut. An order closed
+  // without a cutting entry has no actual, and recording the estimate in its
+  // place showed a perfect zero difference that skewed Reports.
+  const actual = mainActual?.actual;
+  let learningSaved = false;
 
-  if (!alreadyCompleted && mainEstimate && !state.usageRecords.some((record) => record.orderId === order.id)) {
+  if (!alreadyCompleted && mainEstimate && actual && !state.usageRecords.some((record) => record.orderId === order.id)) {
+    learningSaved = true;
     state.usageRecords.unshift({
       id: uid("learn"),
       orderId: order.id,
@@ -5174,6 +5204,7 @@ function finalizeOrderCompletion(order) {
   if (order.followUpStatus !== "Closed") {
     order.followUpStatus = "Collection reminder";
   }
+  return learningSaved;
 }
 
 function cancelOrder(id) {
@@ -5528,7 +5559,7 @@ function estimateOrder(order) {
   const widthFactor = width > 0 ? basisWidth / width : 1;
   const modifierObjects = (order.modifiers || []).map((id) => style.modifiers.find((modifier) => modifier.id === id)).filter(Boolean);
   const modifierFabric = modifierObjects.reduce((sum, modifier) => sum + Number(modifier.fabricDelta || 0), 0);
-  const sizeAdjustment = calculateSizeAdjustment(client?.measurements || {});
+  const sizeAdjustment = calculateSizeAdjustment(client?.measurements || {}, state.profile?.measurementUnit);
   const fabricQty = round2((Number(style.baseFabric || 0) * widthFactor + modifierFabric + sizeAdjustment) * (1 + Number(style.wastagePercent || 0) / 100));
   const lineItems = [];
 
@@ -5742,7 +5773,7 @@ function renderOrderCard(order) {
           <input data-cut-input="${escapeHtml(order.id)}" type="number" min="0" step="0.1" placeholder="Actual fabric used">
           <button class="btn small accent" type="button" data-action="cut-order" data-id="${escapeHtml(order.id)}">Start cutting</button>
         ` : ""}
-        ${!isTerminal && order.productionStep !== "Materials Reserved" ? `<button class="btn small secondary" type="button" data-action="advance-order" data-id="${escapeHtml(order.id)}">Advance</button>` : ""}
+        ${!isTerminal && !["Materials Reserved", "Ready"].includes(order.productionStep) ? `<button class="btn small secondary" type="button" data-action="advance-order" data-id="${escapeHtml(order.id)}">Advance</button>` : ""}
         ${!isTerminal ? `<button class="btn small success" type="button" data-action="handoff-order" data-id="${escapeHtml(order.id)}">Handoff</button>` : ""}
         ${!isTerminal ? `<button class="btn small success" type="button" data-action="complete-order" data-id="${escapeHtml(order.id)}">Complete</button>` : ""}
         ${!isTerminal ? `<button class="btn small secondary" type="button" data-action="cancel-order" data-id="${escapeHtml(order.id)}">Cancel</button>` : ""}
@@ -5900,10 +5931,14 @@ function findBestStyle(text) {
   return state.styles.find((style) => value.includes(style.name.toLowerCase()) || style.name.toLowerCase().includes(value));
 }
 
-function calculateSizeAdjustment(measurements) {
-  const chest = numberValue(measurements["Chest/Bust"]);
-  const hip = numberValue(measurements.Hip);
-  const length = numberValue(measurements["Dress length"] || measurements["Agbada length"] || measurements["Top length"]);
+function calculateSizeAdjustment(measurements, measurementUnit = "inches") {
+  // The thresholds below are in inches. Measurements taken in centimeters
+  // cleared all of them, so nearly every estimate for a studio measuring in
+  // centimeters gained 0.7 to 0.95 of extra fabric.
+  const toInches = measurementUnit === "centimeters" ? 1 / 2.54 : 1;
+  const chest = numberValue(measurements["Chest/Bust"]) * toInches;
+  const hip = numberValue(measurements.Hip) * toInches;
+  const length = numberValue(measurements["Dress length"] || measurements["Agbada length"] || measurements["Top length"]) * toInches;
   let adjustment = 0;
   if (Math.max(chest, hip) >= 46) adjustment += 0.35;
   if (Math.max(chest, hip) >= 52) adjustment += 0.35;

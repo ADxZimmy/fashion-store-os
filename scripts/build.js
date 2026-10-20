@@ -13,9 +13,7 @@ const publicFiles = [
   // Offline app shell. Served from the root scope by the copy step below so
   // it can control every route, not just /src.
   "src/sw.js",
-  "docs/IMG-20260528-WA0025.jpg",
-  "docs/IMG-20260528-WA0028.jpg",
-  "docs/IMG-20260528-WA0029.jpg",
+  "src/icon.svg",
 ];
 
 async function copyPublicFile(relativePath) {
