@@ -16,7 +16,7 @@
 // files: a new version installs alongside the old, then activate() drops
 // every other cache and claims open clients, so a reload after reconnect
 // always lands on the new shell.
-const SHELL_VERSION = "fso-shell-v6";
+const SHELL_VERSION = "fso-shell-v7";
 const SHELL_ASSETS = [
   "/",
   "/index.html",

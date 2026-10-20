@@ -619,7 +619,7 @@ const exerciseAsync = (label, run) => {
       "an unrelated JSON object": '{"hello":"world"}',
       "a JSON list": "[]",
       "a file that is not JSON": "name,phone\nAda,0800",
-      "bare records with no export wrapper": JSON.stringify(deviceRecords()),
+      "records with no wrapper and lists missing": JSON.stringify({ profile: { businessName: "Needle House" }, clients: [] }),
       "the export wrapper around something else": copyOf({ hello: "world" }),
       "a copy whose client list is not a list": copyOf(storeRecords("Needle House", { clients: "Ada" })),
       "a copy from a newer version": JSON.stringify({ exportedAt: "2026-10-18T09:30:00.000Z", format: 2, records: storeRecords("Needle House") }),
@@ -661,9 +661,30 @@ const exerciseAsync = (label, run) => {
     ok("cancelling a load leaves the device as it was", context.state === state && JSON.stringify(context.state) === before && context.writes.length === 0);
   });
 
-  // The dialog has to say what goes and what replaces it, and catch the file
-  // that belongs to another store before its records are backed up over this
-  // store's backup.
+  // Loaded, another store's records would replace this store's and, minutes
+  // later, its backup. A copy that carries a different store id is refused.
+  exerciseAsync("a copy from another store is refused", async () => {
+    const state = deviceRecords();
+    const before = JSON.stringify(state);
+    const context = importApp(state);
+    await context.importRecordsFile(fileInput(copyOf(storeRecords("Kente Couture"), { storeId: "store-2" })));
+    ok("a copy from another store is refused without touching the device", context.state === state && JSON.stringify(context.state) === before && context.writes.length === 0 && !context.modalState);
+    ok("refusing another store's copy says why", context.toasts.length === 1 && /different store/i.test(context.toasts[0]) && /nothing on this device was changed/i.test(context.toasts[0]));
+  });
+
+  // Complete records with no export wrapper load too, after the same dialog.
+  exerciseAsync("complete records without the wrapper load after asking", async () => {
+    const state = deviceRecords();
+    const before = JSON.stringify(state);
+    const context = importApp(state);
+    await context.importRecordsFile(fileInput(JSON.stringify(storeRecords("Needle House", { clients: [{ id: "c7", name: "Dayo" }] }))));
+    ok("complete records without the wrapper are offered for loading", context.state === state && JSON.stringify(context.state) === before && context.writes.length === 0 && context.modalState?.type === "import-records");
+    context.confirmImportRecords();
+    ok("confirming loads records that had no wrapper", context.state.clients[0]?.id === "c7" && context.writes.includes("persistLocalState"));
+  });
+
+  // The dialog has to say what goes and what replaces it, and flag a copy
+  // whose business name differs when no store id can settle it.
   exercise("the load dialog says what it replaces", () => {
     const dialog = (incoming) => {
       const context = vm.createContext({
@@ -679,8 +700,10 @@ const exerciseAsync = (label, run) => {
     const sameStore = dialog({ records: storeRecords("Needle House", { clients: [{ id: "c9" }] }), storeId: "store-1" });
     ok("the load dialog names what is on the device and what replaces it", /Needle House, with 2 clients and 1 order/.test(sameStore) && /Needle House, with 1 client\./.test(sameStore) && /data-action="confirm-import-records"/.test(sameStore));
     ok("the load dialog says the online backup follows", /online backup is replaced/i.test(sameStore));
-    ok("the load dialog warns about a file from another store", /different store/i.test(dialog({ records: storeRecords("Kente Couture"), storeId: "store-2" })));
     ok("copies made before the store id are told apart by business name", /Kente Couture, not Needle House/.test(dialog({ records: storeRecords("Kente Couture") })));
+    // The same store under a new name: the id settles it, so no warning.
+    const renamed = dialog({ records: storeRecords("Needle House Atelier"), storeId: "store-1" });
+    ok("a renamed store's own copy draws no warning", /data-action="confirm-import-records"/.test(renamed) && !/warning-text/.test(renamed));
   });
 }
 

@@ -3424,12 +3424,12 @@ function exportRecordsFile() {
   }
 }
 
-// Loading a file replaces every record on this device, so it takes only a file
-// that Download a copy made, and changes nothing until the operator has seen
-// what it replaces and confirmed. It used to treat any JSON object as records
-// and swap them in at once: an unrelated file wiped the profile and every
-// record, dropped the app onto business setup, and queued a backup of the
-// emptied device.
+// Loading a file replaces every record on this device, so it takes only a
+// complete copy of this store's records, and changes nothing until the
+// operator has seen what it replaces and confirmed. It used to treat any JSON
+// object as records and swap them in at once: an unrelated file wiped the
+// profile and every record, dropped the app onto business setup, and queued a
+// backup of the emptied device.
 async function importRecordsFile(input) {
   const file = input && input.files ? input.files[0] : null;
   if (!file) return;
@@ -3437,6 +3437,14 @@ async function importRecordsFile(input) {
     const incoming = parseRecordsFile(await file.text());
     if (incoming.error) {
       showToast(incoming.error);
+      return;
+    }
+    // A copy stamped with another store's id is refused outright. That also
+    // keeps a store that was deleted and set up again from loading the copies
+    // it made before, which is the safer side: the copy would otherwise
+    // replace this store's records and, minutes later, its backup.
+    if (incoming.storeId && identityStoreId() && incoming.storeId !== identityStoreId()) {
+      showToast("That copy belongs to a different store, so it was not loaded. Nothing on this device was changed.");
       return;
     }
     modalState = { type: "import-records", records: incoming.records, exportedAt: incoming.exportedAt, storeId: incoming.storeId };
@@ -3451,7 +3459,8 @@ async function importRecordsFile(input) {
 
 // Download a copy writes { exportedAt, format, storeId, records }, where
 // records holds the business profile and every list of records. Files made
-// before the store id was added load the same way.
+// before the store id was added load the same way, and so do the records on
+// their own, without that wrapper, as long as nothing is missing from them.
 function parseRecordsFile(text) {
   const refused = { error: "That file is not a copy of your records. Choose a file made with Download a copy. Nothing on this device was changed." };
   const isRecord = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -3461,16 +3470,17 @@ function parseRecordsFile(text) {
   } catch (error) {
     return refused;
   }
-  if (!isRecord(parsed) || !isRecord(parsed.records)) return refused;
-  if (typeof parsed.format === "number" && parsed.format > RECORDS_FILE_FORMAT) {
+  if (!isRecord(parsed)) return refused;
+  const wrapped = parsed.records !== undefined;
+  if (wrapped && typeof parsed.format === "number" && parsed.format > RECORDS_FILE_FORMAT) {
     return { error: "That file was made by a newer version of the app. Reload the page to update the app, then load the file again. Nothing on this device was changed." };
   }
-  if (parsed.format !== RECORDS_FILE_FORMAT) return refused;
-  const records = parsed.records;
+  if (wrapped && parsed.format !== RECORDS_FILE_FORMAT) return refused;
+  const records = wrapped ? parsed.records : parsed;
   const lists = ["clients", "inquiries", "channelMessages", "channelDeliveryEvents", "styles", "inventory", "inventoryAdjustments", "orders", "usageRecords"];
-  const complete = isRecord(records.profile) && lists.every((key) => Array.isArray(records[key]) && records[key].every(isRecord));
+  const complete = isRecord(records) && isRecord(records.profile) && lists.every((key) => Array.isArray(records[key]) && records[key].every(isRecord));
   if (!complete) return refused;
-  return { records, exportedAt: clean(parsed.exportedAt), storeId: clean(parsed.storeId) };
+  return { records, exportedAt: wrapped ? clean(parsed.exportedAt) : "", storeId: wrapped ? clean(parsed.storeId) : "" };
 }
 
 // The only way a loaded file reaches this device's records: the Replace or
@@ -3497,13 +3507,14 @@ function renderImportRecordsModal(incoming) {
   const replacing = hasLocalBusinessData() || state.channelMessages.length > 0;
   const fileBusiness = clean(incoming.records.profile.businessName);
   const deviceBusiness = clean(state.profile && state.profile.businessName);
-  let warning = "";
-  if (incoming.storeId && identityStoreId()) {
-    if (incoming.storeId !== identityStoreId()) warning = "This file was downloaded from a different store than the one you are signed in to.";
-  } else if (fileBusiness && deviceBusiness && fileBusiness !== deviceBusiness) {
-    // Files made before the store id was added can only be told apart by name.
-    warning = `This file is for ${fileBusiness}, not ${deviceBusiness}. Check that it is the right file.`;
-  }
+  // A copy stamped with another store's id never gets here (importRecordsFile
+  // refuses it), and a matching id settles it even if the business was
+  // renamed. Copies without the id, and records with no wrapper, can only be
+  // told apart by name, so a different name is a warning, not a refusal.
+  const idsCompared = Boolean(incoming.storeId && identityStoreId());
+  const warning = !idsCompared && fileBusiness && deviceBusiness && fileBusiness !== deviceBusiness
+    ? `This file is for ${fileBusiness}, not ${deviceBusiness}. Check that it is the right file.`
+    : "";
   const downloaded = incoming.exportedAt ? ` Downloaded ${formatDate(incoming.exportedAt)}.` : "";
   const outcome = replacing
     ? "Loading replaces the business profile and every record on this device with the file's: clients, measurements, inquiries, orders, payments, style recipes, and stock. Anything not in the file is lost, so download a copy first if you are unsure."
