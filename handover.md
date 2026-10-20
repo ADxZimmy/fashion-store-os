@@ -252,7 +252,6 @@ Commit:
 ## Open Questions
 
 - A store allows 25 members including open invites; confirm the commercial plan and whether limits should vary by subscription tier.
-- Should Mo'ora Afrika branding assets be replaced with final production files later?
 - Should a store ever work from more than one device at once? Today it cannot, by design: there is no sync.
 - Collaborator-authored commits cannot deploy on the Vercel Hobby plan; upgrade, move the project, or keep owner-authored releases?
 - If a custom domain is wanted, which one, and who owns the DNS zone?
@@ -284,7 +283,7 @@ Commit:
 Owner: `ADxZimmy`. Fixed, released, and recorded by Claude Code on the owner's instruction.
 
 - Files changed: `src/app.js`, `src/icon.svg` (new), `index.html`, `src/sw.js`, `scripts/build.js`, `scripts/test-local-first.js`, `.planning/STATE.md`.
-- Summary: reading `src/app.js` against the original brief (`docs/Prompt 1.txt`) found defects no doc tracked. Advance on a Ready order marked it Completed without the completion step, stranding its reserved finishing items; Convert to order made another order on every click; an order closed without cutting recorded its estimate as the actual usage; the size allowance compared centimeters with inch thresholds; Fittings Due and the production flow counted cancelled orders; the neutral theme preset renamed the business and deleted its logo and tagline; the manager card pointed to a workspace reset that no longer exists; and the favicon was the Mo'ora Afrika logo, with the build publishing the docs reference images. All fixed; `SHELL_VERSION` is now `fso-shell-v5`.
+- Summary: reading `src/app.js` against the original brief (`docs/Prompt 1.txt`) found defects no doc tracked. Advance on a Ready order marked it Completed without the completion step, stranding its reserved finishing items; Convert to order made another order on every click; an order closed without cutting recorded its estimate as the actual usage; the size allowance compared centimeters with inch thresholds; Fittings Due and the production flow counted cancelled orders; the neutral theme preset renamed the business and deleted its logo and tagline; the manager card pointed to a workspace reset that no longer exists; and the favicon was the Mo'ora Afrika logo, with the build publishing the docs reference images. All fixed; `SHELL_VERSION` is now `fso-shell-v5`. That also settles the open question of replacing the Mo'ora Afrika branding files with final production files: nothing Mo'ora-branded ships any more, each store's logo comes from its own Settings, and the images and deck in `docs/` stay as design references only.
 - Verification: Verification, 2026-10-20.
 - Known risks: none new. Left as product decisions (Open Questions): orders can skip reserving and cutting, managers cannot be removed, and saved records cannot be edited. The Team access panel still says "workspace" where it means the store.
 - Next step: unchanged; the watch window, then the Phase 021 UAT.
