@@ -1,13 +1,13 @@
 # Production Persistence
 
-Last updated: 2026-10-19
+Last updated: 2026-10-20
 
 Where Fashion Store OS keeps what, after the Phase 021 local-first pivot. Business records live on each device. The server holds identity, an encrypted backup it cannot read, and a short-lived inbox for provider messages, all in one Postgres database.
 
 ## Status
 
 - The design below is **in production** since Release A, 2026-10-19 (`v2.0.0`, commit `584277b`).
-- The server database is **Neon Postgres**, chosen on 2026-10-02 after Supabase paused the project a second time. It was connected to the Vercel project on 2026-10-19: Vercel resource `neon-champagne-river`, Neon project `steep-smoke-31370127`, Frankfurt (`aws-eu-central-1`), PostgreSQL 18.6, database `neondb`. It is still empty; the first Release A build creates the tables. Its variables use the standard names (`DATABASE_URL` and so on), are set for Production only, and are write-only secrets: deployments read them, while `vercel env pull` and `vercel env run` receive them empty. See `docs/owner-activation-runbook.md`.
+- The server database is **Neon Postgres**, chosen on 2026-10-02 after Supabase paused the project a second time. It was connected to the Vercel project on 2026-10-19: Vercel resource `neon-champagne-river`, Neon project `steep-smoke-31370127`, Frankfurt (`aws-eu-central-1`), PostgreSQL 18.6, database `neondb`. Release A's first production build created the tables on 2026-10-19 (`db-migrate: applied 0001_identity`). Its variables use the standard names (`DATABASE_URL` and so on), are set for Production only, and are write-only secrets: deployments read them, while `vercel env pull` and `vercel env run` receive them empty. See `docs/owner-activation-runbook.md`.
 
 ## What Lives Where
 
@@ -85,7 +85,7 @@ No secret belongs in the repo. The security audit flags anything that looks like
 
 ## Legacy Supabase Project
 
-The pre-pivot database is Supabase project `elkpberfbhwbrkawklnk` (`fashion-store`, `eu-west-3`). The owner restored it from its 2026-10-02 pause by 2026-10-19 for Phase 021 UAT item 11, whose first confirmation passed that day: its documents table is empty, so it holds no business data and no accounts. While it is active, the pre-pivot production build serves from it again, until Release A replaces that build. If it pauses again, it stays restorable for 90 days from that pause. Its five applied migrations stay in `supabase/migrations/` as the record of that project. Release B decommissions it after UAT item 11's second confirmation. Nothing in the new build reads it.
+The pre-pivot database is Supabase project `elkpberfbhwbrkawklnk` (`fashion-store`, `eu-west-3`). The owner restored it from its 2026-10-02 pause by 2026-10-19 for Phase 021 UAT item 11, whose first confirmation passed that day: its documents table is empty, so it holds no business data and no accounts. Release A replaced the pre-pivot build that served from it on 2026-10-19. If it pauses again, it stays restorable for 90 days from that pause. Its five applied migrations stay in `supabase/migrations/` as the record of that project. Release B decommissions it after UAT item 11's second confirmation. Nothing in the new build reads it.
 
 ## Vercel Project
 
