@@ -95,6 +95,10 @@
   Outcome: Defects found by reading `src/app.js` against the original brief were fixed and guarded: Advance completing an order and stranding its reserved stock, an inquiry converting into duplicate orders, false learning records, an inch-only size allowance, cancelled orders counted on the dashboard, a theme preset that erased the business identity, stale manager copy, and a branded favicon.
   Status: Released 2026-10-20 as `0ec6175` and verified in production (STATE, Verification Snapshot).
 
+- Item: Feature sweep fixes.
+  Outcome: A full feature sweep in a browser found three defects every suite had passed, now fixed and guarded: Record payment refused every ordinary amount, price fields took only whole thousands, and Load from a file replaced the device's records with any JSON, unasked.
+  Status: Released 2026-10-21 as `9b58c13` and verified in production (STATE, Verification Snapshot). Minor sweep findings are tracked under STATE, Known Defects.
+
 ## Later
 
 - Item: Post-launch enhancements.

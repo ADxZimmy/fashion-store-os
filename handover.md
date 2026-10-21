@@ -1,6 +1,6 @@
 # Fashion Store OS Handover
 
-Last updated: 2026-10-20
+Last updated: 2026-10-21
 Current repo: `F:\Fashion Store OS`
 
 ## Project Summary
@@ -72,7 +72,7 @@ It runs the syntax check, every test suite, the UX and security audits, and the 
 | Production branch | `main`; every push deploys |
 | Release owner | `ADxZimmy`. On the Hobby plan, deploys of collaborator-authored commits (`NnazimuzoO`) fail with `TEAM_ACCESS_REQUIRED`. |
 
-**Status on 2026-10-20: Release A is live, the production smoke passed, and the order workflow fixes from a repo audit followed it.** Production runs the local-first build on Neon: `v2.0.0` (`584277b`) plus those fixes (`0ec6175`, 2026-10-20). `/api/health` reports `storage: "postgres"`, and the retired endpoints answer 410. Smoke Steps 1 and 2 passed at release; Steps 3 to 10 passed in agent mode on 2026-10-19, including mandatory store deletion and browser cleanup. Detailed evidence: `docs/production-smoke-2026-10-19.md`. The 14-day watch window runs from 2026-10-19. Release record: `docs/cutover.md`.
+**Status on 2026-10-21: Release A is live, the production smoke passed, and two fix releases followed it.** Production runs the local-first build on Neon: `v2.0.0` (`584277b`) plus the order workflow fixes from a repo audit (`0ec6175`, 2026-10-20) and the fixes from a full feature sweep (`9b58c13`, 2026-10-21). `/api/health` reports `storage: "postgres"`, and the retired endpoints answer 410. Smoke Steps 1 and 2 passed at release; Steps 3 to 10 passed in agent mode on 2026-10-19, including mandatory store deletion and browser cleanup. Detailed evidence: `docs/production-smoke-2026-10-19.md`. The 14-day watch window runs from 2026-10-19. Release record: `docs/cutover.md`.
 
 The legacy Supabase project `fashion-store` (`elkpberfbhwbrkawklnk`) is no longer read by production. It was restored for UAT item 11 (first confirmation passed: no business data, no accounts) and will pause again after about a week idle; Release B decommissions it after the second confirmation.
 
@@ -85,11 +85,12 @@ Database: Neon project `steep-smoke-31370127` (Vercel resource `neon-champagne-r
 | v1.0.0, 2026-08-03 | Released on the Vercel alias. Down from the 2026-10-02 Supabase pause until the owner restored the project (by 2026-10-19). Record: `docs/cutover.md`, History. |
 | Release A (Phase 021), `v2.0.0` | Released 2026-10-19 from `584277b`. Smoke Steps 3 to 10 passed in agent mode, including cleanup. Evidence: `docs/production-smoke-2026-10-19.md`. Release record: `docs/cutover.md`. |
 | Order workflow fixes, 2026-10-20 | Released from `0ec6175`, untagged. Found by a repo audit the same day; verified live (the new offline shell, health and readiness, the icon, CI). Record: History, 2026-10-20. |
+| Sweep fixes, 2026-10-21 | Released from `9b58c13`, untagged: payments, price fields, and loading a records file. Found by a full feature sweep on 2026-10-20; verified live (`fso-shell-v7`, health and readiness, CI, the live `app.js` matching the commit). Record: History, 2026-10-21. |
 | Release B | After the Phase 021 UAT: deletes the retired endpoints and decommissions the legacy Supabase project. |
 
 ## Current Git State
 
-- `main` is production. Release A is `584277b`, tagged `v2.0.0` and pushed on 2026-10-19. `0ec6175` released the order workflow fixes on 2026-10-20; the other later commits on `main` are documentation.
+- `main` is production. Release A is `584277b`, tagged `v2.0.0` and pushed on 2026-10-19. `0ec6175` released the order workflow fixes on 2026-10-20 and `9b58c13` the sweep fixes on 2026-10-21; the other later commits on `main` are documentation.
 - `phase-021-release-a` was fast-forwarded into `main` for Release A and is fully merged. It exists only locally and can be deleted.
 - Local-only leftovers `master`, `codex/backend-foundation`, and `backup/main-before-backend-promotion` still exist in this checkout. GitHub has only `main`.
 - Commits must be authored as `ADxZimmy`. This checkout's repo-local identity has been set to that since 2026-10-19; a fresh clone needs the command in `docs/release-lane.md`.
@@ -130,13 +131,13 @@ Built, verified locally, and released (Release A, 2026-10-19):
 - Store deletion, security headers, a CI workflow, and a route parity guard.
 - Browser checks on 2026-10-19 of the client flows above, after which eleven defects were fixed and pinned by guards.
 
-Released since (2026-10-20): the order workflow fixes from a repo audit (History, 2026-10-20).
+Released since: the order workflow fixes from a repo audit (2026-10-20) and the fixes from a full feature sweep (2026-10-21); see History.
 
 Not yet verified:
 
 - In production: rate limits across serverless instances and a scheduled maintenance run. Verified at release: the build-time migration, live database round trips from the functions, the retired endpoints, the security headers, and CI. Production writes and the local-first smoke Steps 3 to 10 passed on 2026-10-19 (`docs/production-smoke-2026-10-19.md`).
 - CI going red on a deliberately broken push.
-- In a browser: the oversized-backup refusal, logo downscaling, the file download, and persistent storage being granted.
+- In a browser: persistent storage being granted (the in-app browser declined it). The 2026-10-20 sweep verified the oversized-backup refusal, logo downscaling, and the file download and load locally.
 - The Phase 021 UAT (owner-run, after Release A) and a real-store pilot.
 
 Accepted trade-offs (Phase 021 CONTEXT):
@@ -171,7 +172,13 @@ Signing out never touches records. Settings, This device's records, **Erase this
 
 ## Verification
 
-Latest, 2026-10-20, the order workflow fixes (`0ec6175`):
+Latest, 2026-10-21, the sweep fixes (`9b58c13`):
+
+- A full feature sweep on 2026-10-20 drove every feature through its real screens on the dev server (the same `app.js` as production) and passed everything except three defects, fixed in this release; minor findings are in `.planning/STATE.md`, Known Defects. It verified logo downscaling, the file download and load, and the oversized-backup refusal in a browser for the first time.
+- Before the push: `npm.cmd run launch:check` green (identity 136, local-first 141, storage 36, backup 45, inbox 35, and Neon 55 assertions, plus the UX and security audits and the build) and `npm.cmd run release:preflight` green. On the dev server: a 10,000 payment, a 450 quote, and a 12.50 deposit saved; unrelated JSON and another store's copy were refused with nothing changed; the store's own copy asked first and replaced only on confirm.
+- In production after the push: deploy and CI green, `fso-shell-v7` served, health and readiness green, the public `src/app.js` identical to the commit apart from line endings, and the sign-in screen with no console messages. No account was created.
+
+2026-10-20, the order workflow fixes (`0ec6175`):
 
 - Before the push, on `main`: `npm.cmd run launch:check` green (identity 136, local-first 120, storage 36, backup 45, inbox 35, and Neon 55 assertions, plus the UX and security audits and the build) and `npm.cmd run release:preflight` green.
 - 25 new guards in `scripts/test-local-first.js`, most running the real functions in a sandbox. Against the pre-fix files 18 of them fail, at least one per defect.
@@ -199,6 +206,8 @@ Full record: `.planning/phases/021-local-first-pivot/VERIFICATION.md`. Earlier r
 Done on 2026-10-19: Neon connected to the Vercel project (`docs/owner-activation-runbook.md`), this checkout's repo-local commit identity set to `ADxZimmy`, Phase 021 UAT item 11's first confirmation passed, Release A shipped as `v2.0.0`, and production smoke Steps 3 to 10 passed with mandatory cleanup (`docs/production-smoke-2026-10-19.md`).
 
 Done on 2026-10-20: the order workflow fixes from a repo audit, released as `0ec6175` (History).
+
+Done on 2026-10-21: the fixes from a full feature sweep, released as `9b58c13` (History).
 
 ## UI/UX Expectations
 
@@ -277,6 +286,17 @@ Commit:
 - The legacy Supabase project stays restorable for 90 days from its next pause; Release B's second UAT item 11 confirmation needs it before then.
 
 ## History
+
+### 2026-10-21: Feature Sweep Fixes
+
+Owner: `ADxZimmy`. Swept, fixed, released, and recorded by Claude Code on the owner's instruction.
+
+- Files changed: `src/app.js`, `src/styles.css`, `src/sw.js`, `scripts/test-local-first.js`.
+- Summary: a full feature sweep in a browser on 2026-10-20 found three defects every suite had passed. Record payment refused every ordinary amount, because its input's minimum (0.01) and step (100) made only amounts ending in .01 valid; it had been so since 2026-06-26. Budget, quote, deposit, and base price accepted only whole thousands, and cost per unit no cents. Load from a file treated any JSON object as records, replaced the device at once, and queued a backup of it. Payments and prices now take any amount to the cent, and amounts show cents when they have them. Loading accepts only a copy made by Download a copy, which now carries the store id; it refuses another store's copy and changes nothing until the operator confirms in an app dialog, and business setup offers it next to Restore from backup. `SHELL_VERSION` is now `fso-shell-v7`.
+- Verification: Verification, 2026-10-21.
+- Known risks: none new. Minor sweep findings are in `.planning/STATE.md`, Known Defects.
+- Next step: unchanged; the watch window, then the Phase 021 UAT.
+- Commits: `e4a580c` and `9b58c13`, released 2026-10-21 as `9b58c13`.
 
 ### 2026-10-20: Order Workflow Audit Fixes
 

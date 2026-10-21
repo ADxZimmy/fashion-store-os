@@ -1,6 +1,6 @@
 # Requirements
 
-Last updated: 2026-10-20
+Last updated: 2026-10-21
 
 Rewritten on 2026-10-20 for the local-first model that shipped in Phase 021 (Release A, `v2.0.0`, 2026-10-19). Business records live on the shop device; the server database (Neon Postgres) holds identity, one encrypted backup per store, and a short-lived inbox for provider messages. Requirements the pivot retired are listed under Retired By Phase 021 with what replaced them. Sources: `.planning/phases/021-local-first-pivot/` and `docs/production-persistence.md`.
 
@@ -28,6 +28,8 @@ Rewritten on 2026-10-20 for the local-first model that shipped in Phase 021 (Rel
   Acceptance: The app provides a Reports workspace with conversion, revenue, workload, stock-risk, reply-draft, quote-draft, and learning-insight outputs derived from the records on the device.
 - Requirement: Daily store order workflow.
   Acceptance: Orders support payment records, balance tracking, fitting scheduling/completion, manager review request/approval/change states, handoff details, customer follow-up state, and activity history.
+- Requirement: Money entry.
+  Acceptance: Payment, budget, quote, deposit, base price, and cost fields accept any amount to the cent, and amounts show cents when they have them. A guard keeps every number field's minimum a whole multiple of its step, so the browser never rejects an ordinary value.
 - Requirement: Audited inventory adjustments.
   Acceptance: Restocks and manual inventory adjustments update stock while recording item, quantity before/after, reason, note, actor, and timestamp; adjustments below reserved quantity are blocked.
 
@@ -51,7 +53,7 @@ Rewritten on 2026-10-20 for the local-first model that shipped in Phase 021 (Rel
 - Requirement: Restore onto a new device.
   Acceptance: A manager signs in on a device with no records and restores from the setup screen. A wrong passphrase fails without changing anything. The restore warns that two devices working at once hold different records, since there is no sync.
 - Requirement: Your own copy.
-  Acceptance: Settings downloads the records as a file and loads such a file back, with no server involved.
+  Acceptance: Settings downloads the records as a file, stamped with the store id, and loads such a file back, with no server involved. Loading accepts only a copy made by Download a copy (older copies without a store id are compared by business name), refuses another store's copy, and changes nothing until the operator confirms in an app dialog that names what the file holds and what the device holds. Business setup offers it next to Restore from backup.
 
 ### Identity And Access
 
